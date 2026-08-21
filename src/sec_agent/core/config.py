@@ -40,10 +40,26 @@ def load_settings() -> Settings:
 
 
 def load_dotenv(path: Path | None = None) -> None:
-    env_path = path or Path.cwd() / ".env"
-    if not env_path.exists():
-        return
+    for env_path in dotenv_candidates(path):
+        if env_path.exists():
+            read_dotenv_file(env_path)
+            return
 
+
+def dotenv_candidates(path: Path | None = None) -> list[Path]:
+    if path is not None:
+        return [path]
+
+    project_root = Path(__file__).resolve().parents[3]
+    candidates = [Path.cwd() / ".env", project_root / ".env"]
+    deduped: list[Path] = []
+    for candidate in candidates:
+        if candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
+
+
+def read_dotenv_file(env_path: Path) -> None:
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:

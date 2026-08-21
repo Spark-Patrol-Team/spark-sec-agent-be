@@ -1,6 +1,7 @@
 import unittest
 
 from sec_agent.domain.models import ApprovalDecision, BusinessStatus, StartRunRequest
+from sec_agent.domain.state_machine import InvalidStatusTransition, StateMachine
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.services.orchestrator import Orchestrator
 from sec_agent.storage.memory import InMemoryEventStore
@@ -65,7 +66,11 @@ class StateFlowTest(unittest.TestCase):
 
         self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
 
+    def test_state_machine_rejects_illegal_transition(self) -> None:
+        ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
+        with self.assertRaises(InvalidStatusTransition):
+            StateMachine().move(ctx, BusinessStatus.RECEIVED, "非法回退")
+
 
 if __name__ == "__main__":
     unittest.main()
-
