@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from enum import StrEnum
+from typing import Any, Literal
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+
+SCHEMA_VERSION = "2026-08-21.mvp.v1"
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class BusinessStatus(StrEnum):
+    RECEIVED = "RECEIVED"
+    CORRELATING = "CORRELATING"
+    TRIAGED = "TRIAGED"
+    INVESTIGATING = "INVESTIGATING"
+    DECISION_READY = "DECISION_READY"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    EXECUTING = "EXECUTING"
+    VERIFYING = "VERIFYING"
+    COMPLETED = "COMPLETED"
+    HUMAN_REQUIRED = "HUMAN_REQUIRED"
+    FAILED = "FAILED"
+
+
+class TruthVerdict(StrEnum):
+    MALICIOUS = "malicious"
+    BENIGN = "benign"
+    UNCERTAIN = "uncertain"
+
+
+class Priority(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class ToolRiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ApprovalStatus(StrEnum):
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ToolCallStatus(StrEnum):
+    SUCCESS = "success"
+    FAILED = "failed"
+    PARTIAL_SUCCESS = "partial_success"
+
+
+class ExecutionMode(StrEnum):
+    MOCK = "mock"
+    REAL = "real"
+
+
+class VerificationStatus(StrEnum):
+    EFFECTIVE = "effective"
+    INEFFECTIVE = "ineffective"
+    UNKNOWN = "unknown"
+
+
+class EvidenceRef(BaseModel):
+    ref_id: str
+    source: str
+    kind: str
+    summary: str | None = None
+
+
+class AlertRecord(BaseModel):
+    alert_id: str
+    source: str
+    occurred_at: datetime
+    name: str
+    alert_type: str
+    raw_severity: str
+    src_ip: str | None = None
+    dst_ip: str | None = None
+    src_port: int | None = None
+    dst_port: int | None = None
+    assets: list[str] = Field(default_factory=list)
+    attack_status: str | None = None
+    scenario_fields: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    raw_record_ref: str
+
+
+class SecurityEvent(BaseModel):
+    event_id: str
+    alert_refs: list[str]
+    first_seen_at: datetime
+    last_seen_at: datetime
+    entities: dict[str, list[str]] = Field(default_factory=dict)
+    correlation_reason: str
+    alert_count_before: int
+    event_count_after: int
+    summary: str
+
+
+class TriageResult(BaseModel):
+    verdict: TruthVerdict
+    confidence: float = Field(ge=0, le=1)
+    risk_score: int = Field(ge=0, le=100)
+    priority: Priority
+    supporting_evidence_refs: list[str] = Field(default_factory=list)
+    opposing_evidence_refs: list[str] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
+    should_investigate: bool
+    summary: str
+
+
+class ToolRequest(BaseModel):
+    call_id: str = Field(default_factory=lambda: str(uuid4()))
+    trace_id: str
+    tool_name: str
+    action_name: str
+    params: dict[str, Any]
+    reason: str
+    dry_run: bool = True
+    idempotency_key: str
+    risk_level: ToolRiskLevel
+    approval_status: ApprovalStatus = ApprovalStatus.NOT_REQUIRED
+
+
+class ToolResult(BaseModel):
+    call_id: str
+    status: ToolCallStatus
+    summary: str
+    raw_result_ref: str | None = None
+    retryable: bool = False
+    error_type: str | None = None
+    external_side_effect: bool = False
+    started_at: datetime
+    ended_at: datetime
+    duration_ms: int
+
+
+class InvestigationStep(BaseModel):
+    step_no: int
+    goal: str
+    tool_request: ToolRequest | None = None
+    tool_result: ToolResult | None = None
+    observation: str | None = None
+
+
+class InvestigationReport(BaseModel):
+    conclusion: TruthVerdict
+    final_confidence: float = Field(ge=0, le=1)
+    timeline: list[str] = Field(default_factory=list)
+    tool_results: list[str] = Field(default_factory=list)
+    key_evidence_refs: list[str] = Field(default_factory=list)
+    evidence_relations: list[str] = Field(default_factory=list)
+    affected_objects: list[str] = Field(default_factory=list)
+    unresolved_questions: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
+    needs_human: bool = False
+    steps: list[InvestigationStep] = Field(default_factory=list)
+    summary: str
+
+
+class ResponsePlan(BaseModel):
+    action: str
+    target: str
+    reason: str
+    risk_level: ToolRiskLevel
+    approval_required: bool
+    rollback_available: bool
+
+
+class ExecutionResult(BaseModel):
+    executed: bool
+    mode: ExecutionMode
+    platform_status: str
+    error: str | None = None
+    retry_count: int = 0
+    idempotency_key: str
+
+
+class VerificationResult(BaseModel):
+    status: VerificationStatus
+    method: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    adjustment_suggestion: str | None = None
+    final_status: BusinessStatus
+
+
+class ResponseResult(BaseModel):
+    plan: ResponsePlan | None = None
+    execution: ExecutionResult | None = None
+    verification: VerificationResult | None = None
+
+
+class TimelineEntry(BaseModel):
+    at: datetime = Field(default_factory=utc_now)
+    status: BusinessStatus
+    message: str
+    elapsed_ms: int | None = None
+
+
+class ErrorRecord(BaseModel):
+    at: datetime = Field(default_factory=utc_now)
+    stage: str
+    message: str
+    recoverable: bool = True
+
+
+class EventContext(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    trace_id: str
+    run_id: str
+    event_id: str
+    status: BusinessStatus
+    source: str
+    alert_refs: list[str] = Field(default_factory=list)
+    event_summary: SecurityEvent | None = None
+    triage: TriageResult | None = None
+    investigation: InvestigationReport | None = None
+    response: ResponseResult | None = None
+    timeline: list[TimelineEntry] = Field(default_factory=list)
+    errors: list[ErrorRecord] = Field(default_factory=list)
+
+
+class StartRunRequest(BaseModel):
+    source: Literal["fixed_sample", "xdr"] = "fixed_sample"
+    sample_id: str | None = "webshell-001"
+    xdr_event_id: str | None = None
+
+
+class ApprovalDecision(BaseModel):
+    approved: bool
+    approver: str
+    reason: str
+    idempotency_key: str
+
+
+class EventListItem(BaseModel):
+    event_id: str
+    run_id: str
+    trace_id: str
+    status: BusinessStatus
+    source: str
+    summary: str | None = None
+
