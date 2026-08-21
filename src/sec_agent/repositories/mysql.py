@@ -58,6 +58,10 @@ class MySQLEventRepository:
         with self._session_factory() as session:
             return self._insert_idempotency_key(session, key)
 
+    def has_idempotency_key(self, key: str) -> bool:
+        with self._session_factory() as session:
+            return session.get(IdempotencyKeyRow, key) is not None
+
     @staticmethod
     def _insert_idempotency_key(session: Session, key: str) -> bool:
         session.add(IdempotencyKeyRow(idempotency_key=key))
@@ -67,4 +71,3 @@ class MySQLEventRepository:
         except IntegrityError:
             session.rollback()
             return False
-

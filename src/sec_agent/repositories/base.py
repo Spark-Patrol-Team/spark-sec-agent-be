@@ -18,3 +18,5 @@ class EventRepository(Protocol):
     def claim_idempotency_key(self, key: str) -> bool:
         raise NotImplementedError
 
+    def has_idempotency_key(self, key: str) -> bool:
+        raise NotImplementedError

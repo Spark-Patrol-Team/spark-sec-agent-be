@@ -8,6 +8,7 @@ from sec_agent.domain.models import (
     InvestigationReport,
     ResponsePlan,
     ToolRequest,
+    ToolCallStatus,
     ToolRiskLevel,
     VerificationResult,
     VerificationStatus,
@@ -49,7 +50,7 @@ class ResponseExecutionService:
         )
         result = self._platform.run_tool(request)
         return ExecutionResult(
-            executed=result.status == "success",
+            executed=result.status == ToolCallStatus.SUCCESS,
             mode=ExecutionMode.MOCK,
             platform_status=result.status,
             error=result.error_type,
@@ -73,4 +74,3 @@ class ResponseVerificationService:
             adjustment_suggestion=None if status == "executed" else "无法确认处置生效，需要人工接管",
             final_status=final_status,
         )
-

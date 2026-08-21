@@ -6,6 +6,7 @@ from sec_agent.domain.models import (
     InvestigationStep,
     SecurityEvent,
     ToolRequest,
+    ToolCallStatus,
     ToolRiskLevel,
     TriageResult,
     TruthVerdict,
@@ -46,7 +47,9 @@ class DeepInvestigationAgent:
             )
         )
 
-        needs_human = result.status != "success" or len(steps) >= self._max_steps and bool(triage.evidence_gaps)
+        needs_human = result.status != ToolCallStatus.SUCCESS or (
+            len(steps) >= self._max_steps and bool(triage.evidence_gaps)
+        )
         recommended_actions = []
         if triage.verdict == TruthVerdict.MALICIOUS and not needs_human:
             recommended_actions = ["隔离或下线可疑 WebShell 文件", "阻断可疑源 IP 访问", "复查 Web 服务进程链"]
@@ -65,4 +68,3 @@ class DeepInvestigationAgent:
             steps=steps,
             summary="深度调查完成，已形成结构化证据和处置建议",
         )
-

@@ -52,6 +52,25 @@ class StateFlowTest(unittest.TestCase):
         self.assertIsNotNone(ctx.response.execution)
         self.assertIsNotNone(ctx.response.verification)
 
+    def test_duplicate_approval_is_idempotent(self) -> None:
+        ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
+        decision = ApprovalDecision(
+            approved=True,
+            approver="tester",
+            reason="单元测试审批",
+            idempotency_key="approval-test-duplicate",
+        )
+
+        first = self.orchestrator.approve(ctx.event_id, decision)
+        second = self.orchestrator.approve(ctx.event_id, decision)
+
+        self.assertEqual(first.status, BusinessStatus.COMPLETED)
+        self.assertEqual(second.status, BusinessStatus.COMPLETED)
+        self.assertEqual(
+            [item.status for item in first.timeline],
+            [item.status for item in second.timeline],
+        )
+
     def test_rejected_approval_goes_human_required(self) -> None:
         ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
         ctx = self.orchestrator.approve(

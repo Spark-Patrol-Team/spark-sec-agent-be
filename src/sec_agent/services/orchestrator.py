@@ -68,33 +68,33 @@ class Orchestrator:
         self._store.save(ctx)
 
         try:
-            ctx = self._state.move(ctx, BusinessStatus.CORRELATING, "开始告警关联")
+            ctx = self._move(ctx, BusinessStatus.CORRELATING, "开始告警关联")
             event = self._correlation.correlate(alerts)
             event.event_id = ctx.event_id
             ctx.event_summary = event
+            self._store.save(ctx)
 
-            ctx = self._state.move(ctx, BusinessStatus.TRIAGED, "完成告警关联，开始风险研判")
             ctx.triage = self._triage.triage(event, alerts)
+            ctx = self._move(ctx, BusinessStatus.TRIAGED, "完成风险研判")
             if not ctx.triage.should_investigate:
-                ctx = self._state.move(ctx, BusinessStatus.COMPLETED, "低风险或明确误报，分诊结束")
-                return self._store.save(ctx)
+                return self._move(ctx, BusinessStatus.COMPLETED, "低风险或明确误报，分诊结束")
 
-            ctx = self._state.move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
+            ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
             ctx.investigation = self._investigation.investigate(ctx.trace_id, event, ctx.triage)
+            self._store.save(ctx)
             if ctx.investigation.needs_human:
-                ctx = self._state.move(ctx, BusinessStatus.HUMAN_REQUIRED, "调查证据不足，需要人工接管")
-                return self._store.save(ctx)
+                return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "调查证据不足，需要人工接管")
 
-            ctx = self._state.move(ctx, BusinessStatus.DECISION_READY, "已形成处置方案")
             plan = self._decision.build_plan(ctx.investigation)
-            ctx.response = ResponseResult(plan=plan)
             if plan is None:
-                ctx = self._state.move(ctx, BusinessStatus.HUMAN_REQUIRED, "未形成可自动执行的处置方案")
-                return self._store.save(ctx)
+                return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "未形成可自动执行的处置方案")
+
+            ctx.response = ResponseResult(plan=plan)
+            self._store.save(ctx)
+            ctx = self._move(ctx, BusinessStatus.DECISION_READY, "已形成处置方案")
 
             if plan.approval_required:
-                ctx = self._state.move(ctx, BusinessStatus.APPROVAL_REQUIRED, "高风险动作等待人工审批")
-                return self._store.save(ctx)
+                return self._move(ctx, BusinessStatus.APPROVAL_REQUIRED, "高风险动作等待人工审批")
 
             return self._execute_and_verify(ctx, idempotency_key=f"{ctx.event_id}:auto-execute")
         except Exception as exc:
@@ -105,6 +105,9 @@ class Orchestrator:
 
     def approve(self, event_id: str, decision: ApprovalDecision) -> EventContext:
         ctx = self._must_get(event_id)
+        if self._store.has_idempotency_key(decision.idempotency_key):
+            return ctx
+
         if ctx.status != BusinessStatus.APPROVAL_REQUIRED:
             raise ValueError(f"当前状态不允许审批: {ctx.status}")
 
@@ -112,8 +115,7 @@ class Orchestrator:
             return ctx
 
         if not decision.approved:
-            ctx = self._state.move(ctx, BusinessStatus.HUMAN_REQUIRED, "审批拒绝，转人工处理")
-            return self._store.save(ctx)
+            return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "审批拒绝，转人工处理")
 
         return self._execute_and_verify(ctx, idempotency_key=decision.idempotency_key)
 
@@ -127,21 +129,24 @@ class Orchestrator:
         if ctx.response is None or ctx.response.plan is None:
             raise ValueError("缺少处置方案，无法执行")
 
-        ctx = self._state.move(ctx, BusinessStatus.EXECUTING, "开始执行处置动作")
+        ctx = self._move(ctx, BusinessStatus.EXECUTING, "开始执行处置动作")
         execution = self._execution.execute(ctx.trace_id, ctx.event_id, ctx.response.plan, idempotency_key)
         ctx.response.execution = execution
+        self._store.save(ctx)
         if not execution.executed:
-            ctx = self._state.move(ctx, BusinessStatus.FAILED, "处置执行失败")
-            return self._store.save(ctx)
+            return self._move(ctx, BusinessStatus.FAILED, "处置执行失败")
 
-        ctx = self._state.move(ctx, BusinessStatus.VERIFYING, "开始执行后独立验证")
+        ctx = self._move(ctx, BusinessStatus.VERIFYING, "开始执行后独立验证")
         verification = self._verification.verify(ctx.trace_id, ctx.event_id, execution)
         ctx.response.verification = verification
-        ctx = self._state.move(ctx, verification.final_status, "处置验证完成")
-        return self._store.save(ctx)
+        self._store.save(ctx)
+        return self._move(ctx, verification.final_status, "处置验证完成")
 
     def _must_get(self, event_id: str) -> EventContext:
         ctx = self._store.get(event_id)
         if ctx is None:
             raise KeyError(event_id)
         return ctx
+
+    def _move(self, ctx: EventContext, next_status: BusinessStatus, message: str) -> EventContext:
+        return self._store.save(self._state.move(ctx, next_status, message))
