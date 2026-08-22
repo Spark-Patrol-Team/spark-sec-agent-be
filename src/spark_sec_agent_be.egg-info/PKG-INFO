@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: spark-sec-agent-be
+Version: 0.1.0
+Summary: MVP scaffold for security event orchestration and state transitions.
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: pydantic>=2.10.0
+Requires-Dist: pymysql>=1.1.0
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: uvicorn>=0.30.0
+Provides-Extra: dev

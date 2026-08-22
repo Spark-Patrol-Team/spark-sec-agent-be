@@ -1,0 +1,2 @@
+[console_scripts]
+sec-agent-generate-openapi = sec_agent.scripts.generate_openapi:main

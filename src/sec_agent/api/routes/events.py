@@ -3,18 +3,28 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from sec_agent.api.deps import get_orchestrator
-from sec_agent.domain.models import ApprovalDecision, EventListItem, StartRunRequest
+from sec_agent.domain.models import ApprovalDecision, EventContext, EventListItem, StartRunRequest, TimelineEntry
 from sec_agent.services.orchestrator import Orchestrator
 
 router = APIRouter(tags=["events"])
 
 
-@router.post("/runs")
-def start_run(request: StartRunRequest, orchestrator: Orchestrator = Depends(get_orchestrator)):
+@router.post(
+    "/runs",
+    response_model=EventContext,
+    operation_id="start_event_run",
+    summary="启动安全事件处理主流程",
+)
+def start_run(request: StartRunRequest, orchestrator: Orchestrator = Depends(get_orchestrator)) -> EventContext:
     return orchestrator.start(request)
 
 
-@router.get("/events", response_model=list[EventListItem])
+@router.get(
+    "/events",
+    response_model=list[EventListItem],
+    operation_id="list_events",
+    summary="查询安全事件列表",
+)
 def list_events(orchestrator: Orchestrator = Depends(get_orchestrator)) -> list[EventListItem]:
     items: list[EventListItem] = []
     for ctx in orchestrator.list_events():
@@ -31,32 +41,46 @@ def list_events(orchestrator: Orchestrator = Depends(get_orchestrator)) -> list[
     return items
 
 
-@router.get("/events/{event_id}")
-def get_event(event_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)):
+@router.get(
+    "/events/{event_id}",
+    response_model=EventContext,
+    operation_id="get_event",
+    summary="查询安全事件详情",
+)
+def get_event(event_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)) -> EventContext:
     ctx = orchestrator.get_event(event_id)
     if ctx is None:
         raise HTTPException(status_code=404, detail="event not found")
     return ctx
 
 
-@router.get("/events/{event_id}/timeline")
-def get_timeline(event_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)):
+@router.get(
+    "/events/{event_id}/timeline",
+    response_model=list[TimelineEntry],
+    operation_id="get_event_timeline",
+    summary="查询安全事件状态时间线",
+)
+def get_timeline(event_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)) -> list[TimelineEntry]:
     ctx = orchestrator.get_event(event_id)
     if ctx is None:
         raise HTTPException(status_code=404, detail="event not found")
     return ctx.timeline
 
 
-@router.post("/events/{event_id}/approval")
+@router.post(
+    "/events/{event_id}/approval",
+    response_model=EventContext,
+    operation_id="submit_event_approval",
+    summary="提交安全事件处置审批结果",
+)
 def submit_approval(
     event_id: str,
     decision: ApprovalDecision,
     orchestrator: Orchestrator = Depends(get_orchestrator),
-):
+) -> EventContext:
     try:
         return orchestrator.approve(event_id, decision)
     except KeyError:
         raise HTTPException(status_code=404, detail="event not found") from None
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-

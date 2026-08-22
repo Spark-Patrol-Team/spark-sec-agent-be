@@ -14,6 +14,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = []
 
+[project.scripts]
+sec-agent-generate-openapi = "sec_agent.scripts.generate_openapi:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

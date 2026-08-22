@@ -3,13 +3,19 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from sec_agent.api.deps import get_orchestrator
+from sec_agent.api.schemas import MetricsResponse
 from sec_agent.services.orchestrator import Orchestrator
 
 router = APIRouter(tags=["metrics"])
 
 
-@router.get("/metrics")
-def get_metrics(orchestrator: Orchestrator = Depends(get_orchestrator)):
+@router.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    operation_id="get_metrics",
+    summary="查询基础处理指标",
+)
+def get_metrics(orchestrator: Orchestrator = Depends(get_orchestrator)) -> MetricsResponse:
     events = orchestrator.list_events()
     total = len(events)
     completed = sum(1 for ctx in events if ctx.status == "COMPLETED")
@@ -22,4 +28,3 @@ def get_metrics(orchestrator: Orchestrator = Depends(get_orchestrator)):
         "failed_events": failed,
         "note": "无可靠标签时不统计准确率、召回率等指标",
     }
-
