@@ -105,13 +105,20 @@ class FixedSampleAdapter:
             side_effect_type = ToolSideEffectType.STATE_CHANGE
             error_type = None
         elif request.tool_name == "response_verify":
-            summary = "验证固定样例 Mock 处置状态为已执行"
-            status = ToolCallStatus.SUCCESS
-            evidence_refs = [f"fixed://actions/{request.idempotency_key}"]
-            output_preview = {"action_status": self.query_action_status(request.idempotency_key)}
+            action_status = self.query_action_status(request.idempotency_key)
+            if action_status == "executed":
+                summary = "验证固定样例 Mock 处置状态为已执行"
+                status = ToolCallStatus.SUCCESS
+                evidence_refs = [f"fixed://actions/{request.idempotency_key}"]
+                error_type = None
+            else:
+                summary = "未找到固定样例 Mock 处置记录"
+                status = ToolCallStatus.PARTIAL_SUCCESS
+                evidence_refs = []
+                error_type = ToolErrorType.PLATFORM_ERROR
+            output_preview = {"action_status": action_status}
             external_side_effect = False
             side_effect_type = ToolSideEffectType.READ_ONLY
-            error_type = None
         else:
             summary = f"固定样例暂不支持工具: {request.tool_name}"
             status = ToolCallStatus.FAILED

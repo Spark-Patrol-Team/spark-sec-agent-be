@@ -1,7 +1,16 @@
 import unittest
 from pathlib import Path
 
-from sec_agent.domain.models import ApprovalDecision, BusinessStatus, StartRunRequest
+from sec_agent.domain.models import (
+    ApprovalDecision,
+    ApprovalStatus,
+    BusinessStatus,
+    StartRunRequest,
+    ToolCallStatus,
+    ToolErrorType,
+    ToolRequest,
+    ToolRiskLevel,
+)
 from sec_agent.platforms.jsonl_sample import JsonlSampleAdapter
 from sec_agent.repositories.memory import InMemoryEventRepository
 from sec_agent.services.orchestrator import Orchestrator
@@ -45,6 +54,48 @@ class JsonlPlatformTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "JSONL 样例不存在"):
             adapter.fetch_alerts(sample_id="missing-sample")
+
+    def test_evidence_lookup_does_not_depend_on_previous_fetch(self) -> None:
+        adapter = JsonlSampleAdapter(FIXTURE_DIR)
+        request = ToolRequest(
+            trace_id="trace-jsonl",
+            event_id="evt-jsonl",
+            stage=BusinessStatus.INVESTIGATING,
+            tool_name="evidence_lookup",
+            action_name="query_related_evidence",
+            params={"alert_refs": ["FIX-XDR-WEBSHELL-001"]},
+            reason="测试 JSONL 证据查询索引",
+            idempotency_key="jsonl-evidence-without-fetch",
+            risk_level=ToolRiskLevel.LOW,
+            approval_status=ApprovalStatus.NOT_REQUIRED,
+        )
+
+        result = adapter.run_tool(request)
+
+        self.assertEqual(result.status, ToolCallStatus.SUCCESS)
+        self.assertIn("FIX-XDR-WEBSHELL-001:alert_name", result.evidence_refs)
+
+    def test_verify_missing_action_returns_structured_non_success(self) -> None:
+        adapter = JsonlSampleAdapter(FIXTURE_DIR)
+        request = ToolRequest(
+            trace_id="trace-jsonl",
+            event_id="evt-jsonl",
+            stage=BusinessStatus.VERIFYING,
+            tool_name="response_verify",
+            action_name="query_action_status",
+            params={"idempotency_key": "missing-action"},
+            reason="测试未找到处置记录",
+            idempotency_key="missing-action",
+            risk_level=ToolRiskLevel.LOW,
+            approval_status=ApprovalStatus.NOT_REQUIRED,
+        )
+
+        result = adapter.run_tool(request)
+
+        self.assertEqual(result.status, ToolCallStatus.PARTIAL_SUCCESS)
+        self.assertEqual(result.error_type, ToolErrorType.PLATFORM_ERROR)
+        self.assertTrue(result.retryable)
+        self.assertEqual(result.output_preview["action_status"], "not_found")
 
     def test_jsonl_webshell_runs_through_approval_flow(self) -> None:
         adapter = JsonlSampleAdapter(FIXTURE_DIR)

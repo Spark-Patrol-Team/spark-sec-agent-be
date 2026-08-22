@@ -39,9 +39,9 @@ class RiskTriageService:
             gaps.append("缺少可定位的原始证据引用")
 
         risk_score_seeds = [
-            int(alert.scenario_fields["risk_score_seed"])
+            risk_score_seed
             for alert in alerts
-            if "risk_score_seed" in alert.scenario_fields
+            if (risk_score_seed := self._risk_score_seed(alert)) is not None
         ]
         if risk_score_seeds:
             score = max(score, max(risk_score_seeds))
@@ -74,3 +74,9 @@ class RiskTriageService:
             should_investigate=should_investigate,
             summary=summary,
         )
+
+    def _risk_score_seed(self, alert: AlertRecord) -> int | None:
+        value = alert.scenario_fields.get("risk_score_seed")
+        if isinstance(value, int) and 0 <= value <= 100:
+            return value
+        return None

@@ -77,7 +77,27 @@ class ToolContractTest(unittest.TestCase):
         self.assertFalse(result.external_side_effect)
         self.assertEqual(result.side_effect_type, ToolSideEffectType.NONE)
 
+    def test_verify_missing_action_returns_structured_non_success(self) -> None:
+        request = ToolRequest(
+            trace_id="trace-test",
+            event_id="evt-test",
+            stage=BusinessStatus.VERIFYING,
+            tool_name="response_verify",
+            action_name="query_action_status",
+            params={"idempotency_key": "missing-action"},
+            reason="测试未找到处置记录",
+            idempotency_key="missing-action",
+            risk_level=ToolRiskLevel.LOW,
+            approval_status=ApprovalStatus.NOT_REQUIRED,
+        )
+
+        result = FixedSampleAdapter().run_tool(request)
+
+        self.assertEqual(result.status, ToolCallStatus.PARTIAL_SUCCESS)
+        self.assertEqual(result.error_type, ToolErrorType.PLATFORM_ERROR)
+        self.assertTrue(result.retryable)
+        self.assertEqual(result.output_preview["action_status"], "not_found")
+
 
 if __name__ == "__main__":
     unittest.main()
-

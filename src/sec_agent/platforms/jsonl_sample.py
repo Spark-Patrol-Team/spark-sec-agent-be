@@ -30,20 +30,20 @@ class JsonlSampleAdapter:
         self._fixture_dir = self._resolve_fixture_dir(fixture_dir)
         self._normalized_file = self._fixture_dir / "normalized_alerts.jsonl"
         self._actions: dict[str, str] = {}
-        self._last_alerts: dict[str, AlertRecord] = {}
+        self._normalized_cache: list[NormalizedAlertRecord] | None = None
+        self._alert_index: dict[str, AlertRecord] | None = None
 
     def fetch_alerts(self, sample_id: str | None = None, xdr_event_id: str | None = None) -> list[AlertRecord]:
         lookup_id = self._resolve_lookup_id(sample_id, xdr_event_id)
-        normalized_records = self._load_normalized_records()
+        alert_index = self._load_alert_index()
 
         if lookup_id is not None:
-            normalized_records = [record for record in normalized_records if record.event_id == lookup_id]
-            if not normalized_records:
+            alert = alert_index.get(lookup_id)
+            if alert is None:
                 raise ValueError(f"JSONL 样例不存在: {lookup_id}")
+            return [alert]
 
-        alerts = [self._to_alert_record(record) for record in normalized_records]
-        self._last_alerts.update({alert.alert_id: alert for alert in alerts})
-        return alerts
+        return list(alert_index.values())
 
     def run_tool(self, request: ToolRequest) -> ToolResult:
         started_at = utc_now()
@@ -72,13 +72,19 @@ class JsonlSampleAdapter:
             error_type = None
         elif request.tool_name == "response_verify":
             action_status = self.query_action_status(request.idempotency_key)
-            summary = "已验证 JSONL 主链 Mock 处置状态"
-            status = ToolCallStatus.SUCCESS
-            evidence_refs = [f"jsonl://actions/{request.idempotency_key}"] if action_status == "executed" else []
+            if action_status == "executed":
+                summary = "已验证 JSONL 主链 Mock 处置状态"
+                status = ToolCallStatus.SUCCESS
+                evidence_refs = [f"jsonl://actions/{request.idempotency_key}"]
+                error_type = None
+            else:
+                summary = "未找到 JSONL 主链 Mock 处置记录"
+                status = ToolCallStatus.PARTIAL_SUCCESS
+                evidence_refs = []
+                error_type = ToolErrorType.PLATFORM_ERROR
             output_preview = {"action_status": action_status}
             external_side_effect = False
             side_effect_type = ToolSideEffectType.READ_ONLY
-            error_type = None
         else:
             summary = f"JSONL 样例暂不支持工具: {request.tool_name}"
             status = ToolCallStatus.FAILED
@@ -119,6 +125,9 @@ class JsonlSampleAdapter:
         return self._actions.get(idempotency_key, "not_found")
 
     def _load_normalized_records(self) -> list[NormalizedAlertRecord]:
+        if self._normalized_cache is not None:
+            return self._normalized_cache
+
         if not self._normalized_file.exists():
             raise FileNotFoundError(f"JSONL 标准化告警文件不存在: {self._normalized_file}")
 
@@ -145,7 +154,15 @@ class JsonlSampleAdapter:
 
         if not records:
             raise JsonlAlertParseError(f"JSONL 标准化告警文件为空: {self._normalized_file}")
+        self._normalized_cache = records
         return records
+
+    def _load_alert_index(self) -> dict[str, AlertRecord]:
+        if self._alert_index is None:
+            self._alert_index = {
+                record.event_id: self._to_alert_record(record) for record in self._load_normalized_records()
+            }
+        return self._alert_index
 
     def _to_alert_record(self, record: NormalizedAlertRecord) -> AlertRecord:
         scenario_fields = {
@@ -187,9 +204,10 @@ class JsonlSampleAdapter:
         )
 
     def _collect_evidence_refs(self, alert_refs: list[str]) -> list[str]:
+        alert_index = self._load_alert_index()
         refs: list[str] = []
         for alert_ref in alert_refs:
-            alert = self._last_alerts.get(alert_ref)
+            alert = alert_index.get(alert_ref)
             if alert is None:
                 continue
             refs.extend(ref.ref_id for ref in alert.evidence_refs)
