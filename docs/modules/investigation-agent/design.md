@@ -323,6 +323,8 @@ OA服务器
 # 深信服平台能力接入设计
 
 
+<img width="430" height="373" alt="image" src="https://github.com/user-attachments/assets/a34e7d79-1189-4c68-821e-8d478394c344" />
+
 
 
 
