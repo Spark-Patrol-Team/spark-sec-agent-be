@@ -36,7 +36,7 @@ def _build_platform(settings: Settings) -> PlatformAdapter:
     if settings.platform_backend == "fixed_sample":
         return FixedSampleAdapter()
     if settings.platform_backend == "jsonl_sample":
-        return JsonlSampleAdapter(settings.jsonl_sample_dir)
+        return JsonlSampleAdapter(settings.jsonl_sample_dir, input_mode=settings.jsonl_input_mode)
     raise ValueError(f"未知平台接入后端: {settings.platform_backend}")
 
 
