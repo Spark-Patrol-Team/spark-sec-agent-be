@@ -6,7 +6,9 @@ from sec_agent.domain.models import ApprovalDecision, StartRunRequest
 
 def main() -> None:
     container = build_container()
-    ctx = container.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
+    source = container.settings.platform_backend
+    sample_id = "webshell-001" if source == "fixed_sample" else "FIX-XDR-WEBSHELL-001"
+    ctx = container.orchestrator.start(StartRunRequest(source=source, sample_id=sample_id))
     print(f"启动完成: event_id={ctx.event_id}, status={ctx.status}")
 
     if ctx.status == "APPROVAL_REQUIRED":
@@ -28,4 +30,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

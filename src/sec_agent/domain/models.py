@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 SCHEMA_VERSION = "2026-08-21.mvp.v1"
@@ -109,6 +109,39 @@ class AlertRecord(BaseModel):
     scenario_fields: dict[str, Any] = Field(default_factory=dict)
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)
     raw_record_ref: str
+
+
+class NormalizedAlertRecord(BaseModel):
+    """平台工具模块输出的标准化 JSONL 告警记录。"""
+
+    event_id: str = Field(min_length=1)
+    event_time: datetime
+    source_device_type: Literal["STA", "XDR", "EDR", "OTHER"]
+    source_device_name: str | None = None
+    event_type: Literal["sql_injection", "webshell", "lateral_movement", "unauthorized_access", "other"]
+    rule_or_event_name: str = Field(min_length=1)
+    severity: Literal["critical", "high", "medium", "low"]
+    source_ip: str | None = None
+    source_port: int | None = Field(default=None, ge=0, le=65535)
+    destination_ip: str | None = None
+    destination_port: int | None = Field(default=None, ge=0, le=65535)
+    transport_protocol: str | None = None
+    application_protocol: str | None = None
+    affected_asset: str | None = None
+    evidence_source: str = Field(min_length=1)
+    evidence_refs: list[str] = Field(default_factory=list)
+    sample_nature: Literal["platform_derived", "synthetic_regression"]
+    status: Literal["new", "triaged", "investigating", "contained", "closed"]
+    risk_score_seed: int | None = Field(default=None, ge=0, le=100)
+    investigation_hint: str | None = None
+    recommended_action: str | None = None
+
+    @field_validator("event_time")
+    @classmethod
+    def event_time_must_have_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+            raise ValueError("event_time 必须包含时区信息")
+        return value
 
 
 class SecurityEvent(BaseModel):
@@ -273,8 +306,8 @@ class EventContext(BaseModel):
 
 
 class StartRunRequest(BaseModel):
-    source: Literal["fixed_sample", "xdr"] = "fixed_sample"
-    sample_id: str | None = "webshell-001"
+    source: Literal["fixed_sample", "jsonl_sample", "xdr"] = "fixed_sample"
+    sample_id: str | None = None
     xdr_event_id: str | None = None
 
 

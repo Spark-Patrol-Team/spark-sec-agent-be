@@ -28,6 +28,22 @@
 5. 将转换后的 `AlertRecord` 投入现有风险、调查、处置和前端流程；
 6. 保留 `sample_nature=synthetic_regression`，避免合成样例混入真实平台展示数据。
 
+## 当前代码入口
+
+- 标准化 JSONL 契约模型：`src/sec_agent/domain/models.py` 中的 `NormalizedAlertRecord`。
+- JSONL 平台适配器：`src/sec_agent/platforms/jsonl_sample.py`。
+- 平台后端装配：`src/sec_agent/bootstrap/container.py`，通过 `PLATFORM_BACKEND=jsonl_sample` 启用。
+- 主链接入点：`src/sec_agent/services/ingest.py` 仍只负责调用平台适配器，不承载 JSONL 字段解析。
+- 风险研判接入：`src/sec_agent/services/triage.py` 会使用 `severity` 和 `risk_score_seed`，确保标准化样例中的确认分值不被主链降级。
+
+## 本地联调方式
+
+```bash
+PLATFORM_BACKEND=jsonl_sample PYTHONPATH=src python -m sec_agent.scripts.run_flow
+```
+
+如需指定接口调用样例，`source` 使用 `jsonl_sample`，`sample_id` 使用 `normalized_alerts.jsonl` 中的 `event_id`，例如 `FIX-XDR-WEBSHELL-001`。
+
 ## 最小验收条件
 
 三条固定样例均应能进入 `AlertRecord`。SQL 注入样例必须保持 `severity=high`、`source_device_name=STA_001` 和 `affected_asset=198.51.100.20`。WebShell 样例必须保持 `severity=critical`、`risk_score_seed=95`、`source_device_name=XDR` 和 `affected_asset=198.51.100.11`。解析、映射、字段或枚举不兼容时必须返回可读错误，不得静默丢弃记录。

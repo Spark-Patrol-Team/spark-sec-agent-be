@@ -9,10 +9,25 @@ class RiskTriageService:
         supporting: list[str] = []
         gaps: list[str] = []
 
+        critical_count = sum(1 for alert in alerts if alert.raw_severity.lower() == "critical")
+        if critical_count:
+            score += min(60, critical_count * 30)
+            supporting.extend(
+                ref.ref_id
+                for alert in alerts
+                if alert.raw_severity.lower() == "critical"
+                for ref in alert.evidence_refs
+            )
+
         high_count = sum(1 for alert in alerts if alert.raw_severity.lower() == "high")
         if high_count:
             score += min(40, high_count * 20)
-            supporting.extend(ref.ref_id for alert in alerts for ref in alert.evidence_refs)
+            supporting.extend(
+                ref.ref_id
+                for alert in alerts
+                if alert.raw_severity.lower() == "high"
+                for ref in alert.evidence_refs
+            )
 
         if any(alert.alert_type == "webshell" for alert in alerts):
             score += 30
@@ -22,6 +37,14 @@ class RiskTriageService:
 
         if not supporting:
             gaps.append("缺少可定位的原始证据引用")
+
+        risk_score_seeds = [
+            int(alert.scenario_fields["risk_score_seed"])
+            for alert in alerts
+            if "risk_score_seed" in alert.scenario_fields
+        ]
+        if risk_score_seeds:
+            score = max(score, max(risk_score_seeds))
 
         if score >= 70:
             verdict = TruthVerdict.MALICIOUS
@@ -51,4 +74,3 @@ class RiskTriageService:
             should_investigate=should_investigate,
             summary=summary,
         )
-

@@ -68,13 +68,31 @@ class ResponseVerificationService:
         self._platform = platform
 
     def verify(self, trace_id: str, event_id: str, execution: ExecutionResult) -> VerificationResult:
-        status = self._platform.query_action_status(execution.idempotency_key)
+        request = ToolRequest(
+            trace_id=trace_id,
+            event_id=event_id,
+            stage=BusinessStatus.VERIFYING,
+            tool_name="response_verify",
+            action_name="query_action_status",
+            params={"event_id": event_id, "idempotency_key": execution.idempotency_key},
+            reason="独立验证处置动作是否生效",
+            dry_run=True,
+            idempotency_key=execution.idempotency_key,
+            risk_level=ToolRiskLevel.LOW,
+            approval_status=ApprovalStatus.NOT_REQUIRED,
+            timeout_seconds=30,
+            max_attempts=1,
+        )
+        result = self._platform.run_tool(request)
+        status = str(result.output_preview.get("action_status") or self._platform.query_action_status(execution.idempotency_key))
         final_status = BusinessStatus.COMPLETED if status == "executed" else BusinessStatus.HUMAN_REQUIRED
         verification_status = VerificationStatus.EFFECTIVE if status == "executed" else VerificationStatus.UNKNOWN
         return VerificationResult(
             status=verification_status,
-            method="查询有状态 Mock 处置记录",
-            evidence_refs=[f"fixed://actions/{execution.idempotency_key}"] if status == "executed" else [],
-            adjustment_suggestion=None if status == "executed" else "无法确认处置生效，需要人工接管",
+            method="通过平台适配器查询有状态 Mock 处置记录",
+            evidence_refs=result.evidence_refs,
+            adjustment_suggestion=None
+            if status == "executed" and result.status == ToolCallStatus.SUCCESS
+            else "无法确认处置生效，需要人工接管",
             final_status=final_status,
         )

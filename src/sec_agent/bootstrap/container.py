@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from sec_agent.core.config import Settings, load_settings
 from sec_agent.platforms.base import PlatformAdapter
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
+from sec_agent.platforms.jsonl_sample import JsonlSampleAdapter
 from sec_agent.repositories.base import EventRepository
 from sec_agent.repositories.memory import InMemoryEventRepository
 from sec_agent.services.orchestrator import Orchestrator
@@ -34,6 +35,8 @@ def build_container(settings: Settings | None = None) -> AppContainer:
 def _build_platform(settings: Settings) -> PlatformAdapter:
     if settings.platform_backend == "fixed_sample":
         return FixedSampleAdapter()
+    if settings.platform_backend == "jsonl_sample":
+        return JsonlSampleAdapter(settings.jsonl_sample_dir)
     raise ValueError(f"未知平台接入后端: {settings.platform_backend}")
 
 
@@ -45,4 +48,3 @@ def _build_repository(settings: Settings) -> EventRepository:
 
         return MySQLEventRepository(settings.mysql_dsn, auto_create_schema=settings.mysql_auto_create_schema)
     raise ValueError(f"未知存储后端: {settings.storage_backend}")
-
