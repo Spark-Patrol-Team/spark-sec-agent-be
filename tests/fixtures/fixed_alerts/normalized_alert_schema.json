@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NormalizedAlert",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_time",
+    "source_device_type",
+    "event_type",
+    "rule_or_event_name",
+    "severity",
+    "source_ip",
+    "destination_ip",
+    "affected_asset",
+    "evidence_source",
+    "sample_nature",
+    "status"
+  ],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1},
+    "event_time": {"type": "string", "format": "date-time"},
+    "source_device_type": {"type": "string", "enum": ["STA", "XDR", "EDR", "OTHER"]},
+    "source_device_name": {"type": ["string", "null"]},
+    "event_type": {"type": "string", "enum": ["sql_injection", "webshell", "lateral_movement", "unauthorized_access", "other"]},
+    "rule_or_event_name": {"type": "string", "minLength": 1},
+    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+    "source_ip": {"type": ["string", "null"]},
+    "source_port": {"type": ["integer", "null"], "minimum": 0, "maximum": 65535},
+    "destination_ip": {"type": ["string", "null"]},
+    "destination_port": {"type": ["integer", "null"], "minimum": 0, "maximum": 65535},
+    "transport_protocol": {"type": ["string", "null"]},
+    "application_protocol": {"type": ["string", "null"]},
+    "affected_asset": {"type": ["string", "null"]},
+    "evidence_source": {"type": "string", "minLength": 1},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "sample_nature": {"type": "string", "enum": ["platform_derived", "synthetic_regression"]},
+    "status": {"type": "string", "enum": ["new", "triaged", "investigating", "contained", "closed"]},
+    "risk_score_seed": {"type": "integer", "minimum": 0, "maximum": 100},
+    "investigation_hint": {"type": "string"},
+    "recommended_action": {"type": "string"}
+  },
+  "additionalProperties": true
+}

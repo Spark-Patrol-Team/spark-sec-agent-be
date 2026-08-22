@@ -1,0 +1,31 @@
+来源类型,原始字段,标准字段,转换规则,是否最小必填,缺失处理,说明
+固定样例,sample_id,event_id,固定样例保持相同ID例如FIX-STA-SQLI-001,是,拒绝进入主链并记录解析错误,原始样例与标准化样例的唯一关联键
+固定样例,status,status,固定样例统一赋值new,是,默认new,主链初始处置状态
+STA_XDR日志,record_time,event_time,按Asia/Shanghai补齐为ISO-8601例如2026-08-21 21:43:23到2026-08-21T21:43:23+08:00,是,拒绝进入主链并记录解析错误,事件时间
+STA_XDR日志,reporting_device,source_device_type,STA保持为STA,是,使用unknown并标记数据不足,数据来源设备类型
+STA_XDR日志,reporting_device_name,source_device_name,原样保留例如STA_001,否,回退为reporting_device；仍缺失时使用STA,来源设备名称
+STA_XDR日志,rule_name,rule_or_event_name,原样保留,是,使用未命名规则并标记数据不足,检测规则名称
+STA_XDR日志,source_ip,source_ip,IPv4或IPv6字符串校验,是,使用null并标记数据不足,来源地址
+STA_XDR日志,source_port,source_port,整数0到65535,否,设为null,来源端口
+STA_XDR日志,destination_ip,destination_ip,IPv4或IPv6字符串校验,是,使用null并标记数据不足,目的地址
+STA_XDR日志,destination_port,destination_port,整数0到65535,否,设为null,目的端口
+STA_XDR日志,log_type,evidence_source,网络安全日志映射为xdr_network_security_log；其他日志按类型映射,是,使用xdr_unknown_log,原始证据来源
+STA_XDR日志,sample_source,evidence_source,XDR 日志检索映射为xdr_network_security_log,否,沿用log_type映射,固定样例来源校验
+STA_XDR日志,rule_name,event_type,SQL注入映射为sql_injection；横向或SMB映射为lateral_movement；其余映射为other,是,映射为other,统一事件分类
+STA_XDR日志,rule_name,severity,规则命中初始严重性为high；风险研判模块可按规则库重评,是,默认medium,初始严重性
+STA_XDR日志,destination_ip,affected_asset,优先使用destination_ip作为受影响资产,是,使用source_ip并标记不确定,受影响资产
+XDR告警,alert_time,event_time,按Asia/Shanghai补齐为ISO-8601,是,拒绝进入主链并记录解析错误,告警时间
+XDR告警,alert_name,rule_or_event_name,原样保留,是,使用未命名告警并标记数据不足,告警名称
+XDR告警,alert_grade,severity,严重映射为critical；高危映射为high；中危映射为medium；低危映射为low,是,默认medium,基础严重性映射
+XDR告警,alert_name加alert_grade,severity,WebShell蚁剑工具文件管理且高危映射为critical并覆盖基础高危映射,是,不适用,WebShell固定样例专项升级规则
+XDR告警,alert_classification,event_type,WebShell映射为webshell；未授权访问映射为unauthorized_access；其余映射为other,是,映射为other,统一事件分类
+XDR告警,source_ip,source_ip,IPv4或IPv6字符串校验,是,使用null并标记数据不足,来源地址
+XDR告警,destination_ip,destination_ip,IPv4或IPv6字符串校验,否,destination_ip缺失时回退为host_ip,目的地址
+XDR告警,destination_ip,affected_asset,优先使用destination_ip作为受影响资产,是,destination_ip缺失时回退为host_ip,受影响资产
+XDR告警,host_ip,destination_ip,仅当destination_ip缺失时作为回退值,否,设为null,目的地址回退字段
+XDR告警,host_ip,affected_asset,仅当destination_ip缺失时作为回退值,否,设为null,受影响资产回退字段
+XDR告警,data_source,source_device_type,XDR保持为XDR,是,使用XDR,来源设备类型
+XDR告警,sample_source,evidence_source,XDR 安全告警分析映射为xdr_security_alert,否,使用xdr_security_alert,固定样例来源校验
+XDR告警,source_device_name,source_device_name,原样保留例如XDR,否,回退为data_source；仍缺失时使用XDR,来源设备名称
+固定回归样例,sample_source,evidence_source,固定回归样例映射为fixed_regression_fixture,否,使用fixed_regression_fixture,固定样例来源校验
+固定回归样例,sample_nature,sample_nature,保持platform_derived或synthetic_regression,是,拒绝进入对外真实数据展示,样例数据性质
