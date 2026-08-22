@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sec_agent.domain.models import (
     ApprovalStatus,
+    BusinessStatus,
     InvestigationReport,
     InvestigationStep,
     SecurityEvent,
@@ -23,6 +24,8 @@ class DeepInvestigationAgent:
         steps: list[InvestigationStep] = []
         request = ToolRequest(
             trace_id=trace_id,
+            event_id=event.event_id,
+            stage=BusinessStatus.INVESTIGATING,
             tool_name="evidence_lookup",
             action_name="query_related_evidence",
             params={
@@ -35,6 +38,8 @@ class DeepInvestigationAgent:
             idempotency_key=f"{event.event_id}:evidence_lookup:1",
             risk_level=ToolRiskLevel.LOW,
             approval_status=ApprovalStatus.NOT_REQUIRED,
+            timeout_seconds=30,
+            max_attempts=1,
         )
         result = self._platform.run_tool(request)
         steps.append(

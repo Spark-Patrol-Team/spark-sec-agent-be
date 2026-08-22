@@ -39,6 +39,8 @@ class ResponseExecutionService:
     def execute(self, trace_id: str, event_id: str, plan: ResponsePlan, idempotency_key: str) -> ExecutionResult:
         request = ToolRequest(
             trace_id=trace_id,
+            event_id=event_id,
+            stage=BusinessStatus.EXECUTING,
             tool_name="stateful_response_mock",
             action_name=plan.action,
             params={"event_id": event_id, "target": plan.target},
@@ -47,6 +49,8 @@ class ResponseExecutionService:
             idempotency_key=idempotency_key,
             risk_level=plan.risk_level,
             approval_status=ApprovalStatus.APPROVED,
+            timeout_seconds=30,
+            max_attempts=1,
         )
         result = self._platform.run_tool(request)
         return ExecutionResult(

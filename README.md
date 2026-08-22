@@ -67,5 +67,5 @@ src/sec_agent/
 
 ## 文档入口
 
-- [系统开发与运行说明](docs/系统开发与运行说明.md)
-- [仓库提交规则](docs/仓库提交规则.md)
+- [系统开发与运行说明](docs/deliverables/系统开发与运行说明.md)
+- [仓库提交规则](docs/deliverables/仓库提交规则.md)

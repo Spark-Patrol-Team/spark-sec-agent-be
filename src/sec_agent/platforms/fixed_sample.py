@@ -6,8 +6,10 @@ from sec_agent.domain.models import (
     AlertRecord,
     EvidenceRef,
     ToolCallStatus,
+    ToolErrorType,
     ToolRequest,
     ToolResult,
+    ToolSideEffectType,
     utc_now,
 )
 
@@ -88,29 +90,59 @@ class FixedSampleAdapter:
         if request.tool_name == "evidence_lookup":
             summary = "已查询固定样例证据，确认上传文件、HTTP 访问和进程链存在关联"
             status = ToolCallStatus.SUCCESS
+            evidence_refs = ["evidence-http-001", "evidence-proc-001"]
+            output_preview = {"matched_evidence_count": 2}
             external_side_effect = False
+            side_effect_type = ToolSideEffectType.READ_ONLY
+            error_type = None
         elif request.tool_name == "stateful_response_mock":
             self._actions[request.idempotency_key] = "executed"
             summary = "有状态 Mock 处置已记录"
             status = ToolCallStatus.SUCCESS
+            evidence_refs = []
+            output_preview = {"action_status": "executed"}
             external_side_effect = True
+            side_effect_type = ToolSideEffectType.STATE_CHANGE
+            error_type = None
         elif request.tool_name == "response_verify":
             summary = "验证固定样例 Mock 处置状态为已执行"
             status = ToolCallStatus.SUCCESS
+            evidence_refs = [f"fixed://actions/{request.idempotency_key}"]
+            output_preview = {"action_status": self.query_action_status(request.idempotency_key)}
             external_side_effect = False
+            side_effect_type = ToolSideEffectType.READ_ONLY
+            error_type = None
         else:
             summary = f"固定样例暂不支持工具: {request.tool_name}"
             status = ToolCallStatus.FAILED
+            evidence_refs = []
+            output_preview = {}
+            external_side_effect = False
+            side_effect_type = ToolSideEffectType.NONE
+            error_type = ToolErrorType.UNSUPPORTED_TOOL
 
         ended_at = utc_now()
         return ToolResult(
             call_id=request.call_id,
+            trace_id=request.trace_id,
+            event_id=request.event_id,
+            tool_name=request.tool_name,
+            action_name=request.action_name,
+            idempotency_key=request.idempotency_key,
             status=status,
             summary=summary,
             raw_result_ref=raw_result_ref,
+            evidence_refs=evidence_refs,
+            output_refs=[raw_result_ref],
+            output_preview=output_preview,
             retryable=status != ToolCallStatus.SUCCESS,
-            error_type=None if status == ToolCallStatus.SUCCESS else "unsupported_tool",
+            error_type=error_type,
+            error_message=None if status == ToolCallStatus.SUCCESS else summary,
+            platform_status=status,
             external_side_effect=external_side_effect,
+            side_effect_type=side_effect_type,
+            attempt=request.attempt,
+            max_attempts=request.max_attempts,
             started_at=started_at,
             ended_at=ended_at,
             duration_ms=max(1, int((ended_at - started_at).total_seconds() * 1000)),
@@ -118,4 +150,3 @@ class FixedSampleAdapter:
 
     def query_action_status(self, idempotency_key: str) -> str:
         return self._actions.get(idempotency_key, "not_found")
-

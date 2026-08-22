@@ -60,6 +60,21 @@ class ToolCallStatus(StrEnum):
     PARTIAL_SUCCESS = "partial_success"
 
 
+class ToolErrorType(StrEnum):
+    AUTH = "auth"
+    TIMEOUT = "timeout"
+    VALIDATION = "validation"
+    UNSUPPORTED_TOOL = "unsupported_tool"
+    PLATFORM_ERROR = "platform_error"
+    UNKNOWN = "unknown"
+
+
+class ToolSideEffectType(StrEnum):
+    NONE = "none"
+    READ_ONLY = "read_only"
+    STATE_CHANGE = "state_change"
+
+
 class ExecutionMode(StrEnum):
     MOCK = "mock"
     REAL = "real"
@@ -123,24 +138,50 @@ class TriageResult(BaseModel):
 class ToolRequest(BaseModel):
     call_id: str = Field(default_factory=lambda: str(uuid4()))
     trace_id: str
+    event_id: str
+    stage: BusinessStatus
     tool_name: str
     action_name: str
     params: dict[str, Any]
+    param_refs: list[str] = Field(default_factory=list)
     reason: str
     dry_run: bool = True
     idempotency_key: str
     risk_level: ToolRiskLevel
     approval_status: ApprovalStatus = ApprovalStatus.NOT_REQUIRED
+    approval_id: str | None = None
+    requested_at: datetime = Field(default_factory=utc_now)
+    timeout_seconds: int = Field(default=30, ge=1)
+    attempt: int = Field(default=1, ge=1)
+    max_attempts: int = Field(default=1, ge=1)
+    sensitive_param_keys: list[str] = Field(default_factory=list)
+
+    def audit_params(self) -> dict[str, Any]:
+        sensitive_keys = set(self.sensitive_param_keys)
+        return {key: "***" if key in sensitive_keys else value for key, value in self.params.items()}
 
 
 class ToolResult(BaseModel):
     call_id: str
+    trace_id: str
+    event_id: str
+    tool_name: str
+    action_name: str
+    idempotency_key: str
     status: ToolCallStatus
     summary: str
     raw_result_ref: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    output_refs: list[str] = Field(default_factory=list)
+    output_preview: dict[str, Any] = Field(default_factory=dict)
     retryable: bool = False
-    error_type: str | None = None
+    error_type: ToolErrorType | None = None
+    error_message: str | None = None
+    platform_status: str | None = None
     external_side_effect: bool = False
+    side_effect_type: ToolSideEffectType = ToolSideEffectType.NONE
+    attempt: int = Field(default=1, ge=1)
+    max_attempts: int = Field(default=1, ge=1)
     started_at: datetime
     ended_at: datetime
     duration_ms: int
@@ -251,4 +292,3 @@ class EventListItem(BaseModel):
     status: BusinessStatus
     source: str
     summary: str | None = None
-
