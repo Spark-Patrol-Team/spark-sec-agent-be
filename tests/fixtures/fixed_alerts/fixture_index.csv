@@ -1,0 +1,4 @@
+sample_id,scenario,sample_nature,raw_source,expected_event_type,expected_severity,expected_risk_score_seed,primary_test_focus,notes
+FIX-STA-SQLI-001,STA来源SQL注入,platform_derived,XDR 日志检索,sql_injection,high,80,"解析；风险研判；证据补全；审批处置建议；前端展示","推荐作为第一版平台字段派生主链样例"
+FIX-XDR-WEBSHELL-001,XDR WebShell蚁剑工具文件管理,platform_derived,XDR 安全告警分析,webshell,critical,95,"高危研判；主机处置审批；人工接管；告警详情展示","高危告警因 WebShell 专项规则升级为 critical"
+FIX-STA-LATERAL-001,内网横向扫描与SMB横向访问,synthetic_regression,固定回归样例,lateral_movement,medium,65,"横向移动知识包；调查流程；回归测试","仅用于开发测试；不得作为实时平台记录对外展示"
