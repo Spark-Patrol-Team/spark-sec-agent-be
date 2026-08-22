@@ -108,6 +108,7 @@ class JsonlPlatformTest(unittest.TestCase):
         self.assertEqual(ctx.triage.risk_score, 95)
         self.assertIsNotNone(ctx.response)
         self.assertEqual(ctx.response.plan.target, "198.51.100.11")
+        self.assertEqual(ctx.response.plan.risk_level, ToolRiskLevel.CRITICAL)
 
         ctx = orchestrator.approve(
             ctx.event_id,
@@ -120,6 +121,7 @@ class JsonlPlatformTest(unittest.TestCase):
         )
 
         self.assertEqual(ctx.status, BusinessStatus.COMPLETED)
+        self.assertEqual(ctx.response.execution.status, ToolCallStatus.SUCCESS)
         self.assertIsNotNone(ctx.response.verification)
         self.assertEqual(ctx.response.verification.evidence_refs, ["jsonl://actions/jsonl-approval-test-001"])
 

@@ -1,6 +1,6 @@
 import unittest
 
-from sec_agent.domain.models import ApprovalDecision, BusinessStatus, StartRunRequest
+from sec_agent.domain.models import ApprovalDecision, BusinessStatus, StartRunRequest, ToolCallStatus, ToolRiskLevel
 from sec_agent.domain.state_machine import InvalidStatusTransition, StateMachine
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.services.orchestrator import Orchestrator
@@ -31,6 +31,7 @@ class StateFlowTest(unittest.TestCase):
         self.assertIsNotNone(ctx.investigation)
         self.assertIsNotNone(ctx.response)
         self.assertTrue(ctx.response.plan.approval_required)
+        self.assertEqual(ctx.response.plan.risk_level, ToolRiskLevel.HIGH)
 
     def test_approval_executes_and_verifies(self) -> None:
         ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
@@ -51,6 +52,7 @@ class StateFlowTest(unittest.TestCase):
         self.assertEqual(statuses[-1], BusinessStatus.COMPLETED)
         self.assertIsNotNone(ctx.response.execution)
         self.assertIsNotNone(ctx.response.verification)
+        self.assertEqual(ctx.response.execution.status, ToolCallStatus.SUCCESS)
 
     def test_duplicate_approval_is_idempotent(self) -> None:
         ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
