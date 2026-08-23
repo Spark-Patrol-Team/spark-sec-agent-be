@@ -31,19 +31,27 @@
 ## 当前代码入口
 
 - 标准化 JSONL 契约模型：`src/sec_agent/domain/models.py` 中的 `NormalizedAlertRecord`。
-- JSONL 平台适配器：`src/sec_agent/platforms/jsonl_sample.py`。
-- 平台后端装配：`src/sec_agent/bootstrap/container.py`，通过 `PLATFORM_BACKEND=jsonl_sample` 启用。
-- 主链接入点：`src/sec_agent/services/ingest.py` 仍只负责调用平台适配器，不承载 JSONL 字段解析。
+- 原始 JSONL 标准化器：`src/sec_agent/platforms/raw_jsonl.py` 中的 `RawJsonlNormalizer`，负责 STA/XDR 原始字段映射、Asia/Shanghai 时间补齐、证据引用、严重性专项规则和资产回退。
+- JSONL 平台适配器：`src/sec_agent/platforms/jsonl_sample.py`。`input_mode=normalized` 直接读取 `normalized_alerts.jsonl`；`input_mode=raw` 读取 `raw_alerts.jsonl` 并调用标准化器，之后统一转换为 `AlertRecord`。
+- 平台后端装配：`src/sec_agent/bootstrap/container.py`，通过 `PLATFORM_BACKEND=jsonl_sample` 启用，并用 `JSONL_INPUT_MODE=normalized|raw` 显式选择输入路径。
+- 主链接入点：`src/sec_agent/services/ingest.py` 只负责调用平台适配器；字段解析保留在 `platforms/`，不在编排层重复实现。
+- 简单关联服务：`src/sec_agent/services/correlation.py`。同一主链候选告警要求事件类型、受影响资产、来源设备一致，且时间跨度不超过 15 分钟；服务输出关联依据、时间范围、实体、压缩前数量和关联后事件数。
 - 风险研判接入：`src/sec_agent/services/triage.py` 会使用 `severity` 和 `risk_score_seed`，确保标准化样例中的确认分值不被主链降级。
 
 ## 本地联调方式
 
 ```bash
-PLATFORM_BACKEND=jsonl_sample PYTHONPATH=src python -m sec_agent.scripts.run_flow
+# 直接读取已标准化样例
+APP_ENV=local STORAGE_BACKEND=memory PLATFORM_BACKEND=jsonl_sample JSONL_INPUT_MODE=normalized \
+PYTHONPATH=src python -m sec_agent.scripts.run_flow
+
+# 读取 raw_alerts.jsonl，并在接入层完成标准化后进入相同主链
+APP_ENV=local STORAGE_BACKEND=memory PLATFORM_BACKEND=jsonl_sample JSONL_INPUT_MODE=raw \
+PYTHONPATH=src python -m sec_agent.scripts.run_flow
 ```
 
-如需指定接口调用样例，`source` 使用 `jsonl_sample`，`sample_id` 使用 `normalized_alerts.jsonl` 中的 `event_id`，例如 `FIX-XDR-WEBSHELL-001`。
+如需指定接口调用样例，`source` 使用 `jsonl_sample`，`sample_id` 使用 `normalized_alerts.jsonl` 或 `raw_alerts.jsonl` 中的 `event_id/sample_id`，例如 `FIX-XDR-WEBSHELL-001`。原始输入路径会将 `raw_record_ref` 定位为 `jsonl://fixed_alerts/raw_alerts.jsonl#<sample_id>`，以保留原始证据引用。
 
 ## 最小验收条件
 
-三条固定样例均应能进入 `AlertRecord`。SQL 注入样例必须保持 `severity=high`、`source_device_name=STA_001` 和 `affected_asset=198.51.100.20`。WebShell 样例必须保持 `severity=critical`、`risk_score_seed=95`、`source_device_name=XDR` 和 `affected_asset=198.51.100.11`。解析、映射、字段或枚举不兼容时必须返回可读错误，不得静默丢弃记录。
+三条固定样例均应能从 `normalized` 与 `raw` 两条输入路径进入 `AlertRecord`，且标准化结果一致。SQL 注入样例必须保持 `severity=high`、`source_device_name=STA_001` 和 `affected_asset=198.51.100.20`。WebShell 样例必须保持 `severity=critical`、`risk_score_seed=95`、`source_device_name=XDR` 和 `affected_asset=198.51.100.11`。同一 WebShell 活动的重复告警必须在 15 分钟窗口内压缩为 1 个 `SecurityEvent`，并输出明确关联依据。解析、映射、字段或枚举不兼容时必须返回可读错误，不得静默丢弃记录。

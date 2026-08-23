@@ -18,6 +18,7 @@ class Settings(BaseModel):
     storage_backend: Literal["memory", "mysql"] = "memory"
     platform_backend: Literal["fixed_sample", "jsonl_sample"] = "fixed_sample"
     jsonl_sample_dir: Path = Path("tests/fixtures/fixed_alerts")
+    jsonl_input_mode: Literal["normalized", "raw"] = "normalized"
     mysql_dsn: str = Field(
         default="mysql+pymysql://sec_agent:sec_agent@127.0.0.1:3306/sec_agent?charset=utf8mb4"
     )
@@ -36,6 +37,7 @@ def load_settings() -> Settings:
         storage_backend=os.getenv("STORAGE_BACKEND", "memory"),
         platform_backend=os.getenv("PLATFORM_BACKEND", "fixed_sample"),
         jsonl_sample_dir=resolve_project_path(os.getenv("JSONL_SAMPLE_DIR", "tests/fixtures/fixed_alerts")),
+        jsonl_input_mode=os.getenv("JSONL_INPUT_MODE", "normalized"),
         mysql_dsn=os.getenv("MYSQL_DSN") or build_mysql_dsn(),
         mysql_auto_create_schema=parse_bool(os.getenv("MYSQL_AUTO_CREATE_SCHEMA", "true")),
     )
