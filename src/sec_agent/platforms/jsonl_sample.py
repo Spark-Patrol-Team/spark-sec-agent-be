@@ -18,6 +18,7 @@ from sec_agent.domain.models import (
     utc_now,
 )
 from sec_agent.platforms.mock_state import StatefulMockLedger
+from sec_agent.platforms.raw_jsonl import RawJsonlNormalizer
 
 
 class JsonlAlertParseError(ValueError):
@@ -27,10 +28,16 @@ class JsonlAlertParseError(ValueError):
 class JsonlSampleAdapter:
     """读取标准化 JSONL 告警，并适配为主流程使用的 AlertRecord。"""
 
-    def __init__(self, fixture_dir: str | Path) -> None:
+    def __init__(self, fixture_dir: str | Path, input_mode: str = "normalized") -> None:
         self._fixture_dir = self._resolve_fixture_dir(fixture_dir)
+        if input_mode not in {"normalized", "raw"}:
+            raise ValueError(f"不支持的 JSONL 输入模式: {input_mode}")
+        self._input_mode = input_mode
         self._normalized_file = self._fixture_dir / "normalized_alerts.jsonl"
         self._ledger = StatefulMockLedger()
+        self._raw_file = self._fixture_dir / "raw_alerts.jsonl"
+        self._normalizer = RawJsonlNormalizer()
+        self._actions: dict[str, str] = {}
         self._normalized_cache: list[NormalizedAlertRecord] | None = None
         self._alert_index: dict[str, AlertRecord] | None = None
 
@@ -136,6 +143,13 @@ class JsonlSampleAdapter:
         if self._normalized_cache is not None:
             return self._normalized_cache
 
+        if self._input_mode == "raw":
+            try:
+                self._normalized_cache = self._normalizer.load_jsonl(self._raw_file)
+            except ValueError as exc:
+                raise JsonlAlertParseError(str(exc)) from exc
+            return self._normalized_cache
+
         if not self._normalized_file.exists():
             raise FileNotFoundError(f"JSONL 标准化告警文件不存在: {self._normalized_file}")
 
@@ -208,7 +222,10 @@ class JsonlSampleAdapter:
                 )
                 for field_name in record.evidence_refs
             ],
-            raw_record_ref=f"jsonl://fixed_alerts/normalized_alerts.jsonl#{record.event_id}",
+            raw_record_ref=(
+                f"jsonl://fixed_alerts/{'raw_alerts.jsonl' if self._input_mode == 'raw' else 'normalized_alerts.jsonl'}"
+                f"#{record.event_id}"
+            ),
         )
 
     def _collect_evidence_refs(self, alert_refs: list[str]) -> list[str]:

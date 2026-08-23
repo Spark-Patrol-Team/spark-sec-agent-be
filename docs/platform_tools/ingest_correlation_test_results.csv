@@ -1,0 +1,11 @@
+result_id,test_scope,input_or_command,expected_result,actual_result,status,notes
+R-01,raw_to_normalized_parity,raw_alerts.jsonl -> RawJsonlNormalizer,3条标准化输出与normalized_alerts.jsonl逐字段一致,3条输出逐字段一致,PASS,覆盖STA SQL注入、XDR WebShell、STA横向移动
+R-02,webshell_override,FIX-XDR-WEBSHELL-001,critical/95且affected_asset为198.51.100.11,critical/95且affected_asset为198.51.100.11,PASS,仅命名蚁剑高危样例触发专项覆盖
+R-03,destination_fallback,destination_ip缺失的XDR变体,使用host_ip回退且通用高危为high/80,使用host_ip回退且通用高危为high/80,PASS,验证destination优先和host回退
+R-04,raw_evidence_reference,raw输入模式,raw_record_ref定位raw_alerts.jsonl,定位jsonl://fixed_alerts/raw_alerts.jsonl#sample_id,PASS,保留原始记录引用
+R-05,duplicate_compression,两条相同WebShell告警间隔2分钟,alert_count_before=2且event_count_after=1,alert_count_before=2且event_count_after=1,PASS,关联依据含类型资产设备和时间窗口
+R-06,unrelated_guard,WebShell与横向移动告警,拒绝合并并给出可读原因,返回事件类型不一致的拆分异常,PASS,避免无关告警错误合并
+R-07,raw_minimal_flow,FIX-XDR-WEBSHELL-001 raw输入,审批前APPROVAL_REQUIRED审批后COMPLETED,状态依次到达APPROVAL_REQUIRED和COMPLETED,PASS,Mock处置和独立验证已串通
+R-08,targeted_tests,PYTHONPATH=src python3 -m unittest tests.test_raw_jsonl_ingest_and_correlation tests.test_jsonl_platform,12个测试通过,12个测试通过,PASS,新增测试加既有JSONL平台测试
+R-09,full_suite,隔离外部环境变量后unittest discover -s tests,全部测试通过,26个测试通过,PASS,宿主APP_ENV=PROD会干扰既有配置测试故已隔离
+R-10,format_check,git diff --check,无空白符格式错误,无输出,PASS,提交前格式检查通过
