@@ -98,11 +98,12 @@ class DeepInvestigationAgent:
             for tc in assistant["tool_calls"]:
                 if tool_call_count >= max_calls:
                     break
-                name = tc["function"]["name"]
+                # LLM 使用的是 ASCII 内部别名，解析回真实工具名执行并留痕
+                real_name = self.tools.resolve(tc["function"]["name"])
                 args = self._safe_json_loads(tc["function"]["arguments"])
-                result = self.tools.call(name, args)
+                result = self.tools.call(real_name, args)
                 tool_records.append({
-                    "tool": name,
+                    "tool": real_name,
                     "input": args,
                     "output": result.to_str(),
                     "status": result.status,

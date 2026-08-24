@@ -27,7 +27,7 @@
 ## 执行方法
 
 ```bash
-python -m unittest test.test_agent -v
+PYTHONPATH=src python -m unittest tests.test_investigation_agent -v
 ```
 
 ## 结果
@@ -37,8 +37,8 @@ python -m unittest test.test_agent -v
 
 ## 样例数据性质
 
-- `test/sample_event.json`：人工构造的 WebShell 固定样例（Mock），非真实平台数据。
-- `deep_agent/tools/mock.py` 内置数据：人工构造，仅用于演示调查闭环。
+- `tests/fixtures/investigation/sample_event.json`：人工构造的 WebShell 固定样例（Mock），非真实平台数据。
+- `src/sec_agent/deep_agent/tools/mock.py` 内置数据：人工构造，仅用于演示调查闭环。
 
 ## 已知问题
 

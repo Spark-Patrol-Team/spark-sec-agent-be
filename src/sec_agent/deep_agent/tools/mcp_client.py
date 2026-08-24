@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""最小 MCP 客户端（streamable HTTP 传输），连接深信服 MCP 服务。
+"""最小 MCP 客户端（streamable HTTP 传输），连接深信服 FastGPT 托管的 MCP 服务。
 
 不依赖官方 mcp SDK，用 requests 实现 JSON-RPC 2.0 over HTTP。
-说明：四个集群内部地址（mcp-server.platform.svc.cluster.local）在本地无法连通，
-会自动连接失败并跳过；公网「漏洞信息查询」配置 MCP_API_KEY 后可用。
+说明：MCP 地址从环境变量 MCP_URLS 或本地配置 mcp_servers.local.json 读取（真实地址不入库）；
+服务走 HTTPS + 自签证书/IP 直连，默认关闭证书校验。
 """
 from __future__ import annotations
 
@@ -11,9 +11,13 @@ import json
 from typing import Any, Optional
 
 import requests
+import urllib3
 
 from .base import Tool, ToolResult
 from ..config import ToolConfig
+
+# 内网自签证书会触发 InsecureRequestWarning，显式关闭避免刷屏
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def _parse_body(resp: requests.Response) -> Any:
@@ -36,7 +40,7 @@ def _parse_body(resp: requests.Response) -> Any:
 
 
 class MCPClient:
-    def __init__(self, url: str, api_key: str = "", timeout: int = 20):
+    def __init__(self, url: str, api_key: str = "", timeout: int = 20, verify_ssl: bool = False):
         self.url = url
         self.api_key = api_key
         self.timeout = timeout
@@ -44,6 +48,8 @@ class MCPClient:
         # 禁用系统代理：MCP 服务为内网直连/公网直连，走本地 Clash 等代理会 ReadTimeout（实测）。
         self._session = requests.Session()
         self._session.trust_env = False
+        # 深信服 MCP 为 HTTPS 自签证书/IP 直连，默认不校验证书（verify_ssl 可开）
+        self._session.verify = verify_ssl
 
     def _headers(self) -> dict:
         h = {
@@ -121,9 +127,18 @@ class MCPTool(Tool):
 def build_mcp_tools(config: ToolConfig, on_error=None) -> list[Tool]:
     """遍历配置的 MCP 地址，连接并列出工具，包装为统一 Tool。连不上的跳过。"""
     tools: list[Tool] = []
+    if not config.mcp_urls:
+        if on_error:
+            on_error("[warn] 未配置深信服 MCP 地址（MCP_URLS 或 mcp_servers.local.json），跳过真实 MCP 工具")
+        return tools
     for label, url in config.mcp_urls.items():
         try:
-            client = MCPClient(url, api_key=config.mcp_api_key, timeout=config.mcp_timeout)
+            client = MCPClient(
+                url,
+                api_key=config.mcp_api_key,
+                timeout=config.mcp_timeout,
+                verify_ssl=config.mcp_verify_ssl,
+            )
             client.initialize()
             for t in client.list_tools():
                 tools.append(MCPTool(

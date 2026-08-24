@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """深度调查 Agent 命令行入口。
 
-用法：
-  python -m deep_agent.main --event test/sample_event.json
-  python -m deep_agent.main --event test/sample_event.json --output report.json
+用法（在项目根目录，需 src 在导入路径上）：
+  PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json
+  PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
 
 依赖环境变量（可选，未设置时走 Mock + 需另配 LLM）：
-  LLM_BASE_URL   LLM 接口地址（OpenAI 兼容），如 https://api.deepseek.com
-  LLM_API_KEY    LLM 密钥
-  LLM_MODEL      模型名，如 deepseek-chat
-  TOOL_MODE      mock / mcp / auto（默认 auto）
-  MCP_API_KEY    深信服 MCP 服务 apikey（漏洞信息查询等需要）
+  LLM_BASE_URL     LLM 接口地址（OpenAI 兼容），如 https://api.deepseek.com
+  LLM_API_KEY      LLM 密钥
+  LLM_MODEL        模型名，如 deepseek-chat
+  TOOL_MODE        mock / mcp / auto（默认 auto）
+  MCP_URLS         深信服 MCP 地址（JSON）；未设时读 sec_agent/deep_agent/mcp_servers.local.json
+  MCP_API_KEY      深信服 MCP 服务 apikey（漏洞信息查询等需要，可选）
+  MCP_VERIFY_SSL   是否校验 MCP HTTPS 证书（自签证书默认 0 关闭，设 1 开启）
 """
 from __future__ import annotations
 
@@ -58,9 +60,10 @@ def main(argv=None) -> int:
     tools = build_tools(config)
 
     if args.list_tools:
-        print("可用工具：")
+        print("可用工具（真实名 -> LLM 内部别名）：")
         for n in tools.names():
-            print(" -", n)
+            alias = tools.alias_of(n)
+            print(f" - {n}  ->  {alias}" if alias != n else f" - {n}")
         return 0
 
     llm = LLMClient(config.llm)

@@ -19,6 +19,15 @@ env/
 .env.*
 !.env.example
 
+# 深信服 MCP 本地地址（真实内网地址，不入库）
+mcp_servers.local.json
+
+# LLM API 本地配置（含 apikey，不入库）
+llm_config.local.json
+
+# 深信服 MCP 工具原始文档（真实内网地址，不入库）
+tool(不能进行上传)/
+
 # Logs and temporary files
 logs/
 *.log
@@ -29,4 +38,7 @@ temp/
 .DS_Store
 .idea/
 .vscode/
+
+# 深度调查运行产物（调查报告输出，不入库）
+report.json
 

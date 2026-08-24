@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 """深度调查 Agent 测试。
 
-运行（在项目根目录）：
-  python -m unittest test.test_agent -v
-  或
-  python test/test_agent.py
+运行（在项目根目录，需 src 在导入路径上）：
+  PYTHONPATH=src python -m unittest tests.test_investigation_agent -v
 
 说明：单元测试不依赖 LLM；集成测试需要配置 LLM_API_KEY 后才会执行。
 """
@@ -12,20 +10,28 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from sec_agent.deep_agent.models import SecurityEventInput, InvestigationReport
+from sec_agent.deep_agent.tools.mock import build_mock_tools
+from sec_agent.deep_agent.tools.base import ALIAS_MAP, Tool, ToolRegistry, ToolResult
+from sec_agent.deep_agent.agent import DeepInvestigationAgent
+from sec_agent.deep_agent.config import load_config
+from sec_agent.deep_agent.llm import LLMClient
 
-from deep_agent.models import SecurityEventInput, InvestigationReport
-from deep_agent.tools.mock import build_mock_tools
-from deep_agent.tools.base import ToolRegistry
-from deep_agent.agent import DeepInvestigationAgent
-from deep_agent.config import load_config
-from deep_agent.llm import LLMClient
+SAMPLE = Path(__file__).resolve().parent / "fixtures" / "investigation" / "sample_event.json"
 
-SAMPLE = Path(__file__).resolve().parent / "sample_event.json"
+
+def _make_tool(name: str, description: str = "测试工具") -> Tool:
+    """构造一个可调用的最小工具（别名机制测试用）。"""
+    class _T(Tool):
+        def call(self, params):
+            return ToolResult(summary=f"called:{self.name}")
+    _T.name = name
+    _T.description = description
+    _T.parameters = {"type": "object", "properties": {}}
+    return _T()
 
 
 class TestModels(unittest.TestCase):
@@ -66,6 +72,51 @@ class TestMockTools(unittest.TestCase):
 
     def test_mock_tools_registered(self):
         self.assertGreaterEqual(len(self.reg.names()), 6)
+
+
+class TestToolAlias(unittest.TestCase):
+    """内部别名：含中文名的 MCP 工具在发给 LLM 前映射为 ASCII，调用时还原。"""
+
+    def test_ascii_tool_keeps_name(self):
+        reg = ToolRegistry()
+        reg.register(_make_tool("query_asset"))
+        self.assertEqual(reg.schemas()[0]["function"]["name"], "query_asset")
+        self.assertEqual(reg.resolve("query_asset"), "query_asset")
+
+    def test_chinese_tool_aliased_and_resolved(self):
+        reg = ToolRegistry()
+        real = "cybersec_攻击状态检测"
+        reg.register(_make_tool(real))
+        schema_name = reg.schemas()[0]["function"]["name"]
+        # schema 名必须符合 OpenAI 函数名模式
+        self.assertRegex(schema_name, r"^[a-zA-Z0-9_-]+$")
+        self.assertNotEqual(schema_name, real)
+        # 别名能解析回真实名，且用别名调用能真正执行到对应工具
+        self.assertEqual(reg.resolve(schema_name), real)
+        self.assertEqual(reg.call(schema_name, {}).summary, f"called:{real}")
+
+    def test_unknown_tool_still_fails(self):
+        reg = ToolRegistry()
+        reg.register(_make_tool("query_asset"))
+        self.assertEqual(reg.call("no_such_tool", {}).status, "failed")
+
+    def test_alias_map_consistency(self):
+        # 收录的别名必须匹配 OpenAI 函数名模式且互不冲突
+        self.assertEqual(len(ALIAS_MAP), len(set(ALIAS_MAP.values())))
+        for alias in ALIAS_MAP.values():
+            self.assertRegex(alias, r"^[a-zA-Z0-9_-]+$")
+        # 映射表里的真实名必须是含中文（否则无需映射）
+        for real in ALIAS_MAP:
+            self.assertNotRegex(real, r"^[a-zA-Z0-9_-]+$")
+
+    def test_mock_schemas_ascii_unique(self):
+        reg = ToolRegistry()
+        for t in build_mock_tools():
+            reg.register(t)
+        names = [s["function"]["name"] for s in reg.schemas()]
+        for n in names:
+            self.assertRegex(n, r"^[a-zA-Z0-9_-]+$")
+        self.assertEqual(len(names), len(set(names)))
 
 
 class TestAgentHelpers(unittest.TestCase):
