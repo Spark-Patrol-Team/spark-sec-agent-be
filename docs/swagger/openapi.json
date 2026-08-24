@@ -495,6 +495,9 @@
             "type": "boolean",
             "title": "Executed"
           },
+          "status": {
+            "$ref": "#/components/schemas/ToolCallStatus"
+          },
           "mode": {
             "$ref": "#/components/schemas/ExecutionMode"
           },
@@ -526,6 +529,7 @@
         "type": "object",
         "required": [
           "executed",
+          "status",
           "mode",
           "platform_status",
           "idempotency_key"
@@ -1252,7 +1256,8 @@
         "enum": [
           "low",
           "medium",
-          "high"
+          "high",
+          "critical"
         ],
         "title": "ToolRiskLevel"
       },

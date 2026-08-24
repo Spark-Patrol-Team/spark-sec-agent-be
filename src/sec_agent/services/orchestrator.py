@@ -85,7 +85,7 @@ class Orchestrator:
             if ctx.investigation.needs_human:
                 return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "调查证据不足，需要人工接管")
 
-            plan = self._decision.build_plan(ctx.investigation)
+            plan = self._decision.build_plan(ctx.investigation, ctx.triage)
             if plan is None:
                 return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "未形成可自动执行的处置方案")
 
