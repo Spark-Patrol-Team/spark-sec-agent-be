@@ -569,6 +569,86 @@ Agent
 
 XDR返回的事件、告警、资产数据具体字段是什么）
 
+---
+
+# 实现结构（对齐 sec_agent.deep_agent 代码）
+
+第一版实现落地为 `sec_agent.deep_agent` 子包，模块与设计对应关系：
+
+| 设计环节 | 代码位置 |
+|----------|----------|
+| 输入（`SecurityEventInput`） | `src/sec_agent/deep_agent/models.py` |
+| 输出（`InvestigationReport`） | `src/sec_agent/deep_agent/models.py` |
+| 调查闭环 / 停止条件 / 人工接管 | `src/sec_agent/deep_agent/agent.py`（`SYSTEM_PROMPT` + `investigate`） |
+| 工具抽象与注册 | `src/sec_agent/deep_agent/tools/base.py` |
+| 真实 MCP 工具 | `src/sec_agent/deep_agent/tools/mcp_client.py` |
+| Mock 工具（MVP 兜底） | `src/sec_agent/deep_agent/tools/mock.py` |
+| LLM 驱动 | `src/sec_agent/deep_agent/llm.py` |
+| 命令行入口 | `src/sec_agent/deep_agent/main.py` |
+
+安全边界在代码中的落点：
+
+- 不直接推进业务状态：工具均为只读查询，处置建议仅作为报告字段输出，不自动执行。
+- 不直接绕过工具适配层调用真实平台：统一走 `Tool` / `MCPClient` 抽象。
+- 不执行高风险处置动作：无阻断、隔离、删除等动作实现。
+
+## 工具名与内部别名（LLM 兼容层）
+
+### 背景
+
+深信服 MCP 服务返回的真实工具函数名含中文（如 `cybersec_攻击状态检测`），而 OpenAI 兼容接口（DeepSeek / OpenAI 等）**强制函数名匹配 `^[a-zA-Z0-9_-]+$`**（仅允许英文字母、数字、下划线、中划线）。若把中文名直接作为 function schema 发给 LLM，接口会返回：
+
+```
+400 Invalid 'tools[10].function.name': string does not match pattern '^[a-zA-Z0-9_-]+$'
+```
+
+### 设计：内部别名层
+
+在工具注册表与 LLM 之间加一层别名翻译，对 LLM 完全透明：
+
+```
+深信服 MCP 工具（真实中文函数名）
+        │  register 时按 ALIAS_MAP 映射
+        ▼
+ToolRegistry 内部别名（ASCII，如 cybersec_attack_status_detect）
+        │  schemas() 发别名给 LLM
+        ▼
+LLM 自主调用（只看到 ASCII 别名）
+        │  resolve() 解析回真实名
+        ▼
+真实 MCP 调用执行（工具调用记录留痕真实名）
+```
+
+- 发 schema：`ToolRegistry.schemas()` 使用 `_aliases[真实名]` 作为 `function.name`。
+- 执行调用：`agent.py` 收到 LLM 返回的别名后，先 `tools.resolve(别名)` 还原为真实名，再 `tools.call(真实名, params)` 执行；审计留痕记录真实名。
+- 规则：ASCII 工具名（Mock 与 `vuln_*` 等）别名＝真实名，无需映射；未收录在 `ALIAS_MAP` 的未来中文工具，由 `_auto_alias()` 自动生成去重 ASCII 别名兜底。
+
+代码位置：`src/sec_agent/deep_agent/tools/base.py`（`ALIAS_MAP`、`_auto_alias`、`ToolRegistry.resolve / alias_of / schemas`）、`src/sec_agent/deep_agent/agent.py`（调用前 resolve）。
+
+### 工具与「内部别名」映射关系表
+
+| 真实工具名（深信服 MCP） | 内部别名（发给 LLM） | 所属 MCP 服务 |
+|--------------------------|----------------------|---------------|
+| `cybersec_攻击状态检测` | `cybersec_attack_status_detect` | 检测大模型 |
+| `cybersec_攻击类型检测` | `cybersec_attack_type_detect` | 检测大模型 |
+| `incidents_安全事件相关的查询和统计` | `incidents_query_statistics` | 网络安全数据查询 |
+| `alerts_安全告警相关的查询和统计` | `alerts_query_statistics` | 网络安全数据查询 |
+| `vul_漏洞相关的查询和统计` | `vul_query_statistics` | 网络安全数据查询 |
+| `vul_弱密码相关的查询和统计` | `vul_weak_password_query` | 网络安全数据查询 |
+| `vul_资产关联漏洞数据查询` | `vul_asset_related_query` | 网络安全数据查询 |
+| `assets_资产相关的查询和统计` | `assets_query_statistics` | 网络安全数据查询 |
+| `secgpt_告警事件解读研判` | `secgpt_alert_interpretation` | 运营大模型 |
+| `secgpt_威胁实体的调查分析` | `secgpt_threat_entity_analysis` | 运营大模型 |
+| `dbproxy_事件数据查询工具` | `dbproxy_event_query` | 自由数据查询 |
+| `dbproxy_告警数据查询工具` | `dbproxy_alert_query` | 自由数据查询 |
+| `dbproxy_脆弱性数据查询工具` | `dbproxy_vulnerability_query` | 自由数据查询 |
+| `dbproxy_资产数据查询工具` | `dbproxy_asset_query` | 自由数据查询 |
+| `dbproxy_威胁实体数据查询工具` | `dbproxy_threat_entity_query` | 自由数据查询 |
+
+> 其余工具（Mock 6 个 + 漏洞信息查询 `vuln_*` 4 个）函数名本已是 ASCII，别名＝真实名，不列入上表。映射表与代码中 `ALIAS_MAP` 保持一致，若深信服侧函数名调整需同步更新两处。
+
+主链接入方式见 `development.md` 的「与主链集成状态」。
+
 
 
 
