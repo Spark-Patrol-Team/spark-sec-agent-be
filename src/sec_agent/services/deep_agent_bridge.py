@@ -38,17 +38,22 @@ class DeepAgentBridge:
         return self._to_domain_report(deep_report, triage)
 
     def _load_modules(self) -> dict[str, Any]:
-        try:
-            return {
-                "DeepInvestigationAgent": importlib.import_module("deep_agent.agent").DeepInvestigationAgent,
-                "load_config": importlib.import_module("deep_agent.config").load_config,
-                "LLMClient": importlib.import_module("deep_agent.llm").LLMClient,
-                "SecurityEventInput": importlib.import_module("deep_agent.models").SecurityEventInput,
-                "ToolRegistry": importlib.import_module("deep_agent.tools.base").ToolRegistry,
-                "build_mock_tools": importlib.import_module("deep_agent.tools.mock").build_mock_tools,
-            }
-        except ModuleNotFoundError as exc:
-            raise DeepAgentBridgeUnavailable(f"deep_agent 包未安装或未合入当前仓库: {exc.name}") from exc
+        last_error: Exception | None = None
+        for package in ("deep_agent", "sec_agent.deep_agent"):
+            try:
+                return {
+                    "package": package,
+                    "DeepInvestigationAgent": importlib.import_module(f"{package}.agent").DeepInvestigationAgent,
+                    "load_config": importlib.import_module(f"{package}.config").load_config,
+                    "LLMClient": importlib.import_module(f"{package}.llm").LLMClient,
+                    "SecurityEventInput": importlib.import_module(f"{package}.models").SecurityEventInput,
+                    "ToolRegistry": importlib.import_module(f"{package}.tools.base").ToolRegistry,
+                    "build_mock_tools": importlib.import_module(f"{package}.tools.mock").build_mock_tools,
+                }
+            except (ModuleNotFoundError, AttributeError) as exc:
+                last_error = exc
+                continue
+        raise DeepAgentBridgeUnavailable(f"deep_agent 包未安装或接口不符合桥接契约: {last_error}") from last_error
 
     def _override_config(self, config: Any) -> None:
         tool_mode = os.getenv("DEEP_AGENT_TOOL_MODE")
@@ -62,13 +67,15 @@ class DeepAgentBridge:
             for tool in modules["build_mock_tools"]():
                 registry.register(tool)
         if tool_mode in {"mcp", "auto"}:
-            self._register_mcp_tools(registry, config)
+            self._register_mcp_tools(registry, config, str(modules["package"]), strict=tool_mode == "mcp")
         return registry
 
-    def _register_mcp_tools(self, registry: Any, config: Any) -> None:
+    def _register_mcp_tools(self, registry: Any, config: Any, package: str, strict: bool) -> None:
         try:
-            build_mcp_tools = importlib.import_module("deep_agent.tools.mcp_client").build_mcp_tools
-        except ModuleNotFoundError:
+            build_mcp_tools = importlib.import_module(f"{package}.tools.mcp_client").build_mcp_tools
+        except ModuleNotFoundError as exc:
+            if strict:
+                raise DeepAgentBridgeUnavailable(f"deep_agent MCP 工具不可用: {exc.name}") from exc
             return
         for tool in build_mcp_tools(config.tools, on_error=lambda message: print(message, file=sys.stderr)):
             registry.register(tool)
@@ -110,7 +117,7 @@ class DeepAgentBridge:
         ]
         tool_call_records = data.get("tool_call_records") or []
         return InvestigationReport(
-            conclusion=self._conclusion(triage, data),
+            conclusion=self._conclusion(data.get("verdict") or data.get("conclusion"), triage.verdict),
             final_confidence=self._confidence(data.get("confidence"), triage.confidence),
             timeline=[step.goal for step in steps] or ["deep_agent 子智能体完成深度调查"],
             tool_results=[str(item) for item in tool_call_records],
@@ -141,10 +148,21 @@ class DeepAgentBridge:
         return value if isinstance(value, int) and value >= 1 else index
 
     @staticmethod
-    def _conclusion(triage: TriageResult, data: dict[str, Any]) -> TruthVerdict:
-        if data.get("need_manual_takeover") and triage.verdict is TruthVerdict.BENIGN:
-            return TruthVerdict.UNCERTAIN
-        return triage.verdict
+    def _conclusion(value: Any, fallback: TruthVerdict) -> TruthVerdict:
+        if isinstance(value, TruthVerdict):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            for verdict in TruthVerdict:
+                if lowered == verdict.value:
+                    return verdict
+            if "误报" in value or "良性" in value or "benign" in lowered:
+                return TruthVerdict.BENIGN
+            if "恶意" in value or "攻击" in value or "malicious" in lowered:
+                return TruthVerdict.MALICIOUS
+            if "不确定" in value or "人工" in value or "uncertain" in lowered:
+                return TruthVerdict.UNCERTAIN
+        return fallback
 
     @staticmethod
     def _confidence(value: Any, fallback: float) -> float:

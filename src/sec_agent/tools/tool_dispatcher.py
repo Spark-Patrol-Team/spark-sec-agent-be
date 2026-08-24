@@ -6,9 +6,9 @@ from sec_agent.domain.models import (
     ToolRequest,
     ToolResult,
 )
-from sec_agent.platforms.mock_state import StatefulMockLedger
 from sec_agent.tools.base import ToolDispatcher
 from sec_agent.tools.stateful_mock_tool import (
+    ResponseLedger,
     build_response_verify_handler,
     build_stateful_response_handler,
     handle_stateful_mock,
@@ -22,7 +22,7 @@ ToolHandler = Callable[[ToolRequest], ToolResult]
 def build_platform_tool_dispatcher(
     *,
     evidence_resolver: Callable[[ToolRequest], list[str]],
-    ledger: StatefulMockLedger,
+    ledger: ResponseLedger,
     raw_result_prefix: str,
     action_ref_prefix: str,
     source_label: str,
