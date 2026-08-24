@@ -183,7 +183,7 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 
 ---
 
-## 8. 输出报告说明（report.json）
+## 8. 输出报告说明（report.json）（在根目录生成此文件）
 
 关键字段：
 
