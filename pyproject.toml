@@ -9,6 +9,9 @@ dependencies = [
     "pymysql>=1.1.0,<2.0.0",
     "sqlalchemy>=2.0.0,<3.0.0",
     "uvicorn>=0.30.0,<1.0.0",
+    # 深度调查 Agent 依赖
+    "openai>=1.0.0",       # LLM 客户端（OpenAI 兼容接口）
+    "requests>=2.28.0",    # MCP 客户端（深信服工具调用）
 ]
 
 [project.optional-dependencies]
