@@ -35,7 +35,10 @@ class ResponseDecisionService:
         if report.needs_human or not report.recommended_actions:
             return None
 
-        target = report.affected_objects[0] if report.affected_objects else "unknown-target"
+        if not report.affected_objects:
+            return None
+
+        target = report.affected_objects[0]
         risk_level = self._risk_level_from_triage(triage)
         return ResponsePlan(
             action="stateful_mock_containment",

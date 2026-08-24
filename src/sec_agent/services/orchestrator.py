@@ -26,13 +26,13 @@ from sec_agent.repositories.base import EventRepository
 
 
 class Orchestrator:
-    def __init__(self, platform: PlatformAdapter, store: EventRepository) -> None:
+    def __init__(self, platform: PlatformAdapter, store: EventRepository, investigation_backend: str = "auto") -> None:
         self._store = store
         self._state = StateMachine()
         self._ingest = AlertIngestService(platform)
         self._correlation = AlertCorrelationService()
         self._triage = RiskTriageService()
-        self._investigation = DeepInvestigationAgent(platform)
+        self._investigation = DeepInvestigationAgent(platform, backend=investigation_backend)
         self._decision = ResponseDecisionService()
         self._execution = ResponseExecutionService(platform)
         self._verification = ResponseVerificationService(platform)
@@ -80,7 +80,7 @@ class Orchestrator:
                 return self._move(ctx, BusinessStatus.COMPLETED, "低风险或明确误报，分诊结束")
 
             ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
-            ctx.investigation = self._investigation.investigate(ctx.trace_id, event, ctx.triage)
+            ctx.investigation = self._investigation.investigate(ctx.trace_id, event, ctx.triage, run_id=ctx.run_id)
             self._store.save(ctx)
             if ctx.investigation.needs_human:
                 return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "调查证据不足，需要人工接管")
@@ -117,7 +117,7 @@ class Orchestrator:
         if not decision.approved:
             return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "审批拒绝，转人工处理")
 
-        return self._execute_and_verify(ctx, idempotency_key=decision.idempotency_key)
+        return self._execute_and_verify(ctx, idempotency_key=decision.idempotency_key, idempotency_claimed=True)
 
     def list_events(self) -> list[EventContext]:
         return self._store.list()
@@ -125,9 +125,16 @@ class Orchestrator:
     def get_event(self, event_id: str) -> EventContext | None:
         return self._store.get(event_id)
 
-    def _execute_and_verify(self, ctx: EventContext, idempotency_key: str) -> EventContext:
+    def _execute_and_verify(
+        self,
+        ctx: EventContext,
+        idempotency_key: str,
+        idempotency_claimed: bool = False,
+    ) -> EventContext:
         if ctx.response is None or ctx.response.plan is None:
             raise ValueError("缺少处置方案，无法执行")
+        if not idempotency_claimed and not self._store.claim_idempotency_key(idempotency_key):
+            return ctx
 
         ctx = self._move(ctx, BusinessStatus.EXECUTING, "开始执行处置动作")
         execution = self._execution.execute(ctx.trace_id, ctx.event_id, ctx.response.plan, idempotency_key)

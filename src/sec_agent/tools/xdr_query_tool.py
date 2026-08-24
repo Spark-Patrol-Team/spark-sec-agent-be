@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from sec_agent.domain.models import (
     ToolCallStatus,
     ToolRequest,
@@ -5,6 +7,52 @@ from sec_agent.domain.models import (
     ToolSideEffectType,
     utc_now,
 )
+
+
+EvidenceResolver = Callable[[ToolRequest], list[str]]
+
+
+def build_evidence_lookup_handler(
+    *,
+    evidence_resolver: EvidenceResolver,
+    raw_result_prefix: str,
+    source_label: str,
+) -> Callable[[ToolRequest], ToolResult]:
+    def handle_evidence_lookup(request: ToolRequest) -> ToolResult:
+        started_at = utc_now()
+        evidence_refs = evidence_resolver(request)
+        raw_result_ref = f"{raw_result_prefix}/{request.tool_name}/{request.call_id}"
+        ended_at = utc_now()
+        return ToolResult(
+            call_id=request.call_id,
+            trace_id=request.trace_id,
+            event_id=request.event_id,
+            tool_name=request.tool_name,
+            action_name=request.action_name,
+            idempotency_key=request.idempotency_key,
+            status=ToolCallStatus.SUCCESS,
+            summary=f"已从 {source_label} 查询到 {len(evidence_refs)} 条证据引用",
+            raw_result_ref=raw_result_ref,
+            evidence_refs=evidence_refs,
+            output_refs=[raw_result_ref],
+            output_preview={
+                "matched_alert_count": len(request.params.get("alert_refs", [])),
+                "matched_evidence_count": len(evidence_refs),
+            },
+            retryable=False,
+            error_type=None,
+            error_message=None,
+            platform_status=ToolCallStatus.SUCCESS.value,
+            external_side_effect=False,
+            side_effect_type=ToolSideEffectType.READ_ONLY,
+            attempt=request.attempt,
+            max_attempts=request.max_attempts,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_ms=max(1, int((ended_at - started_at).total_seconds() * 1000)),
+        )
+
+    return handle_evidence_lookup
 
 
 def handle_xdr_query(request: ToolRequest) -> ToolResult:

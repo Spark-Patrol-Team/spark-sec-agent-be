@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from pydantic import ValidationError
 
@@ -10,15 +9,12 @@ from sec_agent.domain.models import (
     AlertRecord,
     EvidenceRef,
     NormalizedAlertRecord,
-    ToolCallStatus,
-    ToolErrorType,
     ToolRequest,
     ToolResult,
-    ToolSideEffectType,
-    utc_now,
 )
 from sec_agent.platforms.mock_state import StatefulMockLedger
 from sec_agent.platforms.raw_jsonl import RawJsonlNormalizer
+from sec_agent.tools.tool_dispatcher import ToolDispatcher, build_platform_tool_dispatcher
 
 
 class JsonlAlertParseError(ValueError):
@@ -35,9 +31,15 @@ class JsonlSampleAdapter:
         self._input_mode = input_mode
         self._normalized_file = self._fixture_dir / "normalized_alerts.jsonl"
         self._ledger = StatefulMockLedger()
+        self._dispatcher = build_platform_tool_dispatcher(
+            evidence_resolver=self._resolve_evidence_refs,
+            ledger=self._ledger,
+            raw_result_prefix="jsonl://tools",
+            action_ref_prefix="jsonl://actions",
+            source_label="JSONL 样例",
+        )
         self._raw_file = self._fixture_dir / "raw_alerts.jsonl"
         self._normalizer = RawJsonlNormalizer()
-        self._actions: dict[str, str] = {}
         self._normalized_cache: list[NormalizedAlertRecord] | None = None
         self._alert_index: dict[str, AlertRecord] | None = None
 
@@ -54,87 +56,7 @@ class JsonlSampleAdapter:
         return list(alert_index.values())
 
     def run_tool(self, request: ToolRequest) -> ToolResult:
-        started_at = utc_now()
-        raw_result_ref = f"jsonl://tools/{request.tool_name}/{request.call_id}"
-        if request.tool_name == "evidence_lookup":
-            alert_refs = request.params.get("alert_refs", [])
-            evidence_refs = self._collect_evidence_refs(alert_refs)
-            matched_count = len(evidence_refs)
-            summary = f"已从 JSONL 样例中查询到 {matched_count} 条证据引用"
-            status = ToolCallStatus.SUCCESS
-            output_preview: dict[str, Any] = {
-                "matched_alert_count": len(alert_refs),
-                "matched_evidence_count": matched_count,
-            }
-            external_side_effect = False
-            side_effect_type = ToolSideEffectType.READ_ONLY
-            error_type = None
-        elif request.tool_name == "stateful_response_mock":
-            self._ledger.record_action(
-                request.idempotency_key,
-                action_status="executed",
-                summary="JSONL 主链 Mock 处置已记录",
-                evidence_refs=[f"jsonl://actions/{request.idempotency_key}"],
-                output_preview={"action_status": "executed"},
-            )
-            summary = "JSONL 主链 Mock 处置已记录"
-            status = ToolCallStatus.SUCCESS
-            evidence_refs = []
-            output_preview = {"action_status": "executed"}
-            external_side_effect = True
-            side_effect_type = ToolSideEffectType.STATE_CHANGE
-            error_type = None
-        elif request.tool_name == "response_verify":
-            action_status = self.query_action_status(request.idempotency_key)
-            if action_status == "executed":
-                summary = "已验证 JSONL 主链 Mock 处置状态"
-                status = ToolCallStatus.SUCCESS
-                record = self._ledger.get(request.idempotency_key)
-                evidence_refs = list(record.evidence_refs) if record is not None else [f"jsonl://actions/{request.idempotency_key}"]
-                error_type = None
-            else:
-                summary = "未找到 JSONL 主链 Mock 处置记录"
-                status = ToolCallStatus.PARTIAL_SUCCESS
-                evidence_refs = []
-                error_type = ToolErrorType.PLATFORM_ERROR
-            output_preview = {"action_status": action_status}
-            external_side_effect = False
-            side_effect_type = ToolSideEffectType.READ_ONLY
-        else:
-            summary = f"JSONL 样例暂不支持工具: {request.tool_name}"
-            status = ToolCallStatus.FAILED
-            evidence_refs = []
-            output_preview = {}
-            external_side_effect = False
-            side_effect_type = ToolSideEffectType.NONE
-            error_type = ToolErrorType.UNSUPPORTED_TOOL
-
-        ended_at = utc_now()
-        return ToolResult(
-            call_id=request.call_id,
-            trace_id=request.trace_id,
-            event_id=request.event_id,
-            tool_name=request.tool_name,
-            action_name=request.action_name,
-            idempotency_key=request.idempotency_key,
-            status=status,
-            summary=summary,
-            raw_result_ref=raw_result_ref,
-            evidence_refs=evidence_refs,
-            output_refs=[raw_result_ref],
-            output_preview=output_preview,
-            retryable=status != ToolCallStatus.SUCCESS,
-            error_type=error_type,
-            error_message=None if status == ToolCallStatus.SUCCESS else summary,
-            platform_status=status,
-            external_side_effect=external_side_effect,
-            side_effect_type=side_effect_type,
-            attempt=request.attempt,
-            max_attempts=request.max_attempts,
-            started_at=started_at,
-            ended_at=ended_at,
-            duration_ms=max(1, int((ended_at - started_at).total_seconds() * 1000)),
-        )
+        return self._dispatcher.dispatch(request)
 
     def query_action_status(self, idempotency_key: str) -> str:
         return self._ledger.query_action_status(idempotency_key)
@@ -228,11 +150,14 @@ class JsonlSampleAdapter:
             ),
         )
 
-    def _collect_evidence_refs(self, alert_refs: list[str]) -> list[str]:
+    def _resolve_evidence_refs(self, request: ToolRequest) -> list[str]:
+        alert_refs = request.params.get("alert_refs", [])
+        if not isinstance(alert_refs, list):
+            return []
         alert_index = self._load_alert_index()
         refs: list[str] = []
         for alert_ref in alert_refs:
-            alert = alert_index.get(alert_ref)
+            alert = alert_index.get(str(alert_ref))
             if alert is None:
                 continue
             refs.extend(ref.ref_id for ref in alert.evidence_refs)
@@ -255,3 +180,7 @@ class JsonlSampleAdapter:
         if project_path.exists():
             return project_path
         return path
+
+    @property
+    def tool_dispatcher(self) -> ToolDispatcher:
+        return self._dispatcher

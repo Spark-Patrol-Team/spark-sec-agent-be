@@ -5,14 +5,11 @@ from datetime import datetime, timezone
 from sec_agent.domain.models import (
     AlertRecord,
     EvidenceRef,
-    ToolCallStatus,
-    ToolErrorType,
     ToolRequest,
     ToolResult,
-    ToolSideEffectType,
-    utc_now,
 )
 from sec_agent.platforms.mock_state import StatefulMockLedger
+from sec_agent.tools.tool_dispatcher import ToolDispatcher, build_platform_tool_dispatcher
 
 
 class FixedSampleAdapter:
@@ -20,6 +17,13 @@ class FixedSampleAdapter:
 
     def __init__(self) -> None:
         self._ledger = StatefulMockLedger()
+        self._dispatcher = build_platform_tool_dispatcher(
+            evidence_resolver=self._resolve_evidence_refs,
+            ledger=self._ledger,
+            raw_result_prefix="fixed://tools",
+            action_ref_prefix="fixed://actions",
+            source_label="固定样例",
+        )
 
     def fetch_alerts(self, sample_id: str | None = None, xdr_event_id: str | None = None) -> list[AlertRecord]:
         if sample_id not in (None, "webshell-001"):
@@ -86,82 +90,25 @@ class FixedSampleAdapter:
         ]
 
     def run_tool(self, request: ToolRequest) -> ToolResult:
-        started_at = utc_now()
-        raw_result_ref = f"fixed://tools/{request.tool_name}/{request.call_id}"
-        if request.tool_name == "evidence_lookup":
-            summary = "已查询固定样例证据，确认上传文件、HTTP 访问和进程链存在关联"
-            status = ToolCallStatus.SUCCESS
-            evidence_refs = ["evidence-http-001", "evidence-proc-001"]
-            output_preview = {"matched_evidence_count": 2}
-            external_side_effect = False
-            side_effect_type = ToolSideEffectType.READ_ONLY
-            error_type = None
-        elif request.tool_name == "stateful_response_mock":
-            self._ledger.record_action(
-                request.idempotency_key,
-                action_status="executed",
-                summary="有状态 Mock 处置已记录",
-                evidence_refs=[f"fixed://actions/{request.idempotency_key}"],
-                output_preview={"action_status": "executed"},
-            )
-            summary = "有状态 Mock 处置已记录"
-            status = ToolCallStatus.SUCCESS
-            evidence_refs = []
-            output_preview = {"action_status": "executed"}
-            external_side_effect = True
-            side_effect_type = ToolSideEffectType.STATE_CHANGE
-            error_type = None
-        elif request.tool_name == "response_verify":
-            action_status = self.query_action_status(request.idempotency_key)
-            if action_status == "executed":
-                summary = "验证固定样例 Mock 处置状态为已执行"
-                status = ToolCallStatus.SUCCESS
-                record = self._ledger.get(request.idempotency_key)
-                evidence_refs = list(record.evidence_refs) if record is not None else [f"fixed://actions/{request.idempotency_key}"]
-                error_type = None
-            else:
-                summary = "未找到固定样例 Mock 处置记录"
-                status = ToolCallStatus.PARTIAL_SUCCESS
-                evidence_refs = []
-                error_type = ToolErrorType.PLATFORM_ERROR
-            output_preview = {"action_status": action_status}
-            external_side_effect = False
-            side_effect_type = ToolSideEffectType.READ_ONLY
-        else:
-            summary = f"固定样例暂不支持工具: {request.tool_name}"
-            status = ToolCallStatus.FAILED
-            evidence_refs = []
-            output_preview = {}
-            external_side_effect = False
-            side_effect_type = ToolSideEffectType.NONE
-            error_type = ToolErrorType.UNSUPPORTED_TOOL
-
-        ended_at = utc_now()
-        return ToolResult(
-            call_id=request.call_id,
-            trace_id=request.trace_id,
-            event_id=request.event_id,
-            tool_name=request.tool_name,
-            action_name=request.action_name,
-            idempotency_key=request.idempotency_key,
-            status=status,
-            summary=summary,
-            raw_result_ref=raw_result_ref,
-            evidence_refs=evidence_refs,
-            output_refs=[raw_result_ref],
-            output_preview=output_preview,
-            retryable=status != ToolCallStatus.SUCCESS,
-            error_type=error_type,
-            error_message=None if status == ToolCallStatus.SUCCESS else summary,
-            platform_status=status,
-            external_side_effect=external_side_effect,
-            side_effect_type=side_effect_type,
-            attempt=request.attempt,
-            max_attempts=request.max_attempts,
-            started_at=started_at,
-            ended_at=ended_at,
-            duration_ms=max(1, int((ended_at - started_at).total_seconds() * 1000)),
-        )
+        return self._dispatcher.dispatch(request)
 
     def query_action_status(self, idempotency_key: str) -> str:
         return self._ledger.query_action_status(idempotency_key)
+
+    def _resolve_evidence_refs(self, request: ToolRequest) -> list[str]:
+        alert_refs = request.params.get("alert_refs", [])
+        if not isinstance(alert_refs, list):
+            alert_refs = []
+        alerts = self.fetch_alerts()
+        evidence_by_alert = {alert.alert_id: [ref.ref_id for ref in alert.evidence_refs] for alert in alerts}
+        if not alert_refs:
+            return [ref for refs in evidence_by_alert.values() for ref in refs]
+
+        refs: list[str] = []
+        for alert_ref in alert_refs:
+            refs.extend(evidence_by_alert.get(str(alert_ref), []))
+        return refs
+
+    @property
+    def tool_dispatcher(self) -> ToolDispatcher:
+        return self._dispatcher
