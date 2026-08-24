@@ -23,7 +23,11 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     resolved_settings = settings or load_settings()
     platform = _build_platform(resolved_settings)
     repository = _build_repository(resolved_settings)
-    orchestrator = Orchestrator(platform=platform, store=repository)
+    orchestrator = Orchestrator(
+        platform=platform,
+        store=repository,
+        investigation_backend=resolved_settings.investigation_backend,
+    )
     return AppContainer(
         settings=resolved_settings,
         platform=platform,

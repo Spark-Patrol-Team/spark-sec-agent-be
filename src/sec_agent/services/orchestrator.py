@@ -26,13 +26,13 @@ from sec_agent.repositories.base import EventRepository
 
 
 class Orchestrator:
-    def __init__(self, platform: PlatformAdapter, store: EventRepository) -> None:
+    def __init__(self, platform: PlatformAdapter, store: EventRepository, investigation_backend: str = "auto") -> None:
         self._store = store
         self._state = StateMachine()
         self._ingest = AlertIngestService(platform)
         self._correlation = AlertCorrelationService()
         self._triage = RiskTriageService()
-        self._investigation = DeepInvestigationAgent(platform)
+        self._investigation = DeepInvestigationAgent(platform, backend=investigation_backend)
         self._decision = ResponseDecisionService()
         self._execution = ResponseExecutionService(platform)
         self._verification = ResponseVerificationService(platform)
@@ -80,7 +80,7 @@ class Orchestrator:
                 return self._move(ctx, BusinessStatus.COMPLETED, "低风险或明确误报，分诊结束")
 
             ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
-            ctx.investigation = self._investigation.investigate(ctx.trace_id, event, ctx.triage)
+            ctx.investigation = self._investigation.investigate(ctx.trace_id, event, ctx.triage, run_id=ctx.run_id)
             self._store.save(ctx)
             if ctx.investigation.needs_human:
                 return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "调查证据不足，需要人工接管")
