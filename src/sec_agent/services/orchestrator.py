@@ -117,7 +117,7 @@ class Orchestrator:
         if not decision.approved:
             return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "审批拒绝，转人工处理")
 
-        return self._execute_and_verify(ctx, idempotency_key=decision.idempotency_key)
+        return self._execute_and_verify(ctx, idempotency_key=decision.idempotency_key, idempotency_claimed=True)
 
     def list_events(self) -> list[EventContext]:
         return self._store.list()
@@ -125,9 +125,16 @@ class Orchestrator:
     def get_event(self, event_id: str) -> EventContext | None:
         return self._store.get(event_id)
 
-    def _execute_and_verify(self, ctx: EventContext, idempotency_key: str) -> EventContext:
+    def _execute_and_verify(
+        self,
+        ctx: EventContext,
+        idempotency_key: str,
+        idempotency_claimed: bool = False,
+    ) -> EventContext:
         if ctx.response is None or ctx.response.plan is None:
             raise ValueError("缺少处置方案，无法执行")
+        if not idempotency_claimed and not self._store.claim_idempotency_key(idempotency_key):
+            return ctx
 
         ctx = self._move(ctx, BusinessStatus.EXECUTING, "开始执行处置动作")
         execution = self._execution.execute(ctx.trace_id, ctx.event_id, ctx.response.plan, idempotency_key)

@@ -17,7 +17,7 @@ from sec_agent.domain.models import (  # noqa: E402
     ToolRequest,
     ToolRiskLevel,
 )
-from sec_agent.tool.tool_dispatcher import dispatch_tool  # noqa: E402
+from sec_agent.tools.tool_dispatcher import dispatch_tool  # noqa: E402
 
 
 def make_request(

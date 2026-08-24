@@ -97,7 +97,18 @@ class FixedSampleAdapter:
         return self._ledger.query_action_status(idempotency_key)
 
     def _resolve_evidence_refs(self, request: ToolRequest) -> list[str]:
-        return ["evidence-http-001", "evidence-proc-001"]
+        alert_refs = request.params.get("alert_refs", [])
+        if not isinstance(alert_refs, list):
+            alert_refs = []
+        alerts = self.fetch_alerts()
+        evidence_by_alert = {alert.alert_id: [ref.ref_id for ref in alert.evidence_refs] for alert in alerts}
+        if not alert_refs:
+            return [ref for refs in evidence_by_alert.values() for ref in refs]
+
+        refs: list[str] = []
+        for alert_ref in alert_refs:
+            refs.extend(evidence_by_alert.get(str(alert_ref), []))
+        return refs
 
     @property
     def tool_dispatcher(self) -> ToolDispatcher:
