@@ -12,13 +12,14 @@ from sec_agent.domain.models import (
     ToolSideEffectType,
     utc_now,
 )
+from sec_agent.platforms.mock_state import StatefulMockLedger
 
 
 class FixedSampleAdapter:
     """固定样例适配器，真实 XDR/MCP 参数确认前只用于可重复演示。"""
 
     def __init__(self) -> None:
-        self._actions: dict[str, str] = {}
+        self._ledger = StatefulMockLedger()
 
     def fetch_alerts(self, sample_id: str | None = None, xdr_event_id: str | None = None) -> list[AlertRecord]:
         if sample_id not in (None, "webshell-001"):
@@ -96,7 +97,13 @@ class FixedSampleAdapter:
             side_effect_type = ToolSideEffectType.READ_ONLY
             error_type = None
         elif request.tool_name == "stateful_response_mock":
-            self._actions[request.idempotency_key] = "executed"
+            self._ledger.record_action(
+                request.idempotency_key,
+                action_status="executed",
+                summary="有状态 Mock 处置已记录",
+                evidence_refs=[f"fixed://actions/{request.idempotency_key}"],
+                output_preview={"action_status": "executed"},
+            )
             summary = "有状态 Mock 处置已记录"
             status = ToolCallStatus.SUCCESS
             evidence_refs = []
@@ -109,7 +116,8 @@ class FixedSampleAdapter:
             if action_status == "executed":
                 summary = "验证固定样例 Mock 处置状态为已执行"
                 status = ToolCallStatus.SUCCESS
-                evidence_refs = [f"fixed://actions/{request.idempotency_key}"]
+                record = self._ledger.get(request.idempotency_key)
+                evidence_refs = list(record.evidence_refs) if record is not None else [f"fixed://actions/{request.idempotency_key}"]
                 error_type = None
             else:
                 summary = "未找到固定样例 Mock 处置记录"
@@ -156,4 +164,4 @@ class FixedSampleAdapter:
         )
 
     def query_action_status(self, idempotency_key: str) -> str:
-        return self._actions.get(idempotency_key, "not_found")
+        return self._ledger.query_action_status(idempotency_key)

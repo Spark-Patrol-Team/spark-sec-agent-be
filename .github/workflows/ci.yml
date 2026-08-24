@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python 3.11 Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m unittest discover -s tests
+
+      - name: Generate OpenAPI document
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m sec_agent.scripts.generate_openapi
+
+      - name: Check OpenAPI document is up to date
+        run: |
+          git diff --exit-code -- docs/swagger/openapi.json
