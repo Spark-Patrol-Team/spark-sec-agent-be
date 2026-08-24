@@ -45,6 +45,7 @@ class ToolRiskLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    CRITICAL = "critical"
 
 
 class ApprovalStatus(StrEnum):
@@ -254,6 +255,7 @@ class ResponsePlan(BaseModel):
 
 class ExecutionResult(BaseModel):
     executed: bool
+    status: ToolCallStatus
     mode: ExecutionMode
     platform_status: str
     error: str | None = None

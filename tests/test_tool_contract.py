@@ -77,6 +77,40 @@ class ToolContractTest(unittest.TestCase):
         self.assertFalse(result.external_side_effect)
         self.assertEqual(result.side_effect_type, ToolSideEffectType.NONE)
 
+    def test_stateful_response_mock_persists_execution_status(self) -> None:
+        adapter = FixedSampleAdapter()
+        request = ToolRequest(
+            trace_id="trace-test",
+            event_id="evt-test",
+            stage=BusinessStatus.EXECUTING,
+            tool_name="stateful_response_mock",
+            action_name="stateful_mock_containment",
+            params={"event_id": "evt-test", "target": "web-server-01"},
+            reason="测试有状态 Mock 执行记录",
+            idempotency_key="stateful-mock-test",
+            risk_level=ToolRiskLevel.HIGH,
+        )
+
+        execution_result = adapter.run_tool(request)
+        verification_request = ToolRequest(
+            trace_id="trace-test",
+            event_id="evt-test",
+            stage=BusinessStatus.VERIFYING,
+            tool_name="response_verify",
+            action_name="query_action_status",
+            params={"idempotency_key": "stateful-mock-test"},
+            reason="测试有状态 Mock 验证",
+            idempotency_key="stateful-mock-test",
+            risk_level=ToolRiskLevel.LOW,
+            approval_status=ApprovalStatus.NOT_REQUIRED,
+        )
+        verification_result = adapter.run_tool(verification_request)
+
+        self.assertEqual(execution_result.status, ToolCallStatus.SUCCESS)
+        self.assertEqual(adapter.query_action_status("stateful-mock-test"), "executed")
+        self.assertEqual(verification_result.status, ToolCallStatus.SUCCESS)
+        self.assertEqual(verification_result.evidence_refs, ["fixed://actions/stateful-mock-test"])
+
     def test_verify_missing_action_returns_structured_non_success(self) -> None:
         request = ToolRequest(
             trace_id="trace-test",

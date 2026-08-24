@@ -38,7 +38,7 @@ class ConfigTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
             env_path.write_text("APP_ENV=dev\nAPP_NAME=from-file\n", encoding="utf-8")
-            with patch.dict(os.environ, {"APP_NAME": "from-env"}, clear=False):
+            with patch.dict(os.environ, {"APP_NAME": "from-env"}, clear=True):
                 load_dotenv(env_path)
                 self.assertEqual(os.environ["APP_NAME"], "from-env")
                 self.assertEqual(os.environ["APP_ENV"], "dev")

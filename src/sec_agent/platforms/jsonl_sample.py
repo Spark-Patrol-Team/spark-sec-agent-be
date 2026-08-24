@@ -17,6 +17,7 @@ from sec_agent.domain.models import (
     ToolSideEffectType,
     utc_now,
 )
+from sec_agent.platforms.mock_state import StatefulMockLedger
 from sec_agent.platforms.raw_jsonl import RawJsonlNormalizer
 
 
@@ -33,6 +34,7 @@ class JsonlSampleAdapter:
             raise ValueError(f"不支持的 JSONL 输入模式: {input_mode}")
         self._input_mode = input_mode
         self._normalized_file = self._fixture_dir / "normalized_alerts.jsonl"
+        self._ledger = StatefulMockLedger()
         self._raw_file = self._fixture_dir / "raw_alerts.jsonl"
         self._normalizer = RawJsonlNormalizer()
         self._actions: dict[str, str] = {}
@@ -68,7 +70,13 @@ class JsonlSampleAdapter:
             side_effect_type = ToolSideEffectType.READ_ONLY
             error_type = None
         elif request.tool_name == "stateful_response_mock":
-            self._actions[request.idempotency_key] = "executed"
+            self._ledger.record_action(
+                request.idempotency_key,
+                action_status="executed",
+                summary="JSONL 主链 Mock 处置已记录",
+                evidence_refs=[f"jsonl://actions/{request.idempotency_key}"],
+                output_preview={"action_status": "executed"},
+            )
             summary = "JSONL 主链 Mock 处置已记录"
             status = ToolCallStatus.SUCCESS
             evidence_refs = []
@@ -81,7 +89,8 @@ class JsonlSampleAdapter:
             if action_status == "executed":
                 summary = "已验证 JSONL 主链 Mock 处置状态"
                 status = ToolCallStatus.SUCCESS
-                evidence_refs = [f"jsonl://actions/{request.idempotency_key}"]
+                record = self._ledger.get(request.idempotency_key)
+                evidence_refs = list(record.evidence_refs) if record is not None else [f"jsonl://actions/{request.idempotency_key}"]
                 error_type = None
             else:
                 summary = "未找到 JSONL 主链 Mock 处置记录"
@@ -128,7 +137,7 @@ class JsonlSampleAdapter:
         )
 
     def query_action_status(self, idempotency_key: str) -> str:
-        return self._actions.get(idempotency_key, "not_found")
+        return self._ledger.query_action_status(idempotency_key)
 
     def _load_normalized_records(self) -> list[NormalizedAlertRecord]:
         if self._normalized_cache is not None:
