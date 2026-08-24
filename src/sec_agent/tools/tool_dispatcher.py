@@ -8,8 +8,8 @@ from sec_agent.domain.models import (
     ToolSideEffectType,
     utc_now,
 )
-from sec_agent.tool.stateful_mock_tool import handle_stateful_mock
-from sec_agent.tool.xdr_query_tool import handle_xdr_query
+from sec_agent.tools.stateful_mock_tool import handle_stateful_mock
+from sec_agent.tools.xdr_query_tool import handle_xdr_query
 
 # 工具名 -> 处理函数映射
 TOOL_HANDLER_MAP: Dict[str, Callable[[ToolRequest], ToolResult]] = {

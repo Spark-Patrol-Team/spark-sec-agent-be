@@ -37,7 +37,6 @@ class JsonlSampleAdapter:
         self._ledger = StatefulMockLedger()
         self._raw_file = self._fixture_dir / "raw_alerts.jsonl"
         self._normalizer = RawJsonlNormalizer()
-        self._actions: dict[str, str] = {}
         self._normalized_cache: list[NormalizedAlertRecord] | None = None
         self._alert_index: dict[str, AlertRecord] | None = None
 
