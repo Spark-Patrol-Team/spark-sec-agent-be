@@ -3,6 +3,8 @@ import types
 import unittest
 
 from sec_agent.domain.models import BusinessStatus, SecurityEvent, TriageResult, TruthVerdict, Priority
+from sec_agent.platforms.fixed_sample import FixedSampleAdapter
+from sec_agent.services.deep_agent_bridge import DeepAgentBridgeUnavailable
 from sec_agent.services.investigation import DeepInvestigationAgent
 
 
@@ -32,6 +34,21 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertTrue(report.needs_human)
         self.assertEqual(report.conclusion, TruthVerdict.UNCERTAIN)
         self.assertIn("deep_agent", report.summary)
+
+    def test_auto_backend_records_fallback_and_runs_internal_tool_chain(self) -> None:
+        service = DeepInvestigationAgent(platform=FixedSampleAdapter(), backend="auto")
+        service._deep_agent_bridge = _UnavailableBridge()
+
+        report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
+
+        self.assertFalse(report.needs_human)
+        self.assertIn("已回退内部工具调查子链", report.summary)
+        self.assertTrue(any("deep_agent 不可用" in item for item in report.unresolved_questions))
+        self.assertEqual(
+            [step.tool_request.tool_name for step in report.steps if step.tool_request],
+            ["evidence_lookup", "xdr_log_query"],
+        )
+        self.assertEqual(len(report.tool_results), 2)
 
     def _install_fake_deep_agent(self) -> None:
         package = types.ModuleType("deep_agent")
@@ -152,6 +169,11 @@ class DeepAgentBridgeTest(unittest.TestCase):
 
 class _NoopPlatform:
     pass
+
+
+class _UnavailableBridge:
+    def investigate(self, trace_id, run_id, event, triage):
+        raise DeepAgentBridgeUnavailable("单元测试模拟 deep_agent 缺失")
 
 
 if __name__ == "__main__":
