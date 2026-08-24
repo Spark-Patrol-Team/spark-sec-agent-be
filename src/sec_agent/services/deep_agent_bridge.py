@@ -20,7 +20,7 @@ class DeepAgentBridgeUnavailable(RuntimeError):
 
 
 class DeepAgentBridge:
-    """将可选 deep_agent 子智能体桥接到当前主链领域模型。"""
+    """将外部 deep_agent 子智能体桥接到当前主链领域模型。"""
 
     def investigate(self, trace_id: str, run_id: str, event: SecurityEvent, triage: TriageResult) -> InvestigationReport:
         modules = self._load_modules()
@@ -49,8 +49,6 @@ class DeepAgentBridge:
             }
         except ModuleNotFoundError as exc:
             raise DeepAgentBridgeUnavailable(f"deep_agent 包未安装或未合入当前仓库: {exc.name}") from exc
-        except AttributeError as exc:
-            raise DeepAgentBridgeUnavailable(f"deep_agent 接口不符合主链桥接契约: {exc}") from exc
 
     def _override_config(self, config: Any) -> None:
         tool_mode = os.getenv("DEEP_AGENT_TOOL_MODE")
@@ -64,17 +62,14 @@ class DeepAgentBridge:
             for tool in modules["build_mock_tools"]():
                 registry.register(tool)
         if tool_mode in {"mcp", "auto"}:
-            self._register_mcp_tools(registry, config, strict=tool_mode == "mcp")
+            self._register_mcp_tools(registry, config)
         return registry
 
-    def _register_mcp_tools(self, registry: Any, config: Any, strict: bool) -> None:
+    def _register_mcp_tools(self, registry: Any, config: Any) -> None:
         try:
             build_mcp_tools = importlib.import_module("deep_agent.tools.mcp_client").build_mcp_tools
-        except ModuleNotFoundError as exc:
-            if strict:
-                raise DeepAgentBridgeUnavailable(f"deep_agent MCP 工具不可用: {exc.name}") from exc
+        except ModuleNotFoundError:
             return
-
         for tool in build_mcp_tools(config.tools, on_error=lambda message: print(message, file=sys.stderr)):
             registry.register(tool)
 
@@ -88,7 +83,7 @@ class DeepAgentBridge:
     ) -> dict[str, Any]:
         return {
             "event_id": event.event_id,
-            "event_type": event.summary or ",".join(event.alert_refs),
+            "event_type": self._event_type(event),
             "severity": triage.priority.value.upper(),
             "timestamp": event.first_seen_at.isoformat(),
             "source_ip": self._first_entity(event, "src_ips"),
@@ -115,7 +110,7 @@ class DeepAgentBridge:
         ]
         tool_call_records = data.get("tool_call_records") or []
         return InvestigationReport(
-            conclusion=self._conclusion(data.get("verdict") or data.get("conclusion"), triage.verdict),
+            conclusion=self._conclusion(triage, data),
             final_confidence=self._confidence(data.get("confidence"), triage.confidence),
             timeline=[step.goal for step in steps] or ["deep_agent 子智能体完成深度调查"],
             tool_results=[str(item) for item in tool_call_records],
@@ -130,6 +125,12 @@ class DeepAgentBridge:
         )
 
     @staticmethod
+    def _event_type(event: SecurityEvent) -> str:
+        if event.summary:
+            return event.summary
+        return ",".join(event.alert_refs)
+
+    @staticmethod
     def _first_entity(event: SecurityEvent, key: str) -> str:
         values = event.entities.get(key, [])
         return values[0] if values else ""
@@ -140,21 +141,10 @@ class DeepAgentBridge:
         return value if isinstance(value, int) and value >= 1 else index
 
     @staticmethod
-    def _conclusion(value: Any, fallback: TruthVerdict) -> TruthVerdict:
-        if isinstance(value, TruthVerdict):
-            return value
-        if isinstance(value, str):
-            lowered = value.strip().lower()
-            for verdict in TruthVerdict:
-                if lowered == verdict.value:
-                    return verdict
-            if "误报" in value or "良性" in value or "benign" in lowered:
-                return TruthVerdict.BENIGN
-            if "恶意" in value or "攻击" in value or "malicious" in lowered:
-                return TruthVerdict.MALICIOUS
-            if "不确定" in value or "人工" in value or "uncertain" in lowered:
-                return TruthVerdict.UNCERTAIN
-        return fallback
+    def _conclusion(triage: TriageResult, data: dict[str, Any]) -> TruthVerdict:
+        if data.get("need_manual_takeover") and triage.verdict is TruthVerdict.BENIGN:
+            return TruthVerdict.UNCERTAIN
+        return triage.verdict
 
     @staticmethod
     def _confidence(value: Any, fallback: float) -> float:

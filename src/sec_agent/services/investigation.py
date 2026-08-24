@@ -45,9 +45,9 @@ class DeepInvestigationAgent:
                     return self._unavailable_report(event, triage, f"deep_agent 调查异常: {exc}")
                 fallback_reason = f"deep_agent 调查异常，已回退内部工具调查子链: {exc}"
 
-        return self._internal_tool_investigate(trace_id, event, triage, fallback_reason=fallback_reason)
+        return self._tool_mock_investigate(trace_id, event, triage, fallback_reason=fallback_reason)
 
-    def _internal_tool_investigate(
+    def _tool_mock_investigate(
         self,
         trace_id: str,
         event: SecurityEvent,
@@ -88,7 +88,6 @@ class DeepInvestigationAgent:
             timeline.append("deep_agent 未完成调查，回退内部工具调查子链")
         timeline.extend(step.goal for step in steps)
         timeline.append("形成调查结论")
-
         summary = "内部工具调查子链完成，已形成结构化证据和处置建议"
         if fallback_reason:
             summary = f"{summary}；{fallback_reason}"
@@ -113,7 +112,7 @@ class DeepInvestigationAgent:
     def _build_internal_tool_requests(self, trace_id: str, event: SecurityEvent) -> list[ToolRequest]:
         common_params = {
             "event_id": event.event_id,
-            "alert_refs": list(event.alert_refs),
+            "alert_refs": event.alert_refs,
             "entities": event.entities,
         }
         return [
@@ -163,9 +162,9 @@ class DeepInvestigationAgent:
     def _evidence_relations(self, event: SecurityEvent, has_actions: bool) -> list[str]:
         if not has_actions:
             return []
+        assets = ",".join(event.entities.get("assets", [])) or ",".join(event.entities.get("dst_ips", [])) or "未知资产"
         sources = ",".join(event.entities.get("src_ips", [])) or "未知来源"
-        targets = ",".join(event.entities.get("assets", [])) or ",".join(event.entities.get("dst_ips", [])) or "未知资产"
-        return [f"告警证据、XDR 样例日志与关联实体指向同一风险对象；来源 {sources}，目标 {targets}"]
+        return [f"告警证据、XDR 样例日志与关联实体指向同一风险对象；来源 {sources}，目标 {assets}"]
 
     def _unique_refs(self, refs: list[str]) -> list[str]:
         unique: list[str] = []

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 
 from sec_agent.domain.models import (
@@ -21,7 +23,7 @@ def build_evidence_lookup_handler(
     def handle_evidence_lookup(request: ToolRequest) -> ToolResult:
         started_at = utc_now()
         evidence_refs = evidence_resolver(request)
-        raw_result_ref = f"{raw_result_prefix}/{request.tool_name}/{request.call_id}"
+        raw_result_ref = f"{raw_result_prefix}/tools/{request.tool_name}/{request.call_id}"
         ended_at = utc_now()
         return ToolResult(
             call_id=request.call_id,
@@ -56,14 +58,9 @@ def build_evidence_lookup_handler(
 
 
 def handle_xdr_query(request: ToolRequest) -> ToolResult:
-    """
-    MVP XDR原始日志查询工具
-    依据平台定向验证统一结论，只返回已经验证通过的字段
-    MVP：优先使用本地内置样例，暂不强依赖真实XDR OpenAPI接口
-    """
+    """MVP 内置 XDR 原始日志查询工具，保留给后续真实平台查询联调。"""
     started_at = utc_now()
 
-    # ========== MVP 演示：内置样例数据，后续可以对接仓库里的样例json文件 ==========
     mock_xdr_records = [
         {
             "event_time": "2026-08-20T10:22:30Z",
@@ -74,7 +71,7 @@ def handle_xdr_query(request: ToolRequest) -> ToolResult:
             "src_port": 54321,
             "dst_port": 8080,
             "origin_log": "HTTP请求携带SQL注入payload",
-            "asset_info": "web-server-01"
+            "asset_info": "web-server-01",
         }
     ]
 

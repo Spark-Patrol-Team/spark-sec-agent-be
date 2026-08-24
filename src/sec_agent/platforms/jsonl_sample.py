@@ -14,7 +14,8 @@ from sec_agent.domain.models import (
 )
 from sec_agent.platforms.mock_state import StatefulMockLedger
 from sec_agent.platforms.raw_jsonl import RawJsonlNormalizer
-from sec_agent.tools.tool_dispatcher import ToolDispatcher, build_platform_tool_dispatcher
+from sec_agent.tools.base import ToolDispatcher
+from sec_agent.tools.tool_dispatcher import build_platform_tool_dispatcher
 
 
 class JsonlAlertParseError(ValueError):
@@ -34,8 +35,8 @@ class JsonlSampleAdapter:
         self._dispatcher = build_platform_tool_dispatcher(
             evidence_resolver=self._resolve_evidence_refs,
             ledger=self._ledger,
-            raw_result_prefix="jsonl://tools",
-            action_ref_prefix="jsonl://actions",
+            raw_result_prefix="jsonl:/",
+            action_ref_prefix="jsonl:/",
             source_label="JSONL 样例",
         )
         self._raw_file = self._fixture_dir / "raw_alerts.jsonl"
