@@ -1,58 +1,53 @@
-from typing import Callable, Dict
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
 
 from sec_agent.domain.models import (
-    ToolCallStatus,
-    ToolErrorType,
     ToolRequest,
     ToolResult,
-    ToolSideEffectType,
-    utc_now,
 )
-from sec_agent.tool.stateful_mock_tool import handle_stateful_mock
-from sec_agent.tool.xdr_query_tool import handle_xdr_query
+from sec_agent.platforms.mock_state import StatefulMockLedger
+from sec_agent.tools.base import ToolDispatcher
+from sec_agent.tools.stateful_mock_tool import (
+    build_response_verify_handler,
+    build_stateful_response_handler,
+    handle_stateful_mock,
+)
+from sec_agent.tools.xdr_query_tool import build_evidence_lookup_handler, handle_xdr_query
 
-# 工具名 -> 处理函数映射
-TOOL_HANDLER_MAP: Dict[str, Callable[[ToolRequest], ToolResult]] = {
-    "xdr_log_query": handle_xdr_query,
-    "stateful_mock": handle_stateful_mock,
-}
+
+ToolHandler = Callable[[ToolRequest], ToolResult]
 
 
-def dispatch_tool(request: ToolRequest) -> ToolResult:
-    """
-    MVP工具调度入口
-    只支持两个工具：xdr_log_query、stateful_mock
-    其他tool_name直接返回错误ToolResult
-    """
-    handler = TOOL_HANDLER_MAP.get(request.tool_name)
-    if handler is None:
-        started_at = utc_now()
-        error_message = (
-            f"[MVP]不支持该工具:{request.tool_name},"
-            "仅支持xdr_log_query / stateful_mock"
-        )
-        ended_at = utc_now()
-        return ToolResult(
-            call_id=request.call_id,
-            trace_id=request.trace_id,
-            event_id=request.event_id,
-            tool_name=request.tool_name,
-            action_name=request.action_name,
-            idempotency_key=request.idempotency_key,
-            status=ToolCallStatus.FAILED,
-            summary=error_message,
-            output_preview={},
-            retryable=False,
-            error_type=ToolErrorType.UNSUPPORTED_TOOL,
-            error_message=error_message,
-            platform_status=ToolCallStatus.FAILED.value,
-            external_side_effect=False,
-            side_effect_type=ToolSideEffectType.NONE,
-            attempt=request.attempt,
-            max_attempts=request.max_attempts,
-            started_at=started_at,
-            ended_at=ended_at,
-            duration_ms=max(1, int((ended_at - started_at).total_seconds() * 1000)),
-        )
-    # 执行对应工具逻辑
-    return handler(request)
+def build_platform_tool_dispatcher(
+    *,
+    evidence_resolver: Callable[[ToolRequest], list[str]],
+    ledger: StatefulMockLedger,
+    raw_result_prefix: str,
+    action_ref_prefix: str,
+    source_label: str,
+    extra_handlers: Mapping[str, ToolHandler] | None = None,
+) -> ToolDispatcher:
+    handlers: dict[str, ToolHandler] = {
+        "evidence_lookup": build_evidence_lookup_handler(
+            evidence_resolver=evidence_resolver,
+            raw_result_prefix=raw_result_prefix,
+            source_label=source_label,
+        ),
+        "stateful_response_mock": build_stateful_response_handler(
+            ledger=ledger,
+            raw_result_prefix=raw_result_prefix,
+            action_ref_prefix=action_ref_prefix,
+            source_label=source_label,
+        ),
+        "response_verify": build_response_verify_handler(
+            ledger=ledger,
+            raw_result_prefix=raw_result_prefix,
+            source_label=source_label,
+        ),
+        "xdr_log_query": handle_xdr_query,
+        "stateful_mock": handle_stateful_mock,
+    }
+    if extra_handlers:
+        handlers.update(extra_handlers)
+    return ToolDispatcher(handlers)
