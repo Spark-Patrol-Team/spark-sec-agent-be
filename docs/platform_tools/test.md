@@ -16,6 +16,10 @@
 | PT-06 | 三条标准化样例 | 校验 JSON Schema。 | 全部满足 `normalized_alert_schema.json`。 |
 | PT-07 | 三条标准化样例 | 转换为仓库实际 `AlertRecord`。 | 三条记录均进入主链且关键字段不丢失。 |
 | PT-08 | 适配后的 AlertRecord | 调用最小风险、调查、处置和前端流程。 | 每条均产出风险结果、调查提示、处置建议和可展示状态。 |
+| PT-09 | `raw_alerts.jsonl` 与 `normalized_alerts.jsonl` | 逐条读取原始样例并标准化，对比固定标准化契约。 | 3 条输出逐字段一致；原始路径 `raw_record_ref` 指向 `raw_alerts.jsonl`。 |
+| PT-10 | 同一 WebShell 活动的两条重复 AlertRecord | 在 15 分钟窗口内执行简单关联。 | 压缩为 1 个 SecurityEvent；`alert_count_before=2`、`event_count_after=1`，关联依据包含事件类型、资产、设备和时间窗口。 |
+| PT-11 | `destination_ip` 缺失的 XDR 变体 | 执行原始告警标准化。 | `destination_ip` 与 `affected_asset` 仅在目的地址缺失时使用 `host_ip`；通用 WebShell 高危仍为 `high/80`，不触发蚁剑专项覆盖。 |
+| PT-12 | `raw` 输入模式的 WebShell 样例 | 运行最小主链并批准 Mock 处置。 | 依次到达 `APPROVAL_REQUIRED` 与 `COMPLETED`，且风险分保持 95。 |
 
 ## 回归基线
 
@@ -27,4 +31,4 @@
 
 ## 已知边界
 
-样例时间、规则名称和字段结构基于平台验证结论整理，但所有地址已使用 RFC 5737 文档保留地址完成脱敏。固定样例仅验证解析、标准化和应用主链，不代表实时 XDR 事件聚合、处置执行或平台 API 调用结果。
+样例时间、规则名称和字段结构基于平台验证结论整理，但所有地址已使用 RFC 5737 文档保留地址完成脱敏。`raw` 输入模式验证的是“原始样例→标准化→AlertRecord→最小主链”的可重复降级路径；它不代表实时 XDR 事件聚合、真实平台 API 调用或真实处置执行结果。实时平台路径仍须由可用的 OpenAPI/MCP 接入实现单独验证。
