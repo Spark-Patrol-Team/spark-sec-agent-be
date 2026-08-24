@@ -1,0 +1,32 @@
+{
+  "event_id": "EVENT-001",
+  "event_type": "WebShell",
+  "severity": "HIGH",
+  "timestamp": "2026-08-22 10:23:15",
+  "source_ip": "10.10.10.25",
+  "target_ip": "192.168.1.100",
+  "alerts": [
+    "WebShell通信行为告警",
+    "异常外联告警",
+    "可疑文件上传告警"
+  ],
+  "evidence": [
+    "检测到疑似WebShell通信",
+    "攻击源与目标存在通信关系",
+    "目标服务器存在可疑php文件"
+  ],
+  "initial_verdict": "疑似真实攻击",
+  "confidence": 0.72,
+  "triage": {
+    "verdict": "malicious",
+    "confidence": 0.72,
+    "risk_score": 85,
+    "priority": "high",
+    "supporting_evidence": ["检测到疑似WebShell通信"],
+    "opposing_evidence": [],
+    "evidence_gaps": ["目标资产信息", "攻击结果判定"],
+    "enter_investigation": true
+  },
+  "trace_id": "trace-001",
+  "run_id": "run-001"
+}
