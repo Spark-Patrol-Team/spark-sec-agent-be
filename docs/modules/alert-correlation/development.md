@@ -63,8 +63,4 @@ PYTHONPATH=src python -m sec_agent.scripts.run_flow
 
 `AlertRecord.evidence_refs` 保存标准化字段级证据引用；`raw_record_ref` 记录原始或标准化 JSONL 文件与样例 ID。`SecurityEvent.alert_refs` 保存参与关联的告警 ID，而调查阶段可通过平台适配器的 `evidence_lookup` 根据这些 ID 查询字段级证据。
 
-## 5. 与其他模块的协作
-
-陈敏负责固定样例的字段业务含义、标准化与关联规则、回归断言和文档真实性边界。李雨妍负责主链接口冻结与各服务合并；风险研判、调查、处置和前端模块直接消费 `EventContext.event_summary`、`triage`、`investigation` 与 `response`，不应重复解析原始 JSONL。
-
 真实 XDR OpenAPI/MCP 接入由平台工具入口另行实现。接入后应维持 `PlatformAdapter` 与 `AlertRecord` 契约，新增接口鉴权、超时、分页、限流、重试、脱敏与审计测试；不能用固定 JSONL 测试结果替代真实接口验证。
