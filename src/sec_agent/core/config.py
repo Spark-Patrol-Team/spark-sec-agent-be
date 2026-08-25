@@ -8,6 +8,14 @@ from urllib.parse import quote_plus
 from pydantic import BaseModel, Field
 
 
+DEFAULT_CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+
 class Settings(BaseModel):
     app_name: str = "spark-sec-agent-be"
     app_env: Literal["local", "dev", "test", "prod"] = "local"
@@ -20,6 +28,11 @@ class Settings(BaseModel):
     jsonl_sample_dir: Path = Path("tests/fixtures/fixed_alerts")
     jsonl_input_mode: Literal["normalized", "raw"] = "normalized"
     investigation_backend: Literal["auto", "deep_agent", "tool_mock"] = "auto"
+    cors_allowed_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ALLOWED_ORIGINS))
+    cors_allowed_origin_regex: str | None = None
+    cors_allow_credentials: bool = False
+    cors_allowed_methods: list[str] = Field(default_factory=lambda: ["*"])
+    cors_allowed_headers: list[str] = Field(default_factory=lambda: ["*"])
     mysql_dsn: str = Field(
         default="mysql+pymysql://sec_agent:sec_agent@127.0.0.1:3306/sec_agent?charset=utf8mb4"
     )
@@ -40,6 +53,11 @@ def load_settings() -> Settings:
         jsonl_sample_dir=resolve_project_path(os.getenv("JSONL_SAMPLE_DIR", "tests/fixtures/fixed_alerts")),
         jsonl_input_mode=os.getenv("JSONL_INPUT_MODE", "normalized"),
         investigation_backend=os.getenv("INVESTIGATION_BACKEND", "auto"),
+        cors_allowed_origins=parse_csv(os.getenv("CORS_ALLOWED_ORIGINS"), DEFAULT_CORS_ALLOWED_ORIGINS),
+        cors_allowed_origin_regex=os.getenv("CORS_ALLOWED_ORIGIN_REGEX") or None,
+        cors_allow_credentials=parse_bool(os.getenv("CORS_ALLOW_CREDENTIALS", "false")),
+        cors_allowed_methods=parse_csv(os.getenv("CORS_ALLOWED_METHODS"), ["*"]),
+        cors_allowed_headers=parse_csv(os.getenv("CORS_ALLOWED_HEADERS"), ["*"]),
         mysql_dsn=os.getenv("MYSQL_DSN") or build_mysql_dsn(),
         mysql_auto_create_schema=parse_bool(os.getenv("MYSQL_AUTO_CREATE_SCHEMA", "true")),
     )
@@ -98,3 +116,10 @@ def resolve_project_path(value: str) -> Path:
 
 def parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def parse_csv(value: str | None, default: list[str]) -> list[str]:
+    if value is None:
+        return list(default)
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items if items else []

@@ -16,13 +16,17 @@ class ApiHttpTest(unittest.TestCase):
             storage_backend="memory",
             platform_backend="fixed_sample",
             investigation_backend="tool_mock",
+            cors_allowed_origins=["http://frontend.test"],
+            cors_allow_credentials=True,
         )
         self.client = TestClient(create_app(container=build_container(settings)))
 
     def test_health_reports_runtime_settings(self) -> None:
-        response = self.client.get("/health")
+        response = self.client.get("/health", headers={"Origin": "http://frontend.test"})
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://frontend.test")
+        self.assertEqual(response.headers["access-control-allow-credentials"], "true")
         payload = response.json()
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["app_env"], "test")
@@ -103,6 +107,34 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(detail_response.status_code, 404)
         self.assertEqual(timeline_response.status_code, 404)
         self.assertEqual(approval_response.status_code, 404)
+
+    def test_cors_preflight_allows_configured_origin(self) -> None:
+        response = self.client.options(
+            "/runs",
+            headers={
+                "Origin": "http://frontend.test",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://frontend.test")
+        self.assertEqual(response.headers["access-control-allow-credentials"], "true")
+        self.assertIn("POST", response.headers["access-control-allow-methods"])
+        self.assertIn("content-type", response.headers["access-control-allow-headers"].lower())
+
+    def test_cors_preflight_rejects_unconfigured_origin(self) -> None:
+        response = self.client.options(
+            "/runs",
+            headers={
+                "Origin": "http://evil.test",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotEqual(response.headers.get("access-control-allow-origin"), "http://evil.test")
 
 
 if __name__ == "__main__":
