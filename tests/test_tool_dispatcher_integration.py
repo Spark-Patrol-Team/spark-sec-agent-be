@@ -63,7 +63,7 @@ class ToolDispatcherIntegrationTest(unittest.TestCase):
         self.assertEqual(verify_result.status, ToolCallStatus.SUCCESS)
         self.assertEqual(verify_result.evidence_refs, ["test://actions/tool-dispatcher-test"])
 
-    def test_dispatcher_keeps_legacy_xdr_log_query_available(self) -> None:
+    def test_dispatcher_supports_xdr_log_query_for_investigation_chain(self) -> None:
         result = self.dispatcher.dispatch(
             self._request(
                 tool_name="xdr_log_query",
