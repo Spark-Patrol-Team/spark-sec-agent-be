@@ -26,11 +26,11 @@ class DeepAgentBridge:
         modules = self._load_modules()
         config = modules["load_config"]()
         self._override_config(config)
-        tools = self._build_tools(modules, config)
         llm = modules["LLMClient"](config.llm)
         if not getattr(llm, "available", False):
             raise DeepAgentBridgeUnavailable("deep_agent LLM 未配置")
 
+        tools = self._build_tools(modules, config)
         deep_event = modules["SecurityEventInput"].from_dict(
             self._to_deep_agent_input(trace_id=trace_id, run_id=run_id, event=event, triage=triage)
         )

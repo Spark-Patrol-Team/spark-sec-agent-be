@@ -14,7 +14,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = []
+dev = [
+    "httpx>=0.27.0,<1.0.0",
+    "pytest>=8.0.0,<9.0.0",
+]
 
 [project.scripts]
 sec-agent-generate-openapi = "sec_agent.scripts.generate_openapi:main"
