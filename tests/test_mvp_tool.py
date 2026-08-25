@@ -1,27 +1,16 @@
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-
-PROJECT_ROOT = Path(__file__).resolve().parent
-SRC_DIR = PROJECT_ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-
-from sec_agent.domain.models import (  # noqa: E402
+from sec_agent.domain.models import (
     BusinessStatus,
     ToolCallStatus,
     ToolErrorType,
     ToolRequest,
     ToolRiskLevel,
 )
-from sec_agent.platforms.mock_state import StatefulMockLedger  # noqa: E402
-from sec_agent.tools.tool_dispatcher import build_platform_tool_dispatcher  # noqa: E402
+from sec_agent.platforms.mock_state import StatefulMockLedger
+from sec_agent.tools.tool_dispatcher import build_platform_tool_dispatcher
 
 
 class MvpToolDispatcherTest(unittest.TestCase):
