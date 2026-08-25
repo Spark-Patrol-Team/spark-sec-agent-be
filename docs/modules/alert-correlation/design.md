@@ -1,66 +1,121 @@
 # 告警接入与关联模块设计
 
-## 1. 模块目标
+## 0. 文档信息
 
-本模块负责将固定 JSONL 告警转换为统一 `AlertRecord`，在可解释的最小规则下关联为 `SecurityEvent`，并将该安全事件自动交给风险研判服务。当前目标是提供一条可重复运行的降级链路：**固定 JSONL → 标准化 → AlertRecord → 15 分钟最小关联 → SecurityEvent → 风险研判**。该模块不替代真实平台的实时告警订阅、鉴权或 API 调用。
-
-## 2. 输入、输出与调用边界
-
-| 项目 | 实际契约 | 说明 |
-|---|---|---|
-| 固定原始输入 | `tests/fixtures/fixed_alerts/raw_alerts.jsonl` | STA/XDR 来源字段结构的脱敏样例。 |
-| 固定标准化输入 | `tests/fixtures/fixed_alerts/normalized_alerts.jsonl` | 满足 `NormalizedAlertRecord` 契约的固定样例。 |
-| 接入输出 | `AlertRecord` | 由 `src/sec_agent/platforms/jsonl_sample.py` 提供给 `AlertIngestService`。 |
-| 关联输出 | `SecurityEvent` | 包含 `alert_refs`、时间范围、实体、关联依据、压缩前后数量与摘要。 |
-| 后续输入 | `RiskTriageService.triage(event, alerts)` | `Orchestrator` 在关联成功后立即调用风险研判。 |
-
-`Orchestrator.start` 负责状态流转，关联模块不直接修改 `EventContext.status`。主流程依次记录 `RECEIVED`、`CORRELATING`、`TRIAGED`，之后再进入调查、决策、审批、Mock 处置和验证阶段。
-
-## 3. 固定样例与真实性边界
-
-| 数据类别 | 固定样例标识 | 使用边界 |
-|---|---|---|
-| 平台字段派生样例 | `FIX-STA-SQLI-001`、`FIX-XDR-WEBSHELL-001`，`sample_nature=platform_derived` | 字段结构和规则名称基于此前平台验证结论整理，已使用 RFC 5737 文档地址完成脱敏；不等同于实时平台返回。 |
-| 合成回归样例 | `FIX-STA-LATERAL-001`，`sample_nature=synthetic_regression` | 用于覆盖横向移动、SMB 和回归场景；必须在日志和展示层保留合成标识。 |
-| 真实 OpenAPI/MCP 数据 | 不在本模块实现范围内 | `source="xdr"` 的真实 XDR OpenAPI 鉴权、实时拉取和字段映射尚未接入，不能将本模块表述为真实平台实时读取。 |
-
-仓库不得提交真实平台账号、密码、Token、接入码、Cookie、真实内网地址、原始截图或原始 PCAP。
-
-## 4. 标准化规则
-
-`RawJsonlNormalizer` 位于 `src/sec_agent/platforms/raw_jsonl.py`。当 `JSONL_INPUT_MODE=raw` 时，适配器读取原始 JSONL 并标准化；当输入模式为 `normalized` 时，适配器直接读取标准化 JSONL。两条固定路径对同一条样例应得到一致的标准化业务字段。
-
-| 规则 | 实现口径 |
+| 项目 | 内容 |
 |---|---|
-| 时间 | STA 的 `record_time` 或 XDR 的 `alert_time` 补齐 `Asia/Shanghai` 时区，输出带时区的 `event_time`。 |
-| 来源设备 | STA 优先使用 `reporting_device_name`；XDR 优先使用 `source_device_name`；字段缺失时按来源回退。 |
-| 受影响资产 | 优先使用 `destination_ip`；仅当目的地址缺失时才回退 `host_ip`。 |
-| 通用 XDR 高危 | 默认映射为 `high`，风险种子为 80。 |
-| WebShell 专项规则 | `WebShell蚁剑工具文件管理` 且原始 `alert_grade=高危` 时专项映射为 `critical`，`risk_score_seed=95`。该规则不升级其他高危告警。 |
-| 样例性质 | 原样保留 `platform_derived` 或 `synthetic_regression`。 |
-| 证据引用 | `AlertRecord.evidence_refs` 由标准化字段生成；原始输入路径的 `raw_record_ref` 指向 `raw_alerts.jsonl#<sample_id>`。 |
+| 模块 | `alert-correlation`（告警接入与关联） |
+| 负责人 | 陈敏 |
+| 文档状态 | 当前有效 |
+| 实现状态 | 已复验 |
+| 能力性质 | 自研代码 + 固定 JSONL fallback + Mock 主链；不含真实平台实时接入。 |
+| 关联任务/需求 | `T0826-06`｜固定 JSONL 告警接入关联回归与文档补齐。 |
+| 关联正式交付章节 | `docs/deliverables/安全智能体系统设计说明书V2.md`：模块设计、统一事件上下文、主流程与状态流转、平台接入边界。 |
+| 对应 PR/Commit | PR #17；`1a5bbf1`（后续文档模板对齐提交追加到同一 PR）。 |
+| 最后更新时间 | 2026-08-25 |
+| 最后复验时间 | 2026-08-25 |
 
-## 5. 最小关联规则
+## 1. 目标与非目标
 
-`AlertCorrelationService` 位于 `src/sec_agent/services/correlation.py`。它只处理上层已选定为同一候选攻击活动的告警列表，不承担跨资产攻击图谱、基于概率的聚类或实时流式窗口管理。
+### 1.1 目标
 
-同一次关联必须同时满足以下条件：事件类型一致、受影响资产一致、来源设备一致，且第一条与最后一条告警的时间跨度不超过 15 分钟。满足条件的多条告警压缩为一个 `SecurityEvent`；输出 `alert_count_before`、`event_count_after=1`、`entities`、`correlation_reason` 和 `summary`。任何一个条件不满足时抛出可读异常，由上层拆分为不同安全事件，避免将无关告警错误合并。
+- 读取脱敏固定 JSONL 告警，并在 `raw` 或 `normalized` 输入模式下转换为统一 `AlertRecord`。
+- 按固定样例契约复验严重性、受影响资产、来源设备和证据引用映射。
+- 将同一候选攻击活动在 15 分钟窗口内关联为一个 `SecurityEvent`，保留参与告警、实体、关联依据和压缩前后数量。
+- 使 `SecurityEvent` 自动进入 `RiskTriageService`，由编排层继续推进 MVP 主链。
 
-## 6. 风险研判衔接
+### 1.2 非目标
 
-关联成功后，`Orchestrator` 将 `SecurityEvent` 写入 `EventContext.event_summary`，再调用 `RiskTriageService.triage(event, alerts)`。对固定 WebShell 样例，风险种子 95 被传递到风险研判，主链进入 `TRIAGED` 后继续完成调查和决策，并因高风险处置停在 `APPROVAL_REQUIRED`。Mock 审批通过后可进入执行和验证，最终达到 `COMPLETED`。
+- 不实现真实 XDR OpenAPI/MCP 鉴权、实时告警拉取、分页、限流或网络重试。
+- 不实现跨资产、跨设备、跨场景的攻击图谱、概率聚类或长期窗口聚合。
+- 不直接决定或执行真实处置动作，不绕过审批或编排状态机。
 
-## 7. 异常处理
+## 2. 职责与边界
 
-| 异常类别 | 实际处理 |
-|---|---|
-| 空告警列表 | `correlate([])` 抛出“无法关联空告警列表”。 |
-| 查询标识冲突 | `sample_id` 与 `xdr_event_id` 同时传入且不一致时拒绝读取。 |
-| 样例不存在 | JSONL 适配器抛出“JSONL 样例不存在”。 |
-| 事件类型、资产或设备不一致 | 关联服务拒绝合并，并说明由上层拆分安全事件。 |
-| 超出 15 分钟窗口 | 关联服务拒绝合并，并说明超出最小关联时间窗口。 |
-| JSON/契约错误 | JSONL 适配器或标准化器返回带文件与行号的可读异常。 |
+- 本模块负责：固定 JSONL 接入、原始字段标准化、最小关联、关联异常拒绝、告警与证据引用保留，以及为风险研判提供 `SecurityEvent`。
+- 本模块不负责：真实平台客户端、风险评分规则本身、调查 Agent 的工具编排、处置动作和最终前端展示。
+- 需要人工参与的环节：真实 XDR/MCP 接入前的接口资料确认；超过关联边界、证据不足或真实平台异常时的事件拆分与人工判断。
 
-## 8. 非目标
+## 3. 输入与输出
 
-本轮不实现真实 XDR OpenAPI/MCP 客户端、实时消息消费、跨事件聚类、攻击链推理、持久化关联图谱或自动处置决策。后续接入真实平台时应复用 `PlatformAdapter` 与 `AlertRecord` 契约，并将实时接口鉴权、超时、限流、重试与审计单独纳入测试。
+### 3.1 输入
+
+| 字段/对象 | 类型 | 必填 | 来源 | 含义与约束 |
+|---|---|---|---|---|
+| `raw_alerts.jsonl` | JSONL 文件 | raw 模式必填 | `tests/fixtures/fixed_alerts/` | STA/XDR 字段结构的脱敏固定样例。 |
+| `normalized_alerts.jsonl` | JSONL 文件 | normalized 模式必填 | `tests/fixtures/fixed_alerts/` | 满足 `NormalizedAlertRecord` 契约的固定样例。 |
+| `AlertRecord` 列表 | `list[AlertRecord]` | 是 | `JsonlSampleAdapter` / `AlertIngestService` | 必须属于同一候选攻击活动后才可输入关联。 |
+| `JSONL_INPUT_MODE` | `normalized` / `raw` | 否 | 配置 | `normalized` 直接读取标准化样例；`raw` 先标准化后适配。 |
+
+### 3.2 输出
+
+| 字段/对象 | 类型 | 去向 | 含义与约束 |
+|---|---|---|---|
+| `AlertRecord` | `AlertRecord` | `AlertIngestService`、`Orchestrator` | 保留告警 ID、时间、类型、严重性、资产、样例性质、字段级证据和原始记录引用。 |
+| `SecurityEvent` | `SecurityEvent` | `EventContext.event_summary`、`RiskTriageService` | 包含 `alert_refs`、时间范围、实体、`correlation_reason`、`alert_count_before`、`event_count_after` 和摘要。 |
+| 关联异常 | `ValueError` | `Orchestrator` 错误处理与上层拆分逻辑 | 空输入、事件类型/资产/设备不一致或超过 15 分钟窗口时拒绝合并。 |
+
+## 4. 核心流程与状态变化
+
+1. `JsonlSampleAdapter` 按输入模式读取固定 JSONL；raw 模式调用 `RawJsonlNormalizer`，normalized 模式校验 `NormalizedAlertRecord`。
+2. 适配器生成 `AlertRecord`，写入 `source_device_name`、`affected_asset`、`sample_nature`、`risk_score_seed`、`evidence_refs` 与 `raw_record_ref`。
+3. `AlertIngestService` 将告警交给 `Orchestrator`；编排器记录 `RECEIVED` 后进入 `CORRELATING`。
+4. `AlertCorrelationService` 校验事件类型、目标资产、来源设备和 15 分钟窗口，生成 `SecurityEvent` 并写入 `EventContext.event_summary`。
+5. 编排器调用 `RiskTriageService.triage(event, alerts)`，记录 `TRIAGED`；后续调查、决策、审批、Mock 处置和验证仍由其他模块及编排器处理。
+6. 关联条件不满足或接入失败时，模块返回可读异常；编排器记录错误并转入相应失败/人工路径，不产生伪造的关联事件。
+
+关联模块不直接修改 `EventContext.status`；所有状态变化仅由 `src/sec_agent/services/orchestrator.py` 与状态机推进。
+
+## 5. 上下游关系与契约
+
+| 方向 | 模块/接口 | 契约或文档位置 | 当前状态 |
+|---|---|---|---|
+| 上游 | JSONL 固定样例 | `tests/fixtures/fixed_alerts/`、`NormalizedAlertRecord` | 已对齐。 |
+| 上游 | 平台适配器 | `src/sec_agent/platforms/jsonl_sample.py`、`raw_jsonl.py` | 已对齐，仅固定样例模式。 |
+| 当前模块 | 关联服务 | `src/sec_agent/services/correlation.py` | 已对齐，最小 15 分钟规则。 |
+| 下游 | 风险研判 | `src/sec_agent/services/triage.py`、`RiskTriageService.triage(event, alerts)` | 已对齐，WebShell 固定样例风险种子为 95。 |
+| 下游 | 主链编排 | `src/sec_agent/services/orchestrator.py`、`EventContext` | 已对齐。 |
+| 后续 | 调查/处置/前端 | `EventContext.event_summary`、`triage`、`investigation`、`response` | 已对齐，具体业务由对应模块负责。 |
+
+## 6. 安全边界
+
+- 权限与审批：关联模块不执行外部动作；高风险处置由后续响应模块触发审批。
+- 输入校验：空列表、标识冲突、样例不存在、类型/资产/设备冲突和窗口超时均拒绝并返回可读错误。
+- 敏感信息处理：仅提交 RFC 5737 文档地址和脱敏固定样例；真实账号、密码、Token、接入码、Cookie、真实内网地址、截图和原始 PCAP 不入仓库。
+- 失败、超时与人工接管：当前实现只校验固定样例关联时间窗口；真实平台的网络超时、重试、回滚和人工接管策略尚未实现。
+- 真实执行与 Mock 边界：本模块输出固定 JSONL fallback 数据；Mock 处置流程可运行，但不代表真实平台动作已执行。
+
+## 7. 关键设计决策
+
+| 决策 | 原因 | 未采用方案及原因 |
+|---|---|---|
+| 使用 `AlertRecord` 作为关联输入 | 已是主链接入后的统一对象，可避免下游重复解析平台 JSON。 | 直接在关联服务解析原始 STA/XDR JSON 会破坏平台适配边界。 |
+| 采用“类型 + 资产 + 设备 + 15 分钟”最小规则 | 可解释、易回归，适合 MVP 固定样例演示。 | 概率聚类和攻击图谱缺少稳定标签、实时流和评估数据，当前不实现。 |
+| `destination_ip` 优先、`host_ip` 回退 | 与已合入样例、映射表和处置目标语义一致。 | `host_ip` 全局优先会与固定样例契约冲突。 |
+| WebShell 蚁剑专项 `critical/95` | 保持已确认的固定样例基线，并保证风险研判高风险路径可复现。 | 将所有 XDR 高危升级为 critical 会夸大通用告警风险。 |
+| 证据只保存引用 | 避免在统一上下文中复制原始平台大对象与敏感数据。 | 直接保存原始响应会增加敏感信息和存储边界风险。 |
+
+## 8. 非功能、可观测与审计要求
+
+| 维度 | 当前要求或设计 | 验证方式 |
+|---|---|---|
+| 性能与时延 | 固定 JSONL 小规模回归，无真实吞吐量 SLA。 | 单元测试和本地主流程运行；不宣称生产性能指标。 |
+| 稳定性与可重复性 | 相同固定输入应产生一致字段、风险基线和关联数量。 | `tests/test_alert_correlation_regression.py` 与既有 JSONL 回归。 |
+| 可观测性 | `EventContext.timeline` 记录 `RECEIVED`、`CORRELATING`、`TRIAGED` 等状态；错误写入 `errors`。 | 主流程脚本输出与事件上下文。 |
+| 审计与追踪 | 使用 `alert_refs`、`raw_record_ref`、字段级 `evidence_refs`、`trace_id` 和 `event_id` 追溯。 | 固定样例测试与 `evidence_lookup`。 |
+
+## 9. 当前限制与后续事项
+
+| 限制或未实现项 | 对主链影响 | 后续条件/负责人 |
+|---|---|---|
+| 真实 XDR OpenAPI/MCP 未接入 | 不阻塞固定 JSONL MVP 主链；阻塞真实平台实时演示。 | 平台接口文档、鉴权方式与脱敏响应样例确认后，由平台适配器负责人实现。 |
+| 跨资产/跨设备攻击图谱未实现 | 不阻塞当前单候选活动关联；限制复杂攻击链分析。 | 获得稳定事件标签、数据量与评估口径后扩展。 |
+| 真实平台超时、限流、重试未实现 | 不影响固定样例；影响真实接入可靠性。 | 真实客户端接入时补充并测试。 |
+| 本地 Windows Python 环境未复验 | 不影响已在隔离环境完成的代码验证；影响成员本机复现。 | 配置可用 Python `>=3.11` 后由本机复跑。 |
+
+## 10. 变更记录
+
+| 日期 | PR/Commit | 变更内容 | 是否复验 |
+|---|---|---|---|
+| 2026-08-25 | PR #17 / `1a5bbf1` | 新增固定 JSONL 告警接入关联专项回归与设计文档。 | 是，隔离环境专项 17 项和全量 70 项测试已执行。 |
+| 2026-08-25 | PR #17 后续提交 | 对齐团队统一模块文档模板，补充文档信息、契约、证据、限制和变更记录。 | 文档事实与同一代码基线复核。 |

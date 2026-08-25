@@ -1,66 +1,164 @@
 # 告警接入与关联模块开发说明
 
-## 1. 代码位置与职责
+## 0. 文档信息
 
-| 代码位置 | 职责 |
+| 项目 | 内容 |
 |---|---|
-| `src/sec_agent/platforms/raw_jsonl.py` | 读取原始 STA/XDR JSONL 并映射为 `NormalizedAlertRecord`。 |
-| `src/sec_agent/platforms/jsonl_sample.py` | 在 `normalized` 或 `raw` 模式下读取固定样例，转换为 `AlertRecord`，提供证据查询 Mock 工具。 |
-| `src/sec_agent/services/ingest.py` | 调用 `PlatformAdapter.fetch_alerts`，不承载字段映射。 |
-| `src/sec_agent/services/correlation.py` | 基于类型、资产、设备和 15 分钟窗口执行最小关联，输出 `SecurityEvent`。 |
-| `src/sec_agent/services/orchestrator.py` | 执行接入、关联、风险研判、调查、决策、审批、处置与验证的主链编排。 |
-| `src/sec_agent/services/triage.py` | 基于 `SecurityEvent` 和参与关联的 `AlertRecord` 生成风险研判结果。 |
-| `tests/test_alert_correlation_regression.py` | T0826-06 专项回归测试。 |
+| 模块 | `alert-correlation`（告警接入与关联） |
+| 负责人 | 陈敏 |
+| 文档状态 | 当前有效 |
+| 实现状态 | 已复验 |
+| 能力性质 | 自研代码 + 固定 JSONL fallback + Mock 主链；真实 XDR/MCP 未接入。 |
+| 关联任务/需求 | `T0826-06`｜固定 JSONL 告警接入关联回归与文档补齐。 |
+| 关联正式交付章节 | `docs/deliverables/系统开发与运行说明.md`：第 8 章主流程说明、第 9 章模块说明与接入位置、第 11 章测试与验证。 |
+| 对应 PR 或 Commit | PR #17；`1a5bbf1`（后续模板对齐提交追加至同一 PR）。 |
+| 适用代码版本 | `main@9a127eb` 加 PR #17 分支变更。 |
+| 最后更新时间 | 2026-08-25 |
 
-## 2. 输入模式与配置
+## 1. 当前实现摘要
 
-```text
-PLATFORM_BACKEND=jsonl_sample
-JSONL_SAMPLE_DIR=tests/fixtures/fixed_alerts
-JSONL_INPUT_MODE=normalized | raw
-```
+### 1.1 已实现
 
-`normalized` 直接加载 `normalized_alerts.jsonl`，适用于固定契约回归；`raw` 加载 `raw_alerts.jsonl`，先通过 `RawJsonlNormalizer` 标准化再进入相同的 `AlertRecord` 适配路径。两种模式均不访问真实 XDR 平台。
+- `JsonlSampleAdapter` 在 `normalized` 模式下读取标准化固定样例，在 `raw` 模式下读取原始 JSONL 并调用 `RawJsonlNormalizer`。
+- 原始样例可映射为 `NormalizedAlertRecord`，再适配为统一 `AlertRecord`。
+- 固定映射支持 STA/XDR 来源设备、目的资产优先、`host_ip` 回退、WebShell 蚁剑专项 `critical/95` 与字段级证据引用。
+- `AlertCorrelationService` 对同一候选活动执行事件类型、资产、来源设备和 15 分钟窗口校验，并输出 `SecurityEvent`。
+- `Orchestrator` 在关联后调用风险研判；raw WebShell 固定样例可实际进入 `TRIAGED`、`APPROVAL_REQUIRED`，Mock 审批后到 `COMPLETED`。
 
-本地 `.env` 不得提交。`.env.example` 只能保存不敏感的配置模板，不能出现真实账号、密码、Token、接入码或内部地址。
+### 1.2 未实现或未复验
 
-## 3. 本地调试
+- 真实 XDR OpenAPI/MCP 鉴权、实时查询、分页、限流、网络超时、重试和返回字段映射未实现。
+- 真实平台上的关联准确率、召回率、性能吞吐量和长时间窗口稳定性未具备可靠计算条件。
+- 成员 Windows 本机因 Python `>=3.11` 运行环境未配置成功，尚未在该设备重复执行；本轮结果来自同一 GitHub main 提交的隔离环境实测。
 
-在仓库根目录执行以下命令。若外部环境设置了与项目不兼容的 `APP_ENV`，测试前应清除该外部变量或显式设置 `APP_ENV=local`。
+## 2. 代码位置
+
+| 路径 | 主要对象/入口 | 作用 |
+|---|---|---|
+| `src/sec_agent/platforms/raw_jsonl.py` | `RawJsonlNormalizer` | 原始 STA/XDR JSONL 到 `NormalizedAlertRecord` 的映射与校验。 |
+| `src/sec_agent/platforms/jsonl_sample.py` | `JsonlSampleAdapter` | 读取 raw/normalized 固定样例，生成 `AlertRecord`，提供证据查询 Mock。 |
+| `src/sec_agent/services/ingest.py` | `AlertIngestService.ingest` | 按来源调用平台适配器；不重复解析来源字段。 |
+| `src/sec_agent/services/correlation.py` | `AlertCorrelationService.correlate` | 执行最小关联、实体汇总和关联依据生成。 |
+| `src/sec_agent/services/orchestrator.py` | `Orchestrator.start` | 接入→关联→风险研判→调查→处置的统一状态编排。 |
+| `src/sec_agent/services/triage.py` | `RiskTriageService.triage` | 使用 `SecurityEvent` 与参与告警生成风险研判。 |
+| `tests/test_alert_correlation_regression.py` | `AlertCorrelationRegressionTest` | T0826-06 关联专项回归。 |
+
+## 3. 依赖与配置
+
+| 名称 | 必需/可选 | 获取方式 | 未配置时行为 |
+|---|---|---|---|
+| Python `>=3.11` | 必需 | 按 `pyproject.toml` 与团队运行说明配置。 | 无法运行项目测试和主流程。 |
+| `PLATFORM_BACKEND=jsonl_sample` | 运行固定 JSONL 主链时必需 | `.env` 或命令行环境变量。 | 默认可改用 `fixed_sample`，但不走 JSONL 路径。 |
+| `JSONL_SAMPLE_DIR=tests/fixtures/fixed_alerts` | 运行固定 JSONL 时必需 | 相对项目根目录配置。 | 样例文件缺失时读取失败。 |
+| `JSONL_INPUT_MODE=normalized|raw` | 运行 JSONL 时可选 | `.env` 或命令行环境变量。 | 默认 `normalized`；`raw` 走标准化器。 |
+| `STORAGE_BACKEND=memory` | 本地演示可选 | `.env` 或命令行环境变量。 | 默认内存存储；不需要 MySQL。 |
+| 深信服 MCP 地址 | 可选 | 受控环境变量或本地受控配置。 | 测试框架跳过依赖真实 MCP 的 1 项测试；固定 JSONL 和 Mock 主链不受影响。 |
+
+- 支持的运行环境：项目声明 Python `>=3.11`；本轮隔离环境使用 Python 3.12 实测。
+- 敏感配置只通过环境变量或受控配置注入；文档、代码和固定样例中不填写真实凭据、Token、接入码、MCP URL 或内网地址。
+
+## 4. 启动与调试
+
+在仓库根目录执行：
 
 ```bash
-# T0826-06 专项回归
+# 专项回归
 PYTHONPATH=src python -m unittest tests.test_alert_correlation_regression
 
-# JSONL 读取与标准化已有回归
+# JSONL 接入和关联相关回归
 PYTHONPATH=src python -m unittest \
-  tests.test_raw_jsonl_ingest_and_correlation tests.test_jsonl_platform
+  tests.test_alert_correlation_regression \
+  tests.test_raw_jsonl_ingest_and_correlation \
+  tests.test_jsonl_platform
 
-# 全量测试
-PYTHONPATH=src python -m unittest discover -s tests
+# 全量测试；外部环境变量干扰配置测试时可先清除相关变量
+env -u APP_ENV -u APP_NAME -u PLATFORM_BACKEND -u JSONL_INPUT_MODE \
+  -u JSONL_SAMPLE_DIR -u STORAGE_BACKEND \
+  PYTHONPATH=src python -m unittest discover -s tests
 
-# raw 固定 JSONL 最小主链
+# raw 固定 JSONL 主链
 APP_ENV=local STORAGE_BACKEND=memory PLATFORM_BACKEND=jsonl_sample \
 JSONL_INPUT_MODE=raw JSONL_SAMPLE_DIR=tests/fixtures/fixed_alerts \
 PYTHONPATH=src python -m sec_agent.scripts.run_flow
 ```
 
-主流程脚本默认选取 `FIX-XDR-WEBSHELL-001`。执行后应先到达 `APPROVAL_REQUIRED`，脚本中的 Mock 审批通过后继续到 `COMPLETED`。该结果用于验证固定样例主链衔接，不证明真实处置动作已经执行。
+- 成功判据：专项关联回归通过；全量测试返回 `OK`；raw WebShell 主链依次记录 `RECEIVED`、`CORRELATING`、`TRIAGED`、`APPROVAL_REQUIRED`，Mock 审批后最终为 `COMPLETED`。
+- 常见失败及排查：样例文件不存在时检查 `JSONL_SAMPLE_DIR`；`APP_ENV=PROD` 等外部变量导致配置枚举不匹配时使用本地配置或清除变量；Python 版本不满足时安装/启用合规解释器，不使用 Python 3.9 强行运行。
 
-## 4. 关键实现约束
+## 5. 调用与接入方法
 
-### 4.1 字段映射
+### 5.1 调用入口
 
-业务字段规则以 `tests/fixtures/fixed_alerts/raw_to_normalized_mapping.csv` 和固定 JSONL 为基线。`affected_asset` 必须优先取 `destination_ip`，仅在目的地址缺失时回退 `host_ip`；STA 与 XDR 的 `source_device_name` 映射不能混用。
+- 主链入口：`Orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))`。
+- 接入入口：`AlertIngestService.ingest` 调用 `JsonlSampleAdapter.fetch_alerts`。
+- 关联入口：`AlertCorrelationService.correlate(alerts)`。
+- 证据查询入口：JSONL 适配器的 `evidence_lookup` Mock 工具，根据 `SecurityEvent.alert_refs` 查询字段级 `evidence_refs`。
 
-`WebShell蚁剑工具文件管理` 的高危固定样例是专项覆盖：输出为 `critical/95`。通用 XDR 高危仍映射为 `high/80`，不得把专项规则扩大为全局高危升级。
+### 5.2 最小示例
 
-### 4.2 关联边界
+```python
+from pathlib import Path
+from sec_agent.platforms.jsonl_sample import JsonlSampleAdapter
+from sec_agent.services.correlation import AlertCorrelationService
 
-关联服务接收的是同一候选活动的 `AlertRecord` 列表，且不改变 `EventContext.status`。关联条件为：`alert_type` 一致、受影响资产一致、`source_device_name` 一致、首末时间跨度不超过 15 分钟。服务不实现跨资产、跨设备或跨场景的自动聚类。
+adapter = JsonlSampleAdapter(Path("tests/fixtures/fixed_alerts"), input_mode="raw")
+alerts = adapter.fetch_alerts(sample_id="FIX-XDR-WEBSHELL-001")
+event = AlertCorrelationService(window_minutes=15).correlate(alerts)
+```
 
-### 4.3 证据可追溯性
+```text
+SecurityEvent：
+- alert_refs: ["FIX-XDR-WEBSHELL-001"]
+- entities.assets: ["198.51.100.11"]
+- event_count_after: 1
+- correlation_reason: 包含事件类型、资产、设备和时间窗口
+```
 
-`AlertRecord.evidence_refs` 保存标准化字段级证据引用；`raw_record_ref` 记录原始或标准化 JSONL 文件与样例 ID。`SecurityEvent.alert_refs` 保存参与关联的告警 ID，而调查阶段可通过平台适配器的 `evidence_lookup` 根据这些 ID 查询字段级证据。
+### 5.3 上下游接入注意事项
 
-真实 XDR OpenAPI/MCP 接入由平台工具入口另行实现。接入后应维持 `PlatformAdapter` 与 `AlertRecord` 契约，新增接口鉴权、超时、分页、限流、重试、脱敏与审计测试；不能用固定 JSONL 测试结果替代真实接口验证。
+- 所有平台字段先在 `platforms/` 适配，不要在 `services/correlation.py` 重复解析 JSON。
+- 关联前的告警必须具有一致事件类型、受影响资产和来源设备；不一致时由上层拆分事件。
+- 关联模块不直接写状态，必须由 `orchestrator.py` 推进 `EventContext`。
+- `sample_nature` 必须保留，避免将合成回归样例混入平台字段派生样例展示。
+
+## 6. 异常处理与安全控制
+
+- 输入错误：空告警、样例不存在、`sample_id/xdr_event_id` 冲突、事件类型/资产/设备冲突和 15 分钟窗口超时均返回可读异常。
+- 依赖或工具失败：固定 JSONL 读取错误会使编排器记录 `ingest` 或 `orchestrator` 错误；真实平台依赖未接入，不进行伪造 fallback。
+- 重复调用与幂等：关联为纯内存计算；后续审批和 Mock 处置的幂等由 `EventRepository` 与 `idempotency_key` 管理。
+- 超时、重试与回滚：固定样例关联未实现网络超时/重试/回滚；真实平台接入时必须单独实现和测试。
+- 权限、审批与敏感数据：关联不访问真实凭据也不触发外部动作；高风险处置仍由后续响应模块走人工审批；证据仅保留引用。
+
+## 7. 真实平台、Mock 与 fallback 边界
+
+| 能力 | 当前实际实现 | 触发条件 | 不得误写为 |
+|---|---|---|---|
+| 原始/标准化告警读取 | 固定 JSONL fallback | `PLATFORM_BACKEND=jsonl_sample` | “已实时拉取 XDR 告警”。 |
+| STA/XDR 字段映射 | 本地实现 | `JSONL_INPUT_MODE=raw` | “已调用真实 STA/XDR 接口”。 |
+| 证据查询 | JSONL 字段级 Mock | 调用 `evidence_lookup` | “已获得真实平台原始日志”。 |
+| 风险研判衔接 | 自研主链代码 | 关联成功后由编排器调用 | “已验证所有真实告警风险”。 |
+| 处置和验证 | 有状态 Mock | 高风险样例审批后 | “已执行真实隔离/封禁”。 |
+| 真实 XDR OpenAPI/MCP | 未实现 | 不适用 | “已完成平台正式接入”。 |
+
+## 8. 已知限制与待办
+
+| 优先级 | 事项 | 是否影响主链 | 负责人/完成条件 |
+|---|---|---|---|
+| P0 | 真实 XDR OpenAPI 路径、鉴权和返回字段映射未确认。 | 不影响固定 JSONL 主链；影响真实平台演示。 | 平台接口资料明确后，由平台适配器负责人实现。 |
+| P1 | 未实现跨资产、跨设备和跨场景攻击图谱。 | 不影响当前最小关联。 | 获得评估数据和业务规则后扩展。 |
+| P1 | 真实平台超时、限流和重试未实现。 | 不影响固定样例。 | 真实客户端开发时补齐。 |
+| P2 | 成员 Windows 本机未配置可用 Python `>=3.11`。 | 不影响隔离环境验证；影响本机复验。 | 配置环境后按第 4 节命令复跑。 |
+
+## 9. 运行观测、版本兼容与迁移
+
+- 日志与关键指标位置：当前 MVP 主要通过 `EventContext.timeline`、`errors`、`alert_refs`、`event_summary` 和测试输出观测；未实现独立监控指标或集中日志平台。
+- 健康检查或运行状态判断：主流程关注 `status`、`timeline`、`triage.risk_score`、`response.execution` 和 `response.verification`；HTTP 服务健康检查见 `GET /health`。
+- 兼容的接口/Schema/平台版本：固定样例契约为 `NormalizedAlertRecord`，`schema_version=2026-08-21.mvp.v1`；仅支持仓库内固定 JSONL 结构。
+- 升级、迁移或回退注意事项：调整字段映射、风险种子或关联条件时必须同步更新固定 JSONL、映射说明和回归测试；真实平台适配器应新增实现，不应破坏 `PlatformAdapter` 与 `AlertRecord` 契约。
+
+## 10. 变更记录
+
+| 日期 | PR/Commit | 实现变化 | 相关测试 |
+|---|---|---|---|
+| 2026-08-25 | PR #17 / `1a5bbf1` | 新增告警关联专项回归与固定 JSONL 主链验证。 | `tests/test_alert_correlation_regression.py`、`test_raw_jsonl_ingest_and_correlation.py`、`test_jsonl_platform.py`。 |
+| 2026-08-25 | PR #17 后续提交 | 对齐团队开发说明模板，补充运行、配置、调用、异常、安全、边界、限制与兼容性信息。 | 文档事实对照同一 GitHub main 基线复核。 |
