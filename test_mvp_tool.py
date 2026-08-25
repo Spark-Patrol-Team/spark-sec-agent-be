@@ -17,7 +17,17 @@ from sec_agent.domain.models import (  # noqa: E402
     ToolRequest,
     ToolRiskLevel,
 )
-from sec_agent.tools.tool_dispatcher import dispatch_tool  # noqa: E402
+from sec_agent.platforms.mock_state import StatefulMockLedger  # noqa: E402
+from sec_agent.tools.tool_dispatcher import build_platform_tool_dispatcher  # noqa: E402
+
+
+dispatcher = build_platform_tool_dispatcher(
+    evidence_resolver=lambda request: [],
+    ledger=StatefulMockLedger(),
+    raw_result_prefix="test:/",
+    action_ref_prefix="test:/",
+    source_label="MVP测试平台",
+)
 
 
 def make_request(
@@ -48,7 +58,7 @@ req1 = make_request(
     action_name="query_log",
     params={},
 )
-res1 = dispatch_tool(req1)
+res1 = dispatcher.dispatch(req1)
 print("====XDR查询结果====")
 print(res1.model_dump_json(indent=2))
 assert res1.status == ToolCallStatus.SUCCESS
@@ -65,7 +75,7 @@ req2 = make_request(
         "input_data": {"alert_count": 2}
     },
 )
-res2 = dispatch_tool(req2)
+res2 = dispatcher.dispatch(req2)
 print("\n====Mock第一次调用====")
 print(res2.model_dump_json(indent=2))
 assert res2.status == ToolCallStatus.SUCCESS
@@ -82,7 +92,7 @@ req3 = make_request(
         "input_data": {"note": "新增一条告警"}
     },
 )
-res3 = dispatch_tool(req3)
+res3 = dispatcher.dispatch(req3)
 print("\n====Mock第二次调用（同session，状态要合并）====")
 print(res3.model_dump_json(indent=2))
 assert res3.status == ToolCallStatus.SUCCESS
@@ -99,11 +109,11 @@ req4 = make_request(
     action_name="xxx",
     params={},
 )
-res4 = dispatch_tool(req4)
+res4 = dispatcher.dispatch(req4)
 print("\n====不支持工具错误返回====")
 print(res4.model_dump_json(indent=2))
 assert res4.status == ToolCallStatus.FAILED
 assert res4.error_type == ToolErrorType.UNSUPPORTED_TOOL
-assert "不支持该工具" in (res4.error_message or "")
+assert "不支持工具" in (res4.error_message or "")
 
 print("\n====全部MVP工具验证通过====")
