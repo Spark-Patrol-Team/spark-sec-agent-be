@@ -48,8 +48,8 @@ PYTHONPATH=src python -m unittest tests.test_investigation_agent -v
 
 - 在最新 main（含 PR #13）上运行：**16 passed / 1 skipped**，与开发分支一致。
 - 独立运行 `sec_agent.deep_agent`（Mock 完整一轮，配置 LLM key）：6 个 Mock 工具、7 次工具调用、完整结构化报告、**实际调用 LLM**、**未发生内部 fallback**。
-- 主链桥接集成测试 `tests/test_investigation_and_dispatcher_integration.py`：**4 passed**（其中 auto 后端回退用假 bridge 模拟；真实 bridge 路径未覆盖）。
-- 主链实测（`run_flow.py`，`auto` 后端）：补装 `tzdata` 后全流程可跑通；因 `services/deep_agent_bridge.py` 以 `import_module("deep_agent.*")` 导入不存在的顶层包，bridge 加载失败 → **实际触发内部 fallback** → 内部工具子链（无 LLM、非 PR #13 Agent）。
+- 主链桥接集成测试 `tests/test_investigation_and_dispatcher_integration.py`：**5 passed**（新增 `test_bridge_loads_real_deep_agent_modules` 回归用例，验证 bridge 能从 `sec_agent.deep_agent` 加载真实模块；修复前该用例必挂）。
+- 主链实测（`run_flow.py`，`auto` 后端）：补装 `tzdata` + 修复 bridge 导入路径后，**真实加载 PR #13 Agent + 实际调用 LLM + 7 次 Mock 工具调用**，生成完整结构化报告、未发生内部 fallback；WebShell 样例下报告标记人工接管 → 主链停在 HUMAN_REQUIRED（修复前回退子链会直接自动处置至 COMPLETED）。
 - 环境备注：Windows Python 缺 `tzdata` 时主链 import 即报 `ZoneInfoNotFoundError: Asia/Shanghai`；`fastapi` / `sqlalchemy` / `pymysql` 为主链全链依赖。
 
 ## 样例数据性质

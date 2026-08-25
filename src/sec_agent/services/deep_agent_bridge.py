@@ -40,12 +40,12 @@ class DeepAgentBridge:
     def _load_modules(self) -> dict[str, Any]:
         try:
             return {
-                "DeepInvestigationAgent": importlib.import_module("deep_agent.agent").DeepInvestigationAgent,
-                "load_config": importlib.import_module("deep_agent.config").load_config,
-                "LLMClient": importlib.import_module("deep_agent.llm").LLMClient,
-                "SecurityEventInput": importlib.import_module("deep_agent.models").SecurityEventInput,
-                "ToolRegistry": importlib.import_module("deep_agent.tools.base").ToolRegistry,
-                "build_mock_tools": importlib.import_module("deep_agent.tools.mock").build_mock_tools,
+                "DeepInvestigationAgent": importlib.import_module("sec_agent.deep_agent.agent").DeepInvestigationAgent,
+                "load_config": importlib.import_module("sec_agent.deep_agent.config").load_config,
+                "LLMClient": importlib.import_module("sec_agent.deep_agent.llm").LLMClient,
+                "SecurityEventInput": importlib.import_module("sec_agent.deep_agent.models").SecurityEventInput,
+                "ToolRegistry": importlib.import_module("sec_agent.deep_agent.tools.base").ToolRegistry,
+                "build_mock_tools": importlib.import_module("sec_agent.deep_agent.tools.mock").build_mock_tools,
             }
         except ModuleNotFoundError as exc:
             raise DeepAgentBridgeUnavailable(f"deep_agent 包未安装或未合入当前仓库: {exc.name}") from exc
@@ -69,7 +69,7 @@ class DeepAgentBridge:
 
     def _register_mcp_tools(self, registry: Any, config: Any, strict: bool) -> None:
         try:
-            build_mcp_tools = importlib.import_module("deep_agent.tools.mcp_client").build_mcp_tools
+            build_mcp_tools = importlib.import_module("sec_agent.deep_agent.tools.mcp_client").build_mcp_tools
         except ModuleNotFoundError as exc:
             if strict:
                 raise DeepAgentBridgeUnavailable(f"deep_agent MCP 工具不可用: {exc.name}") from exc
