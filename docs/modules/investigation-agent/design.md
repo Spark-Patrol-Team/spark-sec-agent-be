@@ -649,6 +649,40 @@ LLM 自主调用（只看到 ASCII 别名）
 
 主链接入方式见 `development.md` 的「与主链集成状态」。
 
+---
+
+# 复验结果（2026-08-25 实测）
+
+复验对象：最新 main（含 PR #13「深度调查 Agent 子智能体」，2026-08-24 合并）可真实加载 `sec_agent.deep_agent`；并对 feature 分支（275e0ec，含主链桥接）做了主链实际运行路径实测。按实际情况记录，分「独立运行」与「主链」两条路径。
+
+## ① 独立运行路径（`python -m sec_agent.deep_agent.main`）— 复验通过
+
+- **Agent 加载**：`import sec_agent.deep_agent` 成功，加载的即 PR #13 的 `agent.DeepInvestigationAgent`（可实例化）。
+- **工具调用**：`TOOL_MODE=mock` 可用 6 个 Mock 工具；本轮完整调查实际发生 **7 次工具调用**（`query_asset`×2、`query_alerts`×2、`query_vulnerabilities`、`vuln_intelligence`、`secgpt_analyze`；其中 2 次 `failed`=数据不可得），记录于 `report.json.tool_call_records`。
+- **结构化报告**：生成完整报告（结论=确认真实 WebShell 攻击、风险 HIGH、证据 6 条、调查步骤 3 步、工具记录 7 条、攻击链闭环、置信度 0.86、处置建议 6 条、人工接管标记、未解决问题 5 项）。
+- **LLM**：本轮**实际调用 LLM**（结构化报告与步骤叙述只能由 LLM ReAct 闭环产生；LLM 未配置时 agent 直接报错）。
+- **内部 fallback**：本轮**未发生**（结论为具体判定而非「证据不足」）。`need_manual_takeover=true` 是正常业务标记（高风险处置需人工确认），不等于 fallback。
+- **测试**：`tests/test_investigation_agent.py` 16 passed / 1 skipped。
+
+## ② 主链路径（feature 275e0ec）— 实测，bridge 当前不可用
+
+- 主链 `Orchestrator` INVESTIGATING 阶段现支持 3 个后端（`INVESTIGATION_BACKEND`：`auto` 默认 / `deep_agent` / `tool_mock`），由 `services/investigation.py` + `services/deep_agent_bridge.py` 实现。
+- 补装 `tzdata`（Windows Python 缺，项目已声明需要）后主链 `run_flow.py` 可全流程跑通（RECEIVED→…→INVESTIGATING→DECISION_READY→APPROVAL_REQUIRED→EXECUTING→VERIFYING→COMPLETED）。
+- **实测**：`auto` 后端在 INVESTIGATING 阶段**实际发生内部 fallback**——bridge 用 `importlib.import_module("deep_agent.agent")` 导入**顶层** `deep_agent`，但仓库内包实际是 `src/sec_agent/deep_agent/`（顶层名为 `sec_agent.deep_agent`），任意环境（PYTHONPATH=src 或 pip 安装）都导不进来 → 抛 `DeepAgentBridgeUnavailable` → 回退**内部工具调查子链**（`evidence_lookup` + `xdr_log_query`，经 `FixedSampleAdapter`，无 LLM）。
+- 因此主链当前**未真实加载 PR #13 Agent、未实际调用 LLM**。bridge 修复方向：把 `deep_agent.*` 改为 `sec_agent.deep_agent.*`（或恢复 `deep_agent` 顶层包布局），修复后再验证 `auto` 后端真正走 bridge 的路径。
+- main（7db2724）基线：无 bridge、无 `deep_agent` 引用，仅占位单步查询（grep 确认）。
+
+---
+
+# 实现层次区分
+
+| 层次 | 内容 | 当前状态 |
+|------|------|----------|
+| **本地 Python 实现** | `sec_agent.deep_agent` 完整调查闭环（LLM 驱动 + 工具 + 结构化报告） | ✅ 独立运行复验通过；主链 bridge 修复导入路径后方可被主链加载 |
+| **FastGPT 目标路线** | 将调查逻辑迁移到 FastGPT 编排（深信服 MCP 工具已由 FastGPT 托管） | 🔶 目标规划，未实现 / 未验证 |
+| **Mock 工具** | 6 个内置兜底工具（人工构造数据） | ✅ 本轮复验使用；仅覆盖 WebShell 主场景 |
+| **真实平台能力** | 深信服 MCP 5 服务 19 工具、真实 XDR 数据 | 🔶 已连通（dbproxy 实测成功）；整体联调待客服确认，本轮未使用 |
+
 
 
 

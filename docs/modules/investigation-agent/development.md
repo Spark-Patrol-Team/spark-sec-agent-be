@@ -98,12 +98,21 @@ PYTHONPATH=src python -m sec_agent.deep_agent.config_gui
 
 ## 与主链集成状态
 
-- 主链 `Orchestrator` 在 `INVESTIGATING` 阶段调用 `src/sec_agent/services/investigation.py` 的占位 `DeepInvestigationAgent`。
-- 本 `sec_agent.deep_agent` 是完整的 LLM 深度调查子智能体，尚未桥接到主链（`services/investigation.py` 仍为占位单步查询）。
-- 桥接待办：将 `sec_agent.deep_agent` 的调查循环 / 工具调用适配到仓库 `domain.models` 的 `SecurityEvent` / `TriageResult` / `InvestigationReport` 与 `PlatformAdapter.run_tool` 契约。
+- 主链 `Orchestrator` 在 `INVESTIGATING` 阶段调用 `src/sec_agent/services/investigation.py` 的 `DeepInvestigationAgent`，支持 3 个后端（`INVESTIGATION_BACKEND`：`auto` 默认 / `deep_agent` / `tool_mock`）。
+- `auto` / `deep_agent` 后端经 `services/deep_agent_bridge.py` 的 `DeepAgentBridge` 桥接 `sec_agent.deep_agent`（构造工具、要求 LLM 可用、领域模型互转）；`auto` 在 bridge 不可用 / 异常时回退**内部工具调查子链**（`evidence_lookup` + `xdr_log_query`，经 `PlatformAdapter`，无 LLM）；`tool_mock` 仅内部子链。
+- **已知问题（2026-08-25 实测）**：bridge 用 `importlib.import_module("deep_agent.*")` 导入**顶层** `deep_agent`，但仓库内包实际是 `src/sec_agent/deep_agent/`（顶层名为 `sec_agent.deep_agent`）→ 任意环境都导不进来 → 抛 `DeepAgentBridgeUnavailable` → `auto` 后端**恒回退**内部工具子链，主链当前**无法真实加载 PR #13 Agent / 调用 LLM**。
+- 修复方向：把 bridge 中 `deep_agent.*` 改为 `sec_agent.deep_agent.*`（或恢复 `deep_agent` 顶层包布局），修复后补测 `auto` 后端真正走 bridge 的路径。
+
+### 复验结果（2026-08-25）
+
+- **独立运行 `sec_agent.deep_agent`（复验通过）**：main 可真实加载 PR #13 Agent；`TOOL_MODE=mock` 完整调查一轮，6 个 Mock 工具实际调用 7 次，生成完整结构化报告（结论 / 证据 / 攻击链 / 处置建议 / 置信度 0.86），退出码 0；**实际调用 LLM**；**未发生内部 fallback**（`need_manual_takeover=true` 为正常业务标记）。`tests/test_investigation_agent.py` 16 passed / 1 skipped。
+- **主链 `run_flow.py`（实测）**：补装 `tzdata` 后可全流程跑通（含 INVESTIGATING→DECISION_READY→…→COMPLETED）；但 `auto` 后端因 bridge 导入失败**实际发生内部 fallback**，跑的是内部工具子链（非 PR #13 Agent、无 LLM）。
+- **环境**：Windows Python 需补装 `tzdata`（否则主链 import 即报 `ZoneInfoNotFoundError: Asia/Shanghai`）；`fastapi` / `sqlalchemy` / `pymysql` 为主链全链依赖，deep_agent 独立运行只需 `openai` / `requests`。
 
 ## 已知问题
 
 1. 深信服 MCP 真实地址不入库，需本地配置 `MCP_URLS` 或 `mcp_servers.local.json`，否则真实 MCP 工具跳过、仅 Mock 可用。
 2. MCP 走 HTTPS 自签证书，客户端默认关闭证书校验（`MCP_VERIFY_SSL=0`）。
 3. Mock 数据仅覆盖 WebShell 主场景，其他场景需补充。
+4. 主链 bridge 导入路径问题（`deep_agent.*` 应为 `sec_agent.deep_agent.*`），导致 `auto` 后端恒回退内部子链，主链暂未真实加载 PR #13 Agent（2026-08-25 实测）。
+5. Windows Python 缺 `tzdata` 时主链 import 即失败（`ZoneInfoNotFoundError: Asia/Shanghai`），需 `pip install tzdata`。
