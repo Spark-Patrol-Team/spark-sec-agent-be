@@ -9,7 +9,8 @@ from sec_agent.domain.models import (
     ToolResult,
 )
 from sec_agent.platforms.mock_state import StatefulMockLedger
-from sec_agent.tools.tool_dispatcher import ToolDispatcher, build_platform_tool_dispatcher
+from sec_agent.tools.base import ToolDispatcher
+from sec_agent.tools.tool_dispatcher import build_platform_tool_dispatcher
 
 
 class FixedSampleAdapter:
@@ -20,8 +21,8 @@ class FixedSampleAdapter:
         self._dispatcher = build_platform_tool_dispatcher(
             evidence_resolver=self._resolve_evidence_refs,
             ledger=self._ledger,
-            raw_result_prefix="fixed://tools",
-            action_ref_prefix="fixed://actions",
+            raw_result_prefix="fixed:/",
+            action_ref_prefix="fixed:/",
             source_label="固定样例",
         )
 

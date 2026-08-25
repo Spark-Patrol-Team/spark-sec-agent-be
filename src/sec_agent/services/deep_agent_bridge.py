@@ -20,7 +20,7 @@ class DeepAgentBridgeUnavailable(RuntimeError):
 
 
 class DeepAgentBridge:
-    """将可选 deep_agent 子智能体桥接到当前主链领域模型。"""
+    """将外部 deep_agent 子智能体桥接到当前主链领域模型。"""
 
     def investigate(self, trace_id: str, run_id: str, event: SecurityEvent, triage: TriageResult) -> InvestigationReport:
         modules = self._load_modules()
@@ -38,19 +38,22 @@ class DeepAgentBridge:
         return self._to_domain_report(deep_report, triage)
 
     def _load_modules(self) -> dict[str, Any]:
-        try:
-            return {
-                "DeepInvestigationAgent": importlib.import_module("sec_agent.deep_agent.agent").DeepInvestigationAgent,
-                "load_config": importlib.import_module("sec_agent.deep_agent.config").load_config,
-                "LLMClient": importlib.import_module("sec_agent.deep_agent.llm").LLMClient,
-                "SecurityEventInput": importlib.import_module("sec_agent.deep_agent.models").SecurityEventInput,
-                "ToolRegistry": importlib.import_module("sec_agent.deep_agent.tools.base").ToolRegistry,
-                "build_mock_tools": importlib.import_module("sec_agent.deep_agent.tools.mock").build_mock_tools,
-            }
-        except ModuleNotFoundError as exc:
-            raise DeepAgentBridgeUnavailable(f"deep_agent 包未安装或未合入当前仓库: {exc.name}") from exc
-        except AttributeError as exc:
-            raise DeepAgentBridgeUnavailable(f"deep_agent 接口不符合主链桥接契约: {exc}") from exc
+        last_error: Exception | None = None
+        for package in ("deep_agent", "sec_agent.deep_agent"):
+            try:
+                return {
+                    "package": package,
+                    "DeepInvestigationAgent": importlib.import_module(f"{package}.agent").DeepInvestigationAgent,
+                    "load_config": importlib.import_module(f"{package}.config").load_config,
+                    "LLMClient": importlib.import_module(f"{package}.llm").LLMClient,
+                    "SecurityEventInput": importlib.import_module(f"{package}.models").SecurityEventInput,
+                    "ToolRegistry": importlib.import_module(f"{package}.tools.base").ToolRegistry,
+                    "build_mock_tools": importlib.import_module(f"{package}.tools.mock").build_mock_tools,
+                }
+            except (ModuleNotFoundError, AttributeError) as exc:
+                last_error = exc
+                continue
+        raise DeepAgentBridgeUnavailable(f"deep_agent 包未安装或接口不符合桥接契约: {last_error}") from last_error
 
     def _override_config(self, config: Any) -> None:
         tool_mode = os.getenv("DEEP_AGENT_TOOL_MODE")
@@ -64,17 +67,16 @@ class DeepAgentBridge:
             for tool in modules["build_mock_tools"]():
                 registry.register(tool)
         if tool_mode in {"mcp", "auto"}:
-            self._register_mcp_tools(registry, config, strict=tool_mode == "mcp")
+            self._register_mcp_tools(registry, config, str(modules["package"]), strict=tool_mode == "mcp")
         return registry
 
-    def _register_mcp_tools(self, registry: Any, config: Any, strict: bool) -> None:
+    def _register_mcp_tools(self, registry: Any, config: Any, package: str, strict: bool) -> None:
         try:
-            build_mcp_tools = importlib.import_module("sec_agent.deep_agent.tools.mcp_client").build_mcp_tools
+            build_mcp_tools = importlib.import_module(f"{package}.tools.mcp_client").build_mcp_tools
         except ModuleNotFoundError as exc:
             if strict:
                 raise DeepAgentBridgeUnavailable(f"deep_agent MCP 工具不可用: {exc.name}") from exc
             return
-
         for tool in build_mcp_tools(config.tools, on_error=lambda message: print(message, file=sys.stderr)):
             registry.register(tool)
 
@@ -88,7 +90,7 @@ class DeepAgentBridge:
     ) -> dict[str, Any]:
         return {
             "event_id": event.event_id,
-            "event_type": event.summary or ",".join(event.alert_refs),
+            "event_type": self._event_type(event),
             "severity": triage.priority.value.upper(),
             "timestamp": event.first_seen_at.isoformat(),
             "source_ip": self._first_entity(event, "src_ips"),
@@ -128,6 +130,12 @@ class DeepAgentBridge:
             steps=steps,
             summary=str(data.get("conclusion") or "deep_agent 子智能体调查完成"),
         )
+
+    @staticmethod
+    def _event_type(event: SecurityEvent) -> str:
+        if event.summary:
+            return event.summary
+        return ",".join(event.alert_refs)
 
     @staticmethod
     def _first_entity(event: SecurityEvent, key: str) -> str:
