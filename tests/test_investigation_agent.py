@@ -19,6 +19,7 @@ from sec_agent.deep_agent.tools.base import ALIAS_MAP, Tool, ToolRegistry, ToolR
 from sec_agent.deep_agent.agent import DeepInvestigationAgent
 from sec_agent.deep_agent.config import load_config
 from sec_agent.deep_agent.llm import LLMClient
+from sec_agent.deep_agent.main import timestamped_output_path
 
 SAMPLE = Path(__file__).resolve().parent / "fixtures" / "investigation" / "sample_event.json"
 
@@ -32,6 +33,23 @@ def _make_tool(name: str, description: str = "测试工具") -> Tool:
     _T.description = description
     _T.parameters = {"type": "object", "properties": {}}
     return _T()
+
+
+class TestReportOutputPath(unittest.TestCase):
+    def test_timestamp_inserted_before_extension(self):
+        p = timestamped_output_path("report.json")
+        self.assertEqual(p.suffix, ".json")
+        self.assertRegex(p.stem, r"^report_\d{8}_\d{6}$")
+
+    def test_preserves_parent_dir_and_nested_stem(self):
+        p = timestamped_output_path("reports/foo.json")
+        self.assertEqual(str(p.parent), "reports")
+        self.assertRegex(p.stem, r"^foo_\d{8}_\d{6}$")
+
+    def test_no_extension_still_timestamped(self):
+        p = timestamped_output_path("report")
+        self.assertEqual(p.suffix, "")
+        self.assertRegex(p.stem, r"^report_\d{8}_\d{6}$")
 
 
 class TestModels(unittest.TestCase):

@@ -79,7 +79,7 @@ Mock 工具（`TOOL_MODE=mock`）内置 WebShell 主场景模拟数据，用于�
 # 1. 查看可用工具（无需 LLM key）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json --list-tools
 
-# 2. 完整调查（需 LLM key，结果写到 report.json）
+# 2. 完整调查（需 LLM key；-o 报告名自动加时间戳，如 report.json → report_20260825_160543.json，不覆盖旧报告）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
 ```
 

@@ -37,9 +37,10 @@ cd C:\Users\dell\Desktop\spark-sec-agent-be
 $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.config_gui
 
 # ② 跑一次完整调查（用自带样例）
+#    -o 指定的报告名会自动加时间戳，如 report.json → report_20260825_160543.json，重复运行互不覆盖
 $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
 
-# ③ 打开 report.json 看调查报告
+# ③ 打开刚才生成的报告（命令行会打印实际文件名）
 ```
 
 ---
@@ -139,7 +140,7 @@ $env:MCP_URLS = '{"漏洞信息查询":"https://<内网地址>","检测大模型
 # 查看当前可用工具（无需 LLM key）
 $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json --list-tools
 
-# 跑完整调查（需已配置 API），结果写 report.json
+# 跑完整调查（需已配置 API），结果写入 report_时间戳.json（-o 自动加时间戳，不覆盖旧报告）
 $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
 
 # 不指定 -o 则结果直接打印到屏幕
@@ -148,7 +149,7 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 | 参数 | 作用 | 必填 |
 |------|------|------|
 | `--event <文件>` | 待调查的安全事件 JSON 路径 | ✅ |
-| `-o / --output <文件>` | 报告输出文件 | 否 |
+| `-o / --output <文件>` | 报告输出文件（自动在文件名插入时间戳，如 `report.json` → `report_20260825_160543.json`） | 否 |
 | `--list-tools` | 只列工具清单 | 否 |
 
 > Git Bash 用户把 `$env:PYTHONPATH = "src";` 换成 `PYTHONPATH=src ` 前缀即可。
@@ -183,7 +184,9 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 
 ---
 
-## 8. 输出报告说明（report.json）（在根目录生成此文件）
+## 8. 输出报告说明（report_时间戳.json）
+
+> `-o` 指定的文件名会自动插入时间戳（如 `report_20260825_160543.json`），每次运行生成独立文件，不会覆盖旧报告。
 
 关键字段：
 
