@@ -1,117 +1,169 @@
 # 深度调查 Agent 模块开发说明
 
-## 代码位置
+## 0. 文档信息
 
-- 子智能体完整实现：`src/sec_agent/deep_agent/`（`sec_agent.deep_agent` 子包，独立可运行）
-- 主链占位接入：`src/sec_agent/services/investigation.py`
-- 测试：`tests/test_investigation_agent.py` + 样例 `tests/fixtures/investigation/sample_event.json`
+| 项目 | 内容 |
+|---|---|
+| 模块 | 深度调查 Agent（`sec_agent.deep_agent` 子智能体） |
+| 负责人 | 杨景凡（T0826-03 复验与文档） |
+| 文档状态 | 当前有效 |
+| 实现状态 | 已复验 |
+| 能力性质 | 自研代码 / 真实平台 / Mock / fallback（各能力实际范围见第 7 节边界表） |
+| 关联任务/需求 | T0826-03；PR #13 |
+| 关联正式交付章节 | 同 `design.md`（风险研判设计的调查延伸，章节编号待对齐） |
+| 对应PR或Commit | PR #13；`383fec7`；`3c49db2`；本次 T0826-03 提交 |
+| 适用代码版本 | `main` @ `2ef29a8`（本次提交后更新为最新） |
+| 最后更新时间 | 2026-08-26 |
 
-## 模块组成
+## 1. 当前实现摘要
 
-`sec_agent.deep_agent` 是 LLM 驱动的深度调查子智能体，落地设计文档中的「调查闭环」：
+### 1.1 已实现
 
-| 文件 | 职责 |
-|------|------|
-| `agent.py` | 调查循环（ReAct 风格）：接收事件 → 分析证据 → 识别缺口 → 调工具 → 更新结论 → 停止判断 → 输出报告 |
-| `models.py` | 输入 `SecurityEventInput` / 输出 `InvestigationReport` 数据模型 |
-| `config.py` | LLM / 工具 / Agent 参数配置（环境变量驱动，凭据不入源码） |
-| `llm.py` | LLM 客户端（OpenAI 兼容接口） |
-| `main.py` | 命令行入口 |
-| `tools/base.py` | 工具抽象基类 + 注册表 + 统一结果 |
-| `tools/mock.py` | Mock 工具（6 个，无真实平台时兜底） |
-| `tools/mcp_client.py` | 最小 MCP 客户端（连深信服 MCP，兼容 JSON 与 SSE） |
+- `sec_agent.deep_agent` 完整调查闭环（ReAct 风格，LLM 驱动），接收 `SecurityEventInput` 输出 `InvestigationReport`（`agent.py` / `models.py`）。
+- 统一工具层：`Tool` 抽象 + `ToolRegistry`（注册/别名/调用兜底），`tools/base.py`。
+- Mock 工具 6 个（`tools/mock.py`，WebShell 主场景人工构造数据）。
+- 深信服 MCP 客户端（`tools/mcp_client.py`，JSON-RPC over HTTP，兼容 SSE；5 服务 19 工具，地址走 gitignore 本地配置）。
+- 知识包检索工具 `knowledge_query`（`tools/knowledge.py` + `knowledge/webshell_min.md`），关键词匹配返回条目 + `evidence_refs`；CLI 与主链 bridge 均已注册。
+- 主链集成：`auto` / `deep_agent` 后端经 `services/deep_agent_bridge.py` 桥接；`tool_mock` 后端走内部子链。
+- CLI 入口 `main.py`（`--event` / `-o` 时间戳 / `--list-tools`）、API 可视化配置 `config_gui.py`。
 
-## 依赖
+### 1.2 未实现或未复验
 
-- Python 3.11+（与仓库一致）
-- `openai`（LLM 调用）、`requests`（MCP 调用）
+- **FastGPT 目标路线**（调查逻辑迁移 FastGPT 编排）：未实现 / 未验证，仅规划。
+- 真实平台**数据联调**：深信服 MCP 工具真实连通（dbproxy 等实测调用成功），但本轮查询样例虚构实体返回**合法空集**，真实平台事件数据尚未接入复验。
+- 知识包覆盖：问答样本 2（攻击组织）、样本 3（DET0394 细节）无对应章节，属知识包最小集缺口。
+- 完整多场景调查（仅 WebShell 主场景有 Mock/知识数据）。
 
-```bash
-pip install openai requests
-```
+## 2. 代码位置
 
-## 配置
+| 路径 | 主要对象/入口 | 作用 |
+|---|---|---|
+| `src/sec_agent/deep_agent/agent.py` | `DeepInvestigationAgent`、`SYSTEM_PROMPT` | 调查闭环、停止条件、人工接管、报告解析与降级 |
+| `src/sec_agent/deep_agent/models.py` | `SecurityEventInput` / `InvestigationReport` | 输入事件 / 输出报告模型 |
+| `src/sec_agent/deep_agent/config.py` | `Config` / `LLMConfig` / `ToolConfig` / `AgentConfig` | 配置加载（环境变量 > 本地 gitignore 文件 > 默认值） |
+| `src/sec_agent/deep_agent/llm.py` | `LLMClient` | OpenAI 兼容 LLM 客户端 |
+| `src/sec_agent/deep_agent/main.py` | `build_tools` / `main` | CLI 入口（时间戳输出、`--list-tools`） |
+| `src/sec_agent/deep_agent/config_gui.py` | tkinter GUI | LLM API 本地配置可视化界面 |
+| `src/sec_agent/deep_agent/tools/base.py` | `Tool` / `ToolResult` / `ToolRegistry` / `ALIAS_MAP` | 工具抽象 + 内部别名层 |
+| `src/sec_agent/deep_agent/tools/mock.py` | `build_mock_tools` | 6 个 Mock 兜底工具 |
+| `src/sec_agent/deep_agent/tools/knowledge.py` | `build_knowledge_tools` / `KnowledgeQueryTool` / `load_knowledge_entries` | 知识包解析 + `knowledge_query` 检索（`evidence_refs`） |
+| `src/sec_agent/deep_agent/tools/mcp_client.py` | `MCPClient` / `MCPTool` / `build_mcp_tools` | 深信服 MCP 客户端 |
+| `src/sec_agent/deep_agent/knowledge/webshell_min.md` | 《最小 WebShell 知识包》 | 知识包检索源（人工构造） |
+| `src/sec_agent/services/deep_agent_bridge.py` | `DeepAgentBridge` | 主链桥接（`auto`/`deep_agent` 后端，含 knowledge 工具注册） |
+| `src/sec_agent/services/investigation.py` | `DeepInvestigationAgent` | 主链调查服务（三后端分派） |
+| `tests/test_investigation_agent.py` | 单元/集成测试 | 16 用例 + 1 集成 |
+| `tests/test_knowledge_tool.py` | 知识包检索测试 | 19 用例（含问答样本覆盖） |
+| `tests/test_investigation_and_dispatcher_integration.py` | bridge 集成测试 | 5 用例 |
 
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `LLM_BASE_URL` | LLM 接口地址（OpenAI 兼容） | `https://api.deepseek.com` |
-| `LLM_API_KEY` | LLM 密钥 | `sk-xxx` |
-| `LLM_MODEL` | 模型名（默认 `deepseek-chat`） | `deepseek-chat` |
-| `LLM_TEMPERATURE` | LLM 采样温度（默认 `0.0`） | `0` |
-| `LLM_TIMEOUT` | LLM 请求超时秒数（默认 `90`） | `90` |
-| `TOOL_MODE` | `mock` / `mcp` / `auto`（默认） | `auto` |
-| `MCP_URLS` | 深信服 MCP 地址（JSON），未设时读本地文件 | 见下 |
-| `MCP_API_KEY` | 深信服 MCP apikey（漏洞信息查询等需要，可选） | — |
-| `MCP_VERIFY_SSL` | 是否校验 MCP HTTPS 证书（自签证书默认 `0` 关闭） | `0` |
+## 3. 依赖与配置
 
-> LLM API 配置支持三种来源（优先级从高到低）：
-> 1. 环境变量：`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（另支持 `LLM_TEMPERATURE` / `LLM_TIMEOUT`）
-> 2. 本地文件：`src/sec_agent/deep_agent/llm_config.local.json`（已 gitignore，含 apikey，不入库）
-> 3. 默认值（模型默认 `deepseek-chat`）
->
-> 可用可视化界面配置本地文件（见下文「API 可视化配置界面」），或手动编辑 JSON。
+| 名称 | 必需/可选 | 获取方式 | 未配置时行为 |
+|---|---|---|---|
+| `openai` | 必需 | `pip install openai` | LLM 调用失败 → agent 报错 / 主链回退 |
+| `requests` | 必需 | `pip install requests` | MCP/LLM HTTP 失败 |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 必需（真实 LLM） | 环境变量或 `llm_config.local.json`（gitignore） | `LLM 未配置` 报错；主链 `auto` 回退内部子链 |
+| `LLM_TEMPERATURE` / `LLM_TIMEOUT` | 可选 | 同上 | 默认 `0` / `90` |
+| `TOOL_MODE` | 可选 | 环境变量 | 默认 `auto`（Mock + 连上的 MCP 并存） |
+| `MCP_URLS` / `mcp_servers.local.json` | 可选 | 环境变量 / gitignore 本地文件 | 未配置/不可达 → 跳过真实 MCP，仅 Mock + 知识包 |
+| `MCP_API_KEY` / `MCP_VERIFY_SSL` | 可选 | 环境变量 | 默认空 / 关闭证书校验 |
+| `tzdata` | 可选（Windows 必需） | `pip install tzdata` | Windows 主链 import 报 `ZoneInfoNotFoundError`（本机已装，依赖清单待补） |
 
-> 真实 MCP 地址属内网敏感信息，不入库。两种本地配置方式（二选一）：
-> 1. 环境变量：`MCP_URLS='{"漏洞信息查询":"https://..."}'`
-> 2. 本地文件：`src/sec_agent/deep_agent/mcp_servers.local.json`（已 gitignore，格式 `{"服务名":"地址"}`）
->
-> 未配置时只跑 Mock 工具，真实 MCP 工具跳过。
+- 支持的运行环境：Python 3.11+（实测 Windows 11 + Python 3.14.3）；Linux/macOS 理论兼容。
+- 敏感配置（LLM key、真实 MCP 地址）只通过环境变量或受控本地文件注入，不在文档、代码和样例中填写真实值。
 
-## 工具说明
+## 4. 启动与调试
 
-Mock 工具（`TOOL_MODE=mock`）内置 WebShell 主场景模拟数据，用于演示「工具无数据 → 人工接管」边界：`query_asset` / `query_alerts` / `query_vulnerabilities` / `secgpt_analyze` / `attack_detect` / `vuln_intelligence`。
-
-真实 MCP 工具（`TOOL_MODE=mcp` / `auto`）连接深信服 5 个 FastGPT 托管的 MCP 服务，实测工具如下：
-
-| MCP 服务 | 工具 |
-|----------|------|
-| 漏洞信息查询 | `vuln_search_intelligence_tool` / `vuln_highlevel_intelligence_tool` / `vuln_hot_intelligence_tool` / `vuln_vpt_tool` |
-| 检测大模型 | `cybersec_攻击状态检测` / `cybersec_攻击类型检测` |
-| 网络安全数据查询 | 事件 / 告警 / 漏洞 / 弱密码 / 资产关联漏洞 / 资产 查询统计 |
-| 运营大模型 | `secgpt_告警事件解读研判` / `secgpt_威胁实体的调查分析` |
-| 自由数据查询 | `dbproxy_事件/告警/脆弱性/资产/威胁实体 数据查询` |
-
-服务走 HTTPS + 自签证书，客户端默认关闭证书校验；地址连不上时自动跳过（打印 `[warn]`），不影响 Mock 兜底。
-
-## 启动 / 运行
-
-```bash
-# 1. 查看可用工具（无需 LLM key）
+```text
+# ① 知识包工具清单（无需 LLM key）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json --list-tools
+#   预期：26 个工具（6 Mock + knowledge_query + 19 MCP，MCP 依赖本地配置）
 
-# 2. 完整调查（需 LLM key；-o 报告名自动加时间戳，如 report.json → report_20260825_160543.json，不覆盖旧报告）
+# ② 完整调查（需配置 LLM；-o 自动加时间戳）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
-```
 
-## API 可视化配置界面
-
-提供 tkinter 图形界面，用于配置 LLM API（地址 / 密钥 / 模型名 / 温度 / 超时），并支持一键保存与清除：
-
-```bash
+# ③ API 可视化配置 LLM（可选）
 PYTHONPATH=src python -m sec_agent.deep_agent.config_gui
+
+# ④ 主链服务（三后端选一）
+$env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-- **保存**：写入 `src/sec_agent/deep_agent/llm_config.local.json`（含 apikey，已 gitignore，不入库）。
-- **清除**：删除该本地配置文件并清空输入框。
-- 界面管理的仅是本地文件；若同时设置了 `LLM_*` 环境变量，环境变量优先级更高。
-- 相关函数：`config.save_api_config()` / `config.clear_api_config()` / `config.load_api_config_file()`。
+- 成功判据：`--list-tools` 输出含 `knowledge_query`；完整调查退出码 0 并输出结构化报告（含 `tool_call_records`）。
+- 常见失败及排查：
+  - `LLM 未配置`：未设 `LLM_*` / 未保存 `llm_config.local.json`。
+  - `Invalid function.name 400`：旧版中文工具名问题，已由别名层修复；确认在最新代码。
+  - `ZoneInfoNotFoundError: Asia/Shanghai`：Windows 缺 `tzdata`。
+  - `ModuleNotFoundError: sec_agent`：未设 `PYTHONPATH=src`。
+  - 控制台中文乱码：Windows 控制台编码，不影响运行与报告内容（可用 `PYTHONIOENCODING=utf-8`）。
 
-## 与主链集成状态
+## 5. 调用与接入方法
 
-- 主链 `Orchestrator` 在 `INVESTIGATING` 阶段调用 `src/sec_agent/services/investigation.py` 的 `DeepInvestigationAgent`，支持 3 个后端（`INVESTIGATION_BACKEND`：`auto` 默认 / `deep_agent` / `tool_mock`）。
-- `auto` / `deep_agent` 后端经 `services/deep_agent_bridge.py` 的 `DeepAgentBridge` 桥接 `sec_agent.deep_agent`（构造工具、要求 LLM 可用、领域模型互转）；`auto` 在 bridge 不可用 / 异常时回退**内部工具调查子链**（`evidence_lookup` + `xdr_log_query`，经 `PlatformAdapter`，无 LLM）；`tool_mock` 仅内部子链。
-- **已修复（2026-08-25）**：bridge 原以 `importlib.import_module("deep_agent.*")` 导入不存在的顶层包，已改为 `sec_agent.deep_agent.*`（方案 A），并补回归测试 `test_bridge_loads_real_deep_agent_modules`。
-- **修复后实测（`auto` 后端，`TOOL_MODE=mock`，配置 LLM）**：bridge 真实加载 PR #13 Agent、实际调用 LLM，7 次 Mock 工具调用，输出完整结构化报告，未发生内部 fallback；WebShell 样例下报告标记人工接管 → 主链停在 HUMAN_REQUIRED（此前回退子链会直接自动处置至 COMPLETED）。
+### 5.1 调用入口
 
-### 复验结果（2026-08-25）
+- CLI：`python -m sec_agent.deep_agent.main --event <json> [-o report.json] [--list-tools]`。
+- 主链：`services/investigation.py` `DeepInvestigationAgent.investigate(trace_id, event, triage, run_id)`，经 `deep_agent_bridge.py` 桥接（`auto` / `deep_agent` 后端）。
+- HTTP：主链 `POST /runs` → `INVESTIGATING` 阶段触发调查（见 `docs/modules/investigation-agent/test.md` 联调记录）。
 
-- **独立运行 `sec_agent.deep_agent`（复验通过）**：main 可真实加载 PR #13 Agent；`TOOL_MODE=mock` 完整调查一轮，6 个 Mock 工具实际调用 7 次，生成完整结构化报告（结论 / 证据 / 攻击链 / 处置建议 / 置信度 0.86），退出码 0；**实际调用 LLM**；**未发生内部 fallback**（`need_manual_takeover=true` 为正常业务标记）。`tests/test_investigation_agent.py` 16 passed / 1 skipped。
-- **主链 `run_flow.py`（实测）**：补装 `tzdata` 后可全流程跑通；bridge 导入路径修复后，`auto` 后端**真实加载 PR #13 Agent + 实际调用 LLM + 7 次 Mock 工具调用**，生成完整结构化报告、未发生内部 fallback；WebShell 样例下报告标记人工接管 → 主链停在 HUMAN_REQUIRED。
-- **环境**：Windows Python 需补装 `tzdata`（否则主链 import 即报 `ZoneInfoNotFoundError: Asia/Shanghai`）；`fastapi` / `sqlalchemy` / `pymysql` 为主链全链依赖，deep_agent 独立运行只需 `openai` / `requests`。
+### 5.2 最小示例
 
-## 已知问题
+```text
+# 输入事件样例（tests/fixtures/investigation/sample_event.json）
+{"event_id":"EVENT-001","event_type":"WebShell","severity":"HIGH","timestamp":"2026-08-22 10:23:15",
+ "source_ip":"10.10.10.25","target_ip":"192.168.1.100","alerts":["WebShell通信行为告警"],
+ "evidence":["检测到疑似WebShell通信"],"initial_verdict":"疑似真实攻击","confidence":0.72}
 
-1. 深信服 MCP 真实地址不入库，需本地配置 `MCP_URLS` 或 `mcp_servers.local.json`，否则真实 MCP 工具跳过、仅 Mock 可用。
-2. MCP 走 HTTPS 自签证书，客户端默认关闭证书校验（`MCP_VERIFY_SSL=0`）。
-3. Mock 数据仅覆盖 WebShell 主场景，其他场景需补充。
-4. Windows Python 缺 `tzdata` 时主链 import 即失败（`ZoneInfoNotFoundError: Asia/Shanghai`），需 `pip install tzdata`。
+# knowledge_query 检索调用（脱敏）
+{"keyword":"WebShell处置建议"}
+# → status=success；summary 含条目正文 + evidence_refs；data={"entry":"处置建议模板","evidence_refs":["CISA ..."]}
+```
+
+### 5.3 上下游接入注意事项
+
+- 主链桥接契约：`DeepInvestigationAgent(config, llm, tools).investigate(event)` 返回 `InvestigationReport`；`_to_domain_report` 把 `verdict`/`confidence`/`tool_call_records`/`disposal_suggestions`/`need_manual_takeover` 等映射为主链领域模型。
+- `auto` 后端：bridge 不可用/异常时**回退内部工具子链**（`evidence_lookup` + `xdr_log_query`，无 LLM）；`deep_agent` 后端则置不可用报告。
+- `knowledge_query` 返回的 `evidence_refs` 供 Agent 填入报告 `evidence_source`；匹配未命中返回 `failed`，Agent 不得编造条目内容。
+
+## 6. 异常处理与安全控制
+
+- 输入错误：`SecurityEventInput.from_dict` 过滤未知字段；LLM 返回非 JSON → `_extract_json` 兜底 / `_fallback_report`。
+- 依赖或工具失败：`ToolRegistry.call` 捕获异常 → `failed`；MCP 连接失败 → 跳过该服务并 `[warn]`，不影响 Mock + 知识包。
+- 重复调用与幂等：`_fallback_report` / 工具记录确定性；主链幂等由 `Orchestrator` 的 `idempotency_key` 管理（本模块不涉及）。
+- 超时、重试与回滚：LLM `timeout`（默认 90s）与 `max_tool_calls=8` 硬上限；MCP `timeout=20s`；无自动重试（如实记录）。
+- 权限、审批与敏感数据：调查只读；处置建议不自动执行；LLM key / MCP 地址不入库、不入文档；`report*.json` 不入库（CLI `-o` 生成在用户目录）。
+
+## 7. 真实平台、Mock与fallback边界
+
+| 能力 | 当前实际实现 | 触发条件 | 不得误写为 |
+|---|---|---|---|
+| LLM 推理 | **真实调用**（DeepSeek OpenAI 兼容接口，实测通过） | 配置 `LLM_*` 或本地配置 | FastGPT 编排（未实现） |
+| 深信服 MCP 工具 | **真实连通**（5 服务 19 工具注册；dbproxy 等实测调用返回） | 配置 `MCP_URLS` / `mcp_servers.local.json` 且网络可达 | 真实平台**数据**已验证（本轮查询样例虚构实体返回空集，待真实数据联调） |
+| Mock 工具（6 个） | **本地实现**（人工构造 WebShell 演示数据） | `TOOL_MODE=mock`/`auto` | 真实平台返回 |
+| 知识包检索（`knowledge_query`） | **本地实现**（解析 `webshell_min.md` 为条目 + `evidence_refs`） | 所有工具模式注册 | FastGPT 知识库 / 真实知识服务 |
+| 内部回退子链 | **fallback**（`evidence_lookup` + `xdr_log_query`，无 LLM） | `auto` 后端 bridge 不可用/异常 | 真实 LLM 已运行 |
+| FastGPT 目标路线 | 未实现 | — | 已接入 FastGPT |
+
+## 8. 已知限制与待办
+
+| 优先级 | 事项 | 是否影响主链 | 负责人/完成条件 |
+|---|---|---|---|
+| P1 | Windows 缺 `tzdata` 依赖（建议补入 `pyproject.toml`） | 是（主链 import 即挂） | 补依赖 + 跨平台验证 |
+| P1 | 真实平台事件数据联调（dbproxy 空数据问题） | 是（真实场景证据采集） | 真实 XDR 数据接入后复验 |
+| P2 | 知识包最小集缺口（攻击组织、DET0394 细节等） | 否 | 扩充知识包章节 |
+| P2 | 仅覆盖 WebShell 主场景 | 否 | 扩展场景数据 |
+| P2 | 文档与《系统设计说明书》章节编号对齐 | 待确认 | 后续对齐 |
+
+## 9. 运行观测、版本兼容与迁移
+
+- 日志与关键指标位置：`tool_call_records`（报告字段）、`investigation_steps`（报告字段）、CLI 工具清单、主链 `GET /events/{id}/timeline`。
+- 健康检查或运行状态判断：主链 `GET /health`；CLI 退出码 0 为成功。
+- 兼容的接口/Schema/平台版本：OpenAI 兼容 `chat/completions`；MCP JSON-RPC 2.0 over HTTP（SSE 兼容）；深信服 MCP 函数名以 `ALIAS_MAP` 为契约。
+- 升级、迁移或回退注意事项：`ALIAS_MAP` 与深信服侧函数名需同步更新；bridge 双包名兼容已可容忍包位置变化；知识包 md 结构变化需同步 `_ENTRY_SPECS`。
+
+## 10. 变更记录
+
+| 日期 | PR/Commit | 实现变化 | 相关测试 |
+|---|---|---|---|
+| 2026-08-24 | PR #13 | 子智能体落地 `sec_agent.deep_agent` | `test_investigation_agent.py` |
+| 2026-08-25 | `383fec7` | bridge 双包名修复 | `test_investigation_and_dispatcher_integration.py` |
+| 2026-08-25 | `3c49db2` | `-o` 报告时间戳 | `test_investigation_agent.py` |
+| 2026-08-26 | 本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具 + 知识包入库 | `tests/test_knowledge_tool.py`（19 用例） |

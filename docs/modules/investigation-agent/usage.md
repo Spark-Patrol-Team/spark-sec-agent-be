@@ -8,7 +8,7 @@
 
 一个 **LLM 驱动的深度调查子智能体**（`sec_agent.deep_agent`）：接收一个安全事件 → 自主分析证据缺口 → 调用安全工具补证 → 更新结论 → 输出结构化调查报告。
 
-工具来源：**6 个 Mock 兜底工具 + 19 个深信服真实 MCP 工具**（配置齐全时共 25 个可用）。
+工具来源：**6 个 Mock 兜底工具 + 1 个知识包检索工具（`knowledge.query`）+ 19 个深信服真实 MCP 工具**（配置齐全时共 26 个可用）。
 
 代码位置：`src/sec_agent/deep_agent/`
 
@@ -206,9 +206,15 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 
 ---
 
-## 9. 工具清单（共 25 个）
+## 9. 工具清单（共 26 个）
 
 **6 个 Mock**：`query_asset` / `query_alerts` / `query_vulnerabilities` / `secgpt_analyze` / `attack_detect` / `vuln_intelligence`
+
+**1 个知识包检索（`knowledge.query`，代码名 `knowledge_query`）**：
+
+按关键词检索内置《最小 WebShell 知识包》（`deep_agent/knowledge/webshell_min.md`），返回攻击原理、攻击特征速查表、主流管理工具流量特征、证据检查清单或处置建议模板，结果带 `evidence_refs` 可直接填入调查报告。示例关键词：`WebShell攻击原理` / `WebShell处置建议` / `中国菜刀 流量特征` / `证据检查清单`。
+
+> 命名说明：OpenAI 兼容接口不允许函数名含 `.`，代码层工具名为 `knowledge_query`（语义等价于需求中的 `knowledge.query`）。
 
 **19 个深信服 MCP**：
 
@@ -252,7 +258,10 @@ src/sec_agent/deep_agent/
 ├── tools/
 │   ├── base.py       工具基类 + 注册表 + 内部别名层
 │   ├── mock.py       6 个 Mock 工具
+│   ├── knowledge.py  知识包检索工具（knowledge.query）
 │   └── mcp_client.py 深信服 MCP 客户端（19 个真实工具）
+├── knowledge/
+│   └── webshell_min.md 最小 WebShell 知识包（检索源）
 ├── mcp_servers.local.json  深信服 MCP 地址（gitignore）
 └── llm_config.local.json   LLM API 配置（gitignore）
 ```

@@ -66,9 +66,19 @@ class DeepAgentBridge:
         if tool_mode in {"mock", "auto"}:
             for tool in modules["build_mock_tools"]():
                 registry.register(tool)
+        # 知识包检索工具（knowledge.query）：本地资源，所有工具模式下都注册
+        self._register_knowledge_tools(registry, modules)
         if tool_mode in {"mcp", "auto"}:
             self._register_mcp_tools(registry, config, str(modules["package"]), strict=tool_mode == "mcp")
         return registry
+
+    def _register_knowledge_tools(self, registry: Any, modules: dict[str, Any]) -> None:
+        try:
+            build_knowledge_tools = importlib.import_module(f"{modules['package']}.tools.knowledge").build_knowledge_tools
+        except ModuleNotFoundError:
+            return
+        for tool in build_knowledge_tools():
+            registry.register(tool)
 
     def _register_mcp_tools(self, registry: Any, config: Any, package: str, strict: bool) -> None:
         try:

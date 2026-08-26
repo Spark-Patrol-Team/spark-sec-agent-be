@@ -31,6 +31,7 @@ from .models import SecurityEventInput
 from .agent import DeepInvestigationAgent
 from .tools.base import ToolRegistry
 from .tools.mock import build_mock_tools
+from .tools.knowledge import build_knowledge_tools
 from .tools.mcp_client import build_mcp_tools
 
 
@@ -41,6 +42,10 @@ def build_tools(config) -> ToolRegistry:
     if config.tools.mode in ("mock", "auto"):
         for t in build_mock_tools():
             registry.register(t)
+
+    # 知识包检索工具（knowledge.query）：本地资源，所有工具模式下都注册
+    for t in build_knowledge_tools():
+        registry.register(t)
 
     # 真实 MCP 工具
     if config.tools.mode in ("mcp", "auto"):
