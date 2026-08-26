@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from sec_agent.api.deps import get_orchestrator
 from sec_agent.api.schemas import MetricsResponse
+from sec_agent.domain.models import BusinessStatus
 from sec_agent.services.orchestrator import Orchestrator
 
 router = APIRouter(tags=["metrics"])
@@ -18,9 +19,9 @@ router = APIRouter(tags=["metrics"])
 def get_metrics(orchestrator: Orchestrator = Depends(get_orchestrator)) -> MetricsResponse:
     events = orchestrator.list_events()
     total = len(events)
-    completed = sum(1 for ctx in events if ctx.status == "COMPLETED")
-    human_required = sum(1 for ctx in events if ctx.status == "HUMAN_REQUIRED")
-    failed = sum(1 for ctx in events if ctx.status == "FAILED")
+    completed = sum(1 for ctx in events if ctx.status == BusinessStatus.COMPLETED)
+    human_required = sum(1 for ctx in events if ctx.status == BusinessStatus.HUMAN_REQUIRED)
+    failed = sum(1 for ctx in events if ctx.status == BusinessStatus.FAILED)
     return {
         "total_events": total,
         "completed_events": completed,

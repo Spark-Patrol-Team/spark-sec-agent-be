@@ -32,13 +32,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .
+          python -m pip install -e ".[dev]"
 
       - name: Run unit tests
         env:
           PYTHONPATH: src
         run: |
-          python -m unittest discover -s tests
+          python -m pytest -q
 
       - name: Generate OpenAPI document
         env:

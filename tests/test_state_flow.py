@@ -3,13 +3,13 @@ import unittest
 from sec_agent.domain.models import ApprovalDecision, BusinessStatus, StartRunRequest, ToolCallStatus, ToolRiskLevel
 from sec_agent.domain.state_machine import InvalidStatusTransition, StateMachine
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
+from sec_agent.repositories.memory import InMemoryEventRepository
 from sec_agent.services.orchestrator import Orchestrator
-from sec_agent.storage.memory import InMemoryEventStore
 
 
 class StateFlowTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.orchestrator = Orchestrator(platform=FixedSampleAdapter(), store=InMemoryEventStore())
+        self.orchestrator = Orchestrator(platform=FixedSampleAdapter(), store=InMemoryEventRepository())
 
     def test_fixed_sample_stops_at_approval_required(self) -> None:
         ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))

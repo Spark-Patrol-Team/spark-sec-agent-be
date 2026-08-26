@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sec_agent.core.config import build_mysql_dsn, load_dotenv, parse_bool
+from sec_agent.core.config import build_mysql_dsn, load_dotenv, parse_bool, parse_csv
 
 
 class ConfigTest(unittest.TestCase):
@@ -15,6 +15,11 @@ class ConfigTest(unittest.TestCase):
     def test_parse_bool_rejects_false_values(self) -> None:
         for value in ["false", "0", "no", "off", ""]:
             self.assertFalse(parse_bool(value))
+
+    def test_parse_csv_trims_values_and_preserves_empty_override(self) -> None:
+        self.assertEqual(parse_csv("http://a.test, http://b.test ,,", ["default"]), ["http://a.test", "http://b.test"])
+        self.assertEqual(parse_csv("", ["default"]), [])
+        self.assertEqual(parse_csv(None, ["default"]), ["default"])
 
     def test_build_mysql_dsn_from_split_env(self) -> None:
         with patch.dict(
@@ -46,4 +51,3 @@ class ConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
