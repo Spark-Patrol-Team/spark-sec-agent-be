@@ -1,6 +1,6 @@
-- # WebShell 知识问答样本
+# WebShell 知识问答样本
 
-  > 说明：本文件为 WebShell 场景的知识问答评测样本，共 5 题。每题包含问题、预期答案、参考资料和难度等级，用于评测深度调查 Agent 的知识检索与理解能力。
+> 说明：本文件为 WebShell 场景的知识问答评测样本，共 5 题。每题包含问题、预期答案、参考资料和难度等级，用于评测深度调查 Agent 的知识检索与理解能力。
 
 
   ## 样本 1
@@ -17,7 +17,7 @@
   - **预期答案**：至少包括：
     - **Sandworm Team（G0034）** —— 在 2022 年乌克兰电力攻击中部署了 Neo-REGEORG WebShell
     - **APT29（G0016）** —— 在受攻击的 Microsoft Exchange 服务器上安装 WebShell
-    - **Agrius（G1030）** —— 在初始访问后部署 ASPXSpy WebShell 变种[reference:5]
+    - **Agrius（G1030）** —— 在初始访问后部署 ASPXSpy WebShell 变种
   - **参考资料**：MITRE ATT&CK, T1505.003 - Procedure Examples, https://attack.mitre.org/techniques/T1505/003/#procedure-examples （"Procedure Examples"章节完整列表）[reference:1]
   - **难度**：中等
 
@@ -49,11 +49,12 @@
 
   - **问题**：根据 CISA 的《Eliminate Web Shells》（CM0106）指南，发现 WebShell 后的标准消除流程包含哪些步骤？
   - **预期答案**：CISA 官方指南（CM0106）规定的消除流程如下：
-    1. **隔离（Isolate）** ：将受感染的 Web 服务器隔离，减少横向移动的可能性；
-    2. **保全证据（Preserve Artifacts）** ：保留磁盘和内存工件，以及操作系统、Web 应用、访问、错误、WAF、反向代理、CDN、DMZ 防火墙和数据库等各类日志；
-    3. **删除 WebShell（Delete the web shell）** ；
+    1. **隔离** ：将受感染的 Web 服务器隔离，减少横向移动的可能性；
+    2. **保全证据** ：保留磁盘和内存工件，以及操作系统、Web 应用、访问、错误、WAF、反向代理、CDN、DMZ 防火墙和数据库等各类日志；
+    3. **删除 WebShell** ；
     4. **修改密码**：修改 Web 管理员、数据库用户、托管账户和远程访问（FTP、SSH 等）的密码；
-    5. **调查根本原因**：调查导致入侵的底层漏洞或原因；**从干净备份恢复（Restore from clean backup）** ；
+    5. **调查根本原因**：调查导致入侵的底层漏洞或原因；
+    6. **从干净备份恢复** ；
     7. **修复和加固**：在确认根本原因后，通过打补丁和加固 Web 应用及 Web 服务器进行修复。
   - **参考资料**：CISA, Eliminate Web Shells (CM0106) - "Eliminating Web Shells" 章节, https://www.cisa.gov/eviction-strategies-tool/info-countermeasures/CM0106 [reference:4]
   - **难度**：中等
@@ -64,20 +65,19 @@
 
   ## 样本统计
 
-  | 维度            | 题号 |
-  | --------------- | ---- |
-  | ATT&CK 框架基础 | 1, 3 |
-  | 攻击组织识别    | 2    |
-  | 检测方法        | 4    |
-  | 应急响应与消除  | 5    |
-  | 简单            | 1    |
+| 维度            | 题号 |
+| --------------- | ---- |
+| ATT&CK 框架基础 | 1, 3 |
+| 攻击组织识别    | 2    |
+| 检测方法        | 4    |
+| 应急响应与消除  | 5    |
 
   ## 参考资料索引
 
-  | 编号          | 来源                                                         |
-  | ------------- | ------------------------------------------------------------ |
-  | [reference:0] | MITRE ATT&CK, T1505.003 - Server Software Component: Web Shell, https://attack.mitre.org/techniques/T1505/003/ （"Detailed Description"段落） |
-  | [reference:1] | MITRE ATT&CK, T1505.003 - Procedure Examples, https://attack.mitre.org/techniques/T1505/003/#procedure-examples （"Procedure Examples"章节完整列表） |
-  | [reference:2] | MITRE ATT&CK, Detection Strategy DET0394 - Web Shell Detection via Server Behavior and File Execution Chains, https://attack.mitre.org/detectionstrategies/DET0394/ |
-  | [reference:3] | CISA, Eliminate Web Shells (CM0106) - "Detecting Web Shells" 章节, https://www.cisa.gov/eviction-strategies-tool/info-countermeasures/CM0106 |
-  | [reference:4] | CISA, Eliminate Web Shells (CM0106) - "Eliminating Web Shells" 章节, https://www.cisa.gov/eviction-strategies-tool/info-countermeasures/CM0106 |
+| 编号          | 来源                                                         |
+| ------------- | ------------------------------------------------------------ |
+| [reference:0] | MITRE ATT&CK, T1505.003 - Server Software Component: Web Shell, https://attack.mitre.org/techniques/T1505/003/ （"Detailed Description"段落） |
+| [reference:1] | MITRE ATT&CK, T1505.003 - Procedure Examples, https://attack.mitre.org/techniques/T1505/003/#procedure-examples （"Procedure Examples"章节完整列表） |
+| [reference:2] | MITRE ATT&CK, Detection Strategy DET0394 - Web Shell Detection via Server Behavior and File Execution Chains, https://attack.mitre.org/detectionstrategies/DET0394/ |
+| [reference:3] | CISA, Eliminate Web Shells (CM0106) - "Detecting Web Shells" 章节, https://www.cisa.gov/eviction-strategies-tool/info-countermeasures/CM0106 |
+| [reference:4] | CISA, Eliminate Web Shells (CM0106) - "Eliminating Web Shells" 章节, https://www.cisa.gov/eviction-strategies-tool/info-countermeasures/CM0106 |
