@@ -6,9 +6,9 @@
 |---|---|
 | 模块 | `alert-correlation`（告警接入与关联） |
 | 任务/测试批次 | `T0826-06`｜固定 JSONL 告警接入关联回归与文档补齐。 |
-| 执行人 | 陈敏任务验证（隔离环境）。 |
-| 执行时间 | 2026-08-25（隔离环境；未记录精确时分）。 |
-| 基线分支与 Commit | `main` / `9a127eb`；覆盖 PR #17 工作区后复验。 |
+| 执行人 | 陈敏。 |
+| 执行时间 | 2026-08-26。 |
+| 基线分支与 Commit | `main` / `95defad`；重放 PR #17 内容后复验。 |
 | 环境 | Ubuntu 隔离环境、Python 3.12、项目当前 `pyproject.toml` 依赖。 |
 | 数据集/样例版本 | `tests/fixtures/fixed_alerts/`；`NormalizedAlertRecord` 契约 `2026-08-21.mvp.v1`；3 条脱敏固定样例。 |
 | 工作流/知识库版本 | 不适用。本模块不依赖外部知识库或真实 Agent 工作流。 |
@@ -33,11 +33,10 @@
 - 真实 XDR OpenAPI/MCP 鉴权、实时读取、分页、限流、网络超时、重试和真实返回字段。
 - 真实平台告警的关联准确率、召回率、吞吐量或长期稳定性。
 - 跨资产、跨设备和跨场景攻击图谱关联。
-- 成员 Windows 本机执行；本机 Python `>=3.11` 环境尚未可用，本轮使用隔离环境实际运行。
 
 ## 2. 前置条件与测试数据
 
-- 前置条件：仓库基线为 `main@9a127eb`；`PYTHONPATH=src`；固定样例目录存在；全量测试运行时清除了会干扰既有配置测试的外部环境变量。
+- 前置条件：仓库基线为 `main@95defad` 并重放 PR #17 内容；`PYTHONPATH=src`；固定样例目录存在；全量测试运行时清除了会干扰既有配置测试的外部环境变量。
 - 测试数据性质：平台字段派生的脱敏固定样例（`platform_derived`）、人工构造的回归样例（`synthetic_regression`）和 Mock 主链。
 - 测试数据位置：`tests/fixtures/fixed_alerts/raw_alerts.jsonl`、`normalized_alerts.jsonl`、`raw_to_normalized_mapping.csv`、`normalized_alert_schema.json`。所有地址为 RFC 5737 文档地址，不含真实平台地址、账号、凭据或原始 PCAP。
 
@@ -61,7 +60,7 @@ JSONL_INPUT_MODE=raw JSONL_SAMPLE_DIR=tests/fixtures/fixed_alerts \
 PYTHONPATH=src python3 -m sec_agent.scripts.run_flow
 ```
 
-实际输出：第一组命令运行 17 项测试并返回 `OK`；全量测试运行 70 项测试并返回 `OK (skipped=1)`；主流程输出从 `RECEIVED` 至 `COMPLETED` 的完整状态时间线。未配置真实深信服 MCP 地址时出现告警并跳过 1 项依赖真实 MCP 的测试，不影响固定 JSONL 或 Mock 主链结果。
+实际输出：第一组命令运行 17 项测试并返回 `OK`；全量测试运行 79 项测试并返回 `OK (skipped=1)`；主流程输出从 `RECEIVED` 至 `COMPLETED` 的完整状态时间线。未配置真实深信服 MCP 地址时出现告警并跳过 1 项依赖真实 MCP 的测试，不影响固定 JSONL 或 Mock 主链结果。
 
 ## 4. 测试用例与实际结果
 
@@ -129,7 +128,7 @@ PYTHONPATH=src python3 -m sec_agent.scripts.run_flow
 
 ## 9. 验收结论
 
-- 本轮可确认：基于 `main@9a127eb` 的隔离环境，固定 JSONL 读取、标准化、WebShell 专项风险、资产优先级、15 分钟关联、证据引用、异常拒绝、`SecurityEvent → 风险研判` 和 Mock 主链均有实际测试或运行输出支持。
+- 本轮可确认：基于 `main@95defad` 并重放 PR #17 内容的隔离环境，固定 JSONL 读取、标准化、WebShell 专项风险、资产优先级、15 分钟关联、证据引用、异常拒绝、`SecurityEvent → 风险研判` 和 Mock 主链均有实际测试或运行输出支持。
 - 本轮不能确认：真实 XDR OpenAPI/MCP 接入、实时平台告警准确性、生产吞吐量和真实处置动作。
 - 是否影响上下游或主链：不影响当前固定 JSONL MVP 主链；真实平台接入与复杂关联能力仍依赖后续资料和实现。
 - 建议状态：已提交待验收。
@@ -140,3 +139,4 @@ PYTHONPATH=src python3 -m sec_agent.scripts.run_flow
 |---|---|---|---|
 | 2026-08-25 | `9a127eb` + PR #17 工作区 | 新增 `test_alert_correlation_regression.py`，并运行既有 JSONL 接入关联回归。 | 8 个正式用例 Pass；专项 17 项、全量 70 项通过，框架 skipped 1。 |
 | 2026-08-25 | PR #17 后续提交 | 对齐团队测试记录模板，补充实际命令、结果、证据、限制与验收结论。 | 文档事实复核完成，待 PR Review。 |
+| 2026-08-26 | `95defad` + PR #17 重放工作区 | 在最新 main 上重新执行固定 JSONL 读取、映射、关联、异常输入和风险研判联调。 | 8 个正式用例 Pass；专项 17 项、全量 79 项通过，框架 skipped 1；raw 主链到 `COMPLETED`。 |
