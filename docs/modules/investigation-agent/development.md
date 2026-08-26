@@ -128,7 +128,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 - 输入错误：`SecurityEventInput.from_dict` 过滤未知字段；LLM 返回非 JSON → `_extract_json` 兜底 / `_fallback_report`。
 - 依赖或工具失败：`ToolRegistry.call` 捕获异常 → `failed`；MCP 连接失败 → 跳过该服务并 `[warn]`，不影响 Mock + 知识包。
 - 重复调用与幂等：`_fallback_report` / 工具记录确定性；主链幂等由 `Orchestrator` 的 `idempotency_key` 管理（本模块不涉及）。
-- 超时、重试与回滚：LLM `timeout`（默认 90s）与 `max_tool_calls=8` 硬上限；MCP `timeout=20s`；无自动重试（如实记录）。
+- 超时、重试与回滚：LLM `timeout`（默认 90s）；工具调用硬上限 `max_tool_calls=12`（可环境变量 `AGENT_MAX_TOOL_CALLS` 覆盖，防死循环；接近上限时 agent 注入收尾提醒促使 LLM 输出报告，超限仍无报告则降级报告提炼已采证据与知识包引用）；MCP `timeout=20s`；无自动重试（如实记录）。
 - 权限、审批与敏感数据：调查只读；处置建议不自动执行；LLM key / MCP 地址不入库、不入文档；`report*.json` 不入库（CLI `-o` 生成在用户目录）。
 
 ## 7. 真实平台、Mock与fallback边界
@@ -167,3 +167,4 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 2026-08-25 | `383fec7` | bridge 双包名修复 | `test_investigation_and_dispatcher_integration.py` |
 | 2026-08-25 | `3c49db2` | `-o` 报告时间戳 | `test_investigation_agent.py` |
 | 2026-08-26 | 本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具 + 知识包入库 | `tests/test_knowledge_tool.py`（19 用例） |
+| 2026-08-26 | 本次（方案 C 提交） | `max_tool_calls` 8→12（`AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限收尾提醒；`_fallback_report` 提炼已采证据与知识包引用 | `test_investigation_agent.py` 新增 5 用例（合计 47 passed / 1 skipped） |

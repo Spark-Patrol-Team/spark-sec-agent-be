@@ -76,9 +76,10 @@
 
 1. 接收事件（`_build_messages` 构造 system + user 消息）。
 2. LLM 推理：分析已有证据 → 识别证据缺口 → 规划下一步（可能触发工具调用）。
-3. 若 LLM 请求工具：`resolve()` 还原真实工具名 → `call()` 执行 → 记录 `tool_call_records` → 结果回填对话，循环。
-4. 停止条件（满足任一即输出报告）：证据足够 / 达到最大步数（`max_tool_calls=8` 硬上限） / 工具无法获得数据。
-5. 输出结构化报告（`_parse_report` 严格 JSON）；解析失败或超步数 → `_fallback_report`（证据不足 → 人工接管）。
+3. 若 LLM 请求工具：`resolve()` 还原真实工具名 → `call()` 执行 → 记录 `tool_call_records` → 结果回填对话，循环；`knowledge_query` 命中的 `evidence_refs` 结构化保留在调用记录中。
+4. 接近上限（剩余 ≤2 次）时注入收尾提醒，促使 LLM 及时输出报告（避免耗尽步数降级）。
+5. 停止条件（满足任一即输出报告）：证据足够 / 达到最大步数（`max_tool_calls=12` 硬上限） / 工具无法获得数据。
+6. 输出结构化报告（`_parse_report` 严格 JSON）；解析失败或超步数 → `_fallback_report`（证据不足 → 人工接管，且尽力提炼已采集的工具证据与知识包引用写入报告）。
 
 主链状态影响：`INVESTIGATING` →（`needs_human=false` 且有处置方案）→ `DECISION_READY` →（高风险）→ `APPROVAL_REQUIRED`；`needs_human=true` → `HUMAN_REQUIRED`。本模块自身不直接修改状态机，状态迁移由 `Orchestrator` 驱动。
 
@@ -111,7 +112,7 @@
 | 知识包检索工具代码名 `knowledge_query` | 函数名不允许 `.`，`knowledge.query` 非法 | 直接用 `knowledge.query`（OpenAI 拒绝） |
 | 知识包 md 文件入库（`deep_agent/knowledge/webshell_min.md`） | Agent 运行资源需随仓库分发、可追溯 | 运行时读外部路径（不可移植） |
 | 三后端（`auto` / `deep_agent` / `tool_mock`） | 真实 Agent、仅桥接、仅内部子链三种运行模式按需选择 | 单后端（无法区分真实/回退路径） |
-| `max_tool_calls=8` 硬上限 | 防 LLM 死循环、控制单次调查成本 | 无限循环（不可控） |
+| `max_tool_calls=12` 硬上限（可环境变量 `AGENT_MAX_TOOL_CALLS` 覆盖） | 防 LLM 死循环、控制单次调查成本；8 次实测偏紧（LLM 常耗尽步数未收尾而降级），扩到 12 并接近上限注入收尾提醒 | 无限循环（不可控）；步数过紧（原 8 次） |
 
 ## 8. 非功能、可观测与审计要求
 
@@ -140,6 +141,7 @@
 | 2026-08-25 | `383fec7` | bridge 双包名修复（`deep_agent` / `sec_agent.deep_agent`），补回归测试 | 是 |
 | 2026-08-25 | `3c49db2` | `-o` 报告名自动加时间戳，不覆盖旧报告 | 是 |
 | 2026-08-26 | 随本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具（`tools/knowledge.py` + `knowledge/webshell_min.md`），CLI 与主链 bridge 注册 | 是（单测与检索验证通过，真实 LLM 轮待跑） |
+| 2026-08-26 | 本次（方案 C 提交） | 步数上限 `max_tool_calls` 8→12（可 `AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限注入收尾提醒；降级报告提炼已采证据与知识包引用 | 是（47 passed / 1 skipped） |
 
 ---
 

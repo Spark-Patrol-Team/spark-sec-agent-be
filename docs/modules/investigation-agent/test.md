@@ -81,6 +81,8 @@
 | `test_alias_map_consistency` | `ALIAS_MAP` 值均 ASCII 且对应真实名 |
 | `test_mock_schemas_ascii_unique` | Mock schema 全 ASCII 且不重复 |
 | `test_web_shell_full_run` | 完整 WebShell 调查（需 LLM key，未配置时跳过） |
+| `test_fallback_report_extracts_knowledge_refs` | 降级报告提炼已采证据：knowledge_query 的 `evidence_refs` → evidence_source、成功工具返回 → key_evidence（方案 C） |
+| `test_default_max_tool_calls` 等 4 例 | AgentConfig 步数上限：默认 12 / 步数 5 / `AGENT_MAX_TOOL_CALLS` 覆盖 / 非法值回退（方案 C） |
 
 ### 5.2 知识包检索工具（`tests/test_knowledge_tool.py`，2026-08-26 新增）
 
@@ -123,7 +125,7 @@
 ```bash
 # 单元 + 集成测试（不依赖 LLM key 的部分稳定通过）
 PYTHONPATH=src python -m pytest tests/test_knowledge_tool.py tests/test_investigation_agent.py tests/test_investigation_and_dispatcher_integration.py -q
-#   预期：42 passed / 1 skipped（1 项为需 LLM key 的集成用例）
+#   预期：47 passed / 1 skipped（1 项为需 LLM key 的集成用例）
 
 # 或无需 pytest
 PYTHONPATH=src python -m unittest tests.test_investigation_agent -v
@@ -195,3 +197,4 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 2026-08-25 | `383fec7` | bridge 双包名修复 + 回归用例 |
 | 2026-08-25 | `3c49db2` | `-o` 报告时间戳 |
 | 2026-08-26 | 本次 T0826-03 提交 | 新增 `test_knowledge_tool.py`（19 用例）；本文件按模板重写并补本轮复验（真实加载 / 工具调用 / 结构化报告 / fallback 实际结果） |
+| 2026-08-26 | 本次（方案 C 提交） | 新增降级报告提炼与 AgentConfig 步数上限用例；执行命令预期更新为 47 passed / 1 skipped |

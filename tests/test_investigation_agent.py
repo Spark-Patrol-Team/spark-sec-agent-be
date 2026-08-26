@@ -17,7 +17,7 @@ from sec_agent.deep_agent.models import SecurityEventInput, InvestigationReport
 from sec_agent.deep_agent.tools.mock import build_mock_tools
 from sec_agent.deep_agent.tools.base import ALIAS_MAP, Tool, ToolRegistry, ToolResult
 from sec_agent.deep_agent.agent import DeepInvestigationAgent
-from sec_agent.deep_agent.config import load_config
+from sec_agent.deep_agent.config import AgentConfig, load_config
 from sec_agent.deep_agent.llm import LLMClient
 from sec_agent.deep_agent.main import timestamped_output_path
 
@@ -156,6 +156,55 @@ class TestAgentHelpers(unittest.TestCase):
         r = DeepInvestigationAgent._fallback_report(ev, [], reason="测试")
         self.assertTrue(r.need_manual_takeover)
         self.assertIn("证据不足", r.conclusion)
+
+    def test_fallback_report_extracts_knowledge_refs(self):
+        """降级报告应提炼已采集证据：knowledge_query 的 evidence_refs + 成功工具返回。"""
+        ev = SecurityEventInput(
+            event_id="E1", severity="HIGH", target_ip="1.1.1.1",
+            confidence=0.7, evidence=["原始证据"],
+        )
+        records = [
+            {"tool": "query_alerts", "input": {"ip": "1.1.1.1"}, "output": "告警列表：[WebShell通信行为告警]", "status": "success"},
+            {"tool": "knowledge_query", "input": {"keyword": "WebShell攻击原理"},
+             "output": "[知识包·攻击原理]...", "status": "success",
+             "evidence_refs": ["MITRE ATT&CK T1505.003 - Server Software Component: Web Shell"]},
+            {"tool": "query_asset", "input": {"ip": "2.2.2.2"}, "output": "[失败] 数据不可得", "status": "failed"},
+        ]
+        r = DeepInvestigationAgent._fallback_report(ev, records, reason="达到最大工具调用次数，证据仍不足")
+        # 知识引用进入证据来源
+        self.assertIn("知识包引用: MITRE ATT&CK T1505.003 - Server Software Component: Web Shell", r.evidence_source)
+        # 成功工具名进入证据来源，失败工具不进入
+        self.assertIn("来源工具: query_alerts", r.evidence_source)
+        self.assertNotIn("来源工具: query_asset", r.evidence_source)
+        # 成功工具返回摘要进入关键证据
+        self.assertTrue(any("WebShell通信行为告警" in ev for ev in r.key_evidence))
+        self.assertIn("原始证据", r.key_evidence)
+        self.assertTrue(r.need_manual_takeover)
+        self.assertEqual(r.tool_call_records, records)
+
+
+class TestAgentConfig(unittest.TestCase):
+    """AgentConfig 步数上限：默认值 + 环境变量覆盖（防死循环上限可调）。"""
+
+    def test_default_max_tool_calls(self):
+        self.assertEqual(AgentConfig().max_tool_calls, 12)
+
+    def test_default_max_steps(self):
+        self.assertEqual(AgentConfig().max_steps, 5)
+
+    def test_env_override_max_tool_calls(self):
+        os.environ["AGENT_MAX_TOOL_CALLS"] = "20"
+        try:
+            self.assertEqual(AgentConfig().max_tool_calls, 20)
+        finally:
+            del os.environ["AGENT_MAX_TOOL_CALLS"]
+
+    def test_env_invalid_falls_back_to_default(self):
+        os.environ["AGENT_MAX_TOOL_CALLS"] = "not-a-number"
+        try:
+            self.assertEqual(AgentConfig().max_tool_calls, 12)
+        finally:
+            del os.environ["AGENT_MAX_TOOL_CALLS"]
 
 
 @unittest.skipUnless(os.getenv("LLM_API_KEY"), "未配置 LLM_API_KEY，跳过集成测试")
