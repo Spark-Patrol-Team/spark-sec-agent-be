@@ -1,0 +1,22 @@
+{
+  "case_id": "TC-KNOWLEDGE-004",
+  "category": "证据不足",
+  "description": "单条告警，缺少资产上下文",
+  "input_event": {
+    "event_id": "EVT-INC-2026-004",
+    "event_type": "WebShell",
+    "severity": "MEDIUM",
+    "timestamp": "2026-08-15T03:12:08Z",
+    "source_ip": "0.0.0.0",
+    "target_ip": "192.168.100.200",
+    "initial_verdict": "证据不足",
+    "confidence": 0.35,
+    "evidence": [
+      "仅检测到一条WebShell文件告警: shell.php",
+      "无攻击源IP信息",
+      "无目标资产详细信息",
+      "无进程异常日志",
+      "无网络连接记录"
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "case_id": "TC-KNOWLEDGE-003",
+  "category": "正向变体",
+  "description": "Beima WebShell（WordPress/cPanel）",
+  "input_event": {
+    "event_id": "EVT-BEIMA-2025-003",
+    "event_type": "WebShell",
+    "severity": "HIGH",
+    "timestamp": "2025-04-15T03:15:00Z",
+    "source_ip": "103.235.46.89",
+    "target_ip": "172.16.10.100",
+    "initial_verdict": "疑似真实攻击",
+    "confidence": 0.72,
+    "evidence": [
+      "检测到WordPress服务器上PHP脚本异常访问",
+      "检测到加密通信流量伪装为JSON API",
+      "WebShell文件包含RSA解密函数",
+      "文件时间戳被篡改",
+      "攻击目标为政府相关网站"
+    ]
+  }
+}

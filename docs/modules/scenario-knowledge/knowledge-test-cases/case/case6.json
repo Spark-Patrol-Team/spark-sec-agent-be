@@ -1,0 +1,22 @@
+ {
+   "case_id": "TC-KNOWLEDGE-006",
+   "category": "非WebShell对照",
+   "description": "WordPress供应链攻击",
+   "input_event": {
+     "event_id": "EVT-BDT-2026-006",
+     "event_type": "WordPress_Compromise",
+     "severity": "HIGH",
+     "timestamp": "2026-08-01T09:00:00Z",
+     "source_ip": "0.0.0.0",
+     "target_ip": "0.0.0.0",
+     "initial_verdict": "疑似供应链攻击",
+     "confidence": 0.70,
+     "evidence": [
+       "BdThemes插件存在XSS漏洞",
+       "检测到隐藏管理员账户创建",
+       "检测到WebShell文件: emer-run.php",
+       "API请求来自供应商域名",
+       "攻击来源：供应链（非特定IP）"
+     ]
+   }
+ }

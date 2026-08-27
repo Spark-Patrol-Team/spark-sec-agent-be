@@ -1,0 +1,19 @@
+{
+  "case_id": "用例唯一标识，格式：TC-KNOWLEDGE-001~006",
+  "category": "用例类别，可选值：正向变体 / 证据不足 / 非WebShell对照",
+  "description": "用例简要描述",
+  "input_event": {
+    "event_id": "事件唯一标识，格式：EVT-XXX-YYYY-001",
+    "event_type": "事件类型，可选值：WebShell / WordPress_Compromise 等",
+    "severity": "严重等级，可选值：HIGH / MEDIUM / CRITICAL",
+    "timestamp": "事件发生时间，ISO 8601格式，YYYY-MM-DDTHH:MM:SSZ",
+    "source_ip": "攻击源IP地址，字符串格式；未知时填 0.0.0.0",
+    "target_ip": "目标资产IP地址，字符串格式；未知时填 0.0.0.0",
+    "initial_verdict": "初步研判结论，字符串格式",
+    "confidence": "置信度，浮点数，取值范围0.0-1.0",
+    "evidence": [
+      "证据描述1，字符串",
+      "证据描述2，字符串"
+    ]
+  }
+}
