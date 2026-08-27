@@ -24,7 +24,7 @@
 - Mock 工具 6 个（`tools/mock.py`，WebShell 主场景人工构造数据）。
 - 深信服 MCP 客户端（`tools/mcp_client.py`，JSON-RPC over HTTP，兼容 SSE；5 服务 19 工具，地址走 gitignore 本地配置）。
 - MCP 空结果识别：dbproxy 系列工具返回 `{"code":0,"msg":"","data":[]}` 时，`MCPTool.call` 判定为 `partial`（「查询成功但无数据」），与 `success`（有数据）/ `failed`（业务错误 `code!=0` 或异常）区分，供 Agent 按「数据为空」触发停止条件而非静默成功。
-- 知识包检索工具 `knowledge_query`（`tools/knowledge.py` + `docs/modules/scenario-knowledge/webshell-knowledge.md` 权威版），关键词匹配返回条目 + `evidence_refs`；CLI 与主链 bridge 均已注册。
+- 知识包检索工具 `knowledge_query`（`tools/knowledge.py` + `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` 权威版），关键词匹配返回条目 + `evidence_refs`；CLI 与主链 bridge 均已注册。
 - 主链集成：`auto` / `deep_agent` 后端经 `services/deep_agent_bridge.py` 桥接；`tool_mock` 后端走内部子链。
 - CLI 入口 `main.py`（`--event` / `-o` 时间戳 / `--list-tools`）、API 可视化配置 `config_gui.py`。
 
@@ -49,7 +49,7 @@
 | `src/sec_agent/deep_agent/tools/mock.py` | `build_mock_tools` | 6 个 Mock 兜底工具 |
 | `src/sec_agent/deep_agent/tools/knowledge.py` | `build_knowledge_tools` / `KnowledgeQueryTool` / `load_knowledge_entries` | 知识包解析 + `knowledge_query` 检索（`evidence_refs`） |
 | `src/sec_agent/deep_agent/tools/mcp_client.py` | `MCPClient` / `MCPTool` / `build_mcp_tools` | 深信服 MCP 客户端 |
-| `docs/modules/scenario-knowledge/webshell-knowledge.md` | 《最小 WebShell 知识包》 | 知识包检索源（沈洪旭维护的权威版） |
+| `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` | 《最小 WebShell 知识包》 | 知识包检索源（沈洪旭维护的权威版） |
 | `src/sec_agent/services/deep_agent_bridge.py` | `DeepAgentBridge` | 主链桥接（`auto`/`deep_agent` 后端，含 knowledge 工具注册） |
 | `src/sec_agent/services/investigation.py` | `DeepInvestigationAgent` | 主链调查服务（三后端分派） |
 | `tests/test_investigation_agent.py` | 单元/集成测试 | 16 用例 + 1 集成 |
@@ -139,7 +139,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | LLM 推理 | **真实调用**（DeepSeek OpenAI 兼容接口，实测通过） | 配置 `LLM_*` 或本地配置 | FastGPT 编排（未实现） |
 | 深信服 MCP 工具 | **真实连通**（5 服务 19 工具注册；dbproxy 等实测调用返回） | 配置 `MCP_URLS` / `mcp_servers.local.json` 且网络可达 | 真实平台**数据**已验证（本轮查询样例虚构实体返回空集，待真实数据联调） |
 | Mock 工具（6 个） | **本地实现**（人工构造 WebShell 演示数据） | `TOOL_MODE=mock`/`auto` | 真实平台返回 |
-| 知识包检索（`knowledge_query`） | **本地实现**（解析沈洪旭权威版 `docs/modules/scenario-knowledge/webshell-knowledge.md` 为条目 + `evidence_refs`） | 所有工具模式注册 | FastGPT 知识库 / 真实知识服务 |
+| 知识包检索（`knowledge_query`） | **本地实现**（解析沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` 为条目 + `evidence_refs`） | 所有工具模式注册 | FastGPT 知识库 / 真实知识服务 |
 | 内部回退子链 | **fallback**（`evidence_lookup` + `xdr_log_query`，无 LLM） | `auto` 后端 bridge 不可用/异常 | 真实 LLM 已运行 |
 | FastGPT 目标路线 | 未实现 | — | 已接入 FastGPT |
 
@@ -169,4 +169,5 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 2026-08-25 | `3c49db2` | `-o` 报告时间戳 | `test_investigation_agent.py` |
 | 2026-08-26 | 本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具 + 知识包入库 | `tests/test_knowledge_tool.py`（19 用例） |
 | 2026-08-26 | 本次（方案 C 提交） | `max_tool_calls` 8→12（`AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限收尾提醒；`_fallback_report` 提炼已采证据与知识包引用 | `test_investigation_agent.py` 新增 5 用例（合计 47 passed / 1 skipped） |
-| 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `docs/modules/scenario-knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`；MCP 空结果识别：dbproxy `{"code":0,"data":[]}` → `partial`（查询成功但无数据） | `test_mcp_client.py` 新增（11 用例）；`test_knowledge_tool.py` 全通过 |
+| 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`；MCP 空结果识别：dbproxy `{"code":0,"data":[]}` → `partial`（查询成功但无数据） | `test_mcp_client.py` 新增（11 用例）；`test_knowledge_tool.py` 全通过 |
+| 2026-08-27 | 本次（打包修复） | 知识包迁入 `sec_agent.deep_agent` 包内 + `[tool.setuptools.package-data]` 随 wheel/sdist 分发，`knowledge.py` 改用 `importlib.resources` 读取；`-o` 时间戳改微秒级 + 存在检测唯一序号 | `test_packaging.py` 新增（4 用例）；`test_investigation_agent.py` 时间戳用例更新 |

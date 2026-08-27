@@ -5,7 +5,7 @@
   PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json
   PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
 
-  -o 指定的文件名会自动插入时间戳（report.json -> report_20260825_160543.json），
+  -o 指定的文件名会自动插入微秒级时间戳（report.json -> report_20260825_160543_123456.json），
   每次运行生成独立文件，重复运行不会互相覆盖。
 
 依赖环境变量（可选，未设置时走 Mock + 需另配 LLM）：
@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
+from datetime import datetime
 from pathlib import Path
 
 from .config import load_config
@@ -59,14 +59,22 @@ def build_tools(config) -> ToolRegistry:
 
 
 def timestamped_output_path(path: str | Path) -> Path:
-    """在输出文件名中插入时间戳，避免重复运行互相覆盖。
+    """在输出文件名中插入微秒级时间戳，避免重复运行互相覆盖。
 
-    report.json -> report_20260825_160543.json
-    reports/foo.json -> reports/foo_20260825_160543.json
+    report.json -> report_20260825_160543_123456.json
+    reports/foo.json -> reports/foo_20260825_160543_123456.json
+
+    微秒级时间戳已能避免绝大多数同秒重名；若目标文件已存在（极少见的同微秒内
+    两次调用或残留文件），自动追加 _1/_2 … 唯一序号，确保绝不重名覆盖。
     """
     p = Path(path)
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    return p.with_name(f"{p.stem}_{stamp}{p.suffix}")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    candidate = p.with_name(f"{p.stem}_{stamp}{p.suffix}")
+    seq = 1
+    while candidate.exists():
+        candidate = p.with_name(f"{p.stem}_{stamp}_{seq}{p.suffix}")
+        seq += 1
+    return candidate
 
 
 def main(argv=None) -> int:

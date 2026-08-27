@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """知识包检索工具（对应需求中的 `knowledge.query`）。
 
-把《最小 WebShell 知识包》（docs/modules/scenario-knowledge/webshell-knowledge.md，
-沈洪旭维护的权威版）解析为可检索条目，Agent 在调查中通过关键词获取：
-攻击原理 / 攻击特征 / 管理工具流量特征 / 证据检查清单 / 处置建议模板 等参考信息，
-返回结果带 `evidence_refs`，Agent 可直接填入调查报告的 evidence_source / key_evidence。
+把《最小 WebShell 知识包》（沈洪旭维护的权威版）解析为可检索条目，Agent 在调查中
+通过关键词获取：攻击原理 / 攻击特征 / 管理工具流量特征 / 证据检查清单 / 处置建议模板
+等参考信息，返回结果带 `evidence_refs`，Agent 可直接填入调查报告的 evidence_source / key_evidence。
 
-知识源说明：本工具统一读取沈洪旭维护的权威知识包
-`docs/modules/scenario-knowledge/webshell-knowledge.md`，不维护第二份知识副本，
-避免与 PR #8（沈洪旭的知识包交付）建立重复入口。
+知识源说明：本工具统一读取沈洪旭维护的权威知识包（随包分发的 package-data
+`sec_agent/deep_agent/knowledge/webshell-knowledge.md`），不维护第二份知识副本，
+避免与 PR #8（沈洪旭的知识包交付）建立重复入口。知识文件经
+`[tool.setuptools.package-data]` 声明随 wheel/sdist 分发，`pip install` 后仍可读取。
 
 命名说明：OpenAI 兼容接口强制函数名匹配 `^[a-zA-Z0-9_-]+$`，不允许 "."，
 因此工具真实名取 `knowledge_query`（语义上等价于需求中的 `knowledge.query`），
@@ -18,16 +18,24 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from .base import Tool, ToolResult
 
-# 权威知识包 md：沈洪旭维护，位于项目根 docs/modules/scenario-knowledge/ 下。
-# 本文件位于 src/sec_agent/deep_agent/tools/，往上 4 级（parents[4]）即项目根。
-_DEFAULT_KNOWLEDGE_PATH = (
-    Path(__file__).resolve().parents[4] / "docs" / "modules" / "scenario-knowledge" / "webshell-knowledge.md"
-)
+# 权威知识包 md：沈洪旭维护，作为 package-data 随包分发。
+# 用 importlib.resources 从包内读取，不依赖源码树相对路径，pip install 后同样可用。
+_KNOWLEDGE_PACKAGE = "sec_agent.deep_agent"
+_KNOWLEDGE_RESOURCE = ("knowledge", "webshell-knowledge.md")
+
+
+def _default_knowledge_text() -> str:
+    """从包内读取权威知识包全文（package-data，随 wheel/sdist 分发）。"""
+    resource = resources.files(_KNOWLEDGE_PACKAGE)
+    for part in _KNOWLEDGE_RESOURCE:
+        resource = resource / part
+    return resource.read_text(encoding="utf-8")
 
 
 @dataclass
@@ -108,9 +116,11 @@ def load_knowledge_entries(md_path: Path | None = None) -> list[KnowledgeEntry]:
 
     标题锚点匹配任一即可（容忍章节序号变化）；某节缺失时该条目 content 为空，
     但仍保留（便于调用方感知知识缺口）。
+
+    默认从包内 package-data 读取（`_default_knowledge_text`）；传入 `md_path` 时
+    改为读取指定文件（供测试或本地覆盖使用）。
     """
-    path = md_path or _DEFAULT_KNOWLEDGE_PATH
-    text = path.read_text(encoding="utf-8")
+    text = md_path.read_text(encoding="utf-8") if md_path else _default_knowledge_text()
     sections = _split_sections(text)
 
     entries: list[KnowledgeEntry] = []
@@ -197,5 +207,5 @@ class KnowledgeQueryTool(Tool):
 
 
 def build_knowledge_tools(md_path: Path | None = None) -> list[Tool]:
-    """构建知识包检索工具（默认读取沈洪旭权威版 webshell-knowledge.md）。"""
+    """构建知识包检索工具（默认读取包内权威版 webshell-knowledge.md）。"""
     return [KnowledgeQueryTool(load_knowledge_entries(md_path))]

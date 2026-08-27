@@ -57,7 +57,7 @@
 | `tests/fixtures/investigation/sample_event.json` | 人工构造 | WebShell 固定样例（Mock），非真实平台数据 |
 | `src/sec_agent/platforms/fixed_sample.py`（`webshell-001`） | 人工构造 | 主链样例：src_ip=10.10.2.15 / dst_ip=172.16.8.21 / 告警 xdr-alert-001/002 |
 | `src/sec_agent/deep_agent/tools/mock.py` 内置表 | 人工构造 | 仅覆盖 192.168.1.100（OA 服务器）；未知 IP 按设计返回 failed/数据不可得 |
-| `docs/modules/scenario-knowledge/webshell-knowledge.md` | 人工构造（知识包最小集，沈洪旭维护的权威版） | 攻击原理 / 特征速查 / 工具流量 / 检查清单 / 处置建议 / 人工接管 |
+| `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` | 人工构造（知识包最小集，沈洪旭维护的权威版） | 攻击原理 / 特征速查 / 工具流量 / 检查清单 / 处置建议 / 人工接管 |
 | 《问答样本示例_v1.md》 | 人工构造 | 5 题评测样本，用于知识包检索覆盖验证 |
 
 ## 5. 测试用例
@@ -137,7 +137,7 @@
 |---|---|
 | 调查 Agent 正常执行 | ✅ 8 次工具调用（6 Mock + `knowledge_query` + `query_asset` 失败 1 次），产出完整结构化报告 |
 | 工具结果进入调查过程 | ✅ `tool_call_records` 完整留痕：工具名 / 输入 / 输出 / 状态，逐条可审计 |
-| 知识源切换生效 | ✅ `knowledge_query`（关键词「WebShell证据检查清单」）返回正文来自沈洪旭权威版 `docs/modules/scenario-knowledge/webshell-knowledge.md`（5 项检查清单 + `[引用来源：NSA/CISA 联合报告；CISA Eliminate Web Shells (CM0106)]`） |
+| 知识源切换生效 | ✅ `knowledge_query`（关键词「WebShell证据检查清单」）返回正文来自沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`（5 项检查清单 + `[引用来源：NSA/CISA 联合报告；CISA Eliminate Web Shells (CM0106)]`） |
 | 工具返回影响证据来源 | ✅ `evidence_refs`（NSA/CISA、CM0106）结构化进入 `tool_call_records`，并同步进入报告的 `evidence_source` |
 | 工具返回影响处置建议 | ✅ `disposal_suggestions` 8 条，由知识包处置模板（CISA CM0106 隔离→保全→删除→改密→根因→恢复→加固）驱动 |
 | 工具返回影响结论与置信度 | ✅ 结论判定「真实 WebShell 攻击」，`confidence=0.88`（随 Mock 资产/告警/漏洞证据上调） |
@@ -186,7 +186,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | Mock 工具稳定复验 | ✅ 16 passed / 1 skipped（不依赖 LLM），主链 `tool_mock` 后端全链 COMPLETED |
 | 实际运行路径确认 | ✅ 真实加载 PR #13 Agent + **实际调用 LLM** + **未发生内部 fallback**（按工具名与调用次数判据） |
 | 文档按模板同步三份 | ✅ `design.md` / `development.md` / `test.md`（本文件）均按 0-10 节模板完善，能力性质边界区分见 `development.md` 第 7 节 |
-| 知识包纳入 git 提交 | ✅ 统一读沈洪旭权威版 `docs/modules/scenario-knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`，`knowledge_query` 随本次提交 |
+| 知识包纳入 git 提交 | ✅ 统一读沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`，`knowledge_query` 随本次提交 |
 
 ## 10. 已知问题与上游分析
 

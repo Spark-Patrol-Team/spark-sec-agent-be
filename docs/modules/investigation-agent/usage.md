@@ -212,7 +212,7 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 
 **1 个知识包检索（`knowledge.query`，代码名 `knowledge_query`）**：
 
-按关键词检索内置《最小 WebShell 知识包》（`docs/modules/scenario-knowledge/webshell-knowledge.md`，沈洪旭维护的权威版），返回攻击原理、攻击特征速查表、主流管理工具流量特征、证据检查清单或处置建议模板，结果带 `evidence_refs` 可直接填入调查报告。示例关键词：`WebShell攻击原理` / `WebShell处置建议` / `中国菜刀 流量特征` / `证据检查清单`。
+按关键词检索内置《最小 WebShell 知识包》（`src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，沈洪旭维护的权威版），返回攻击原理、攻击特征速查表、主流管理工具流量特征、证据检查清单或处置建议模板，结果带 `evidence_refs` 可直接填入调查报告。示例关键词：`WebShell攻击原理` / `WebShell处置建议` / `中国菜刀 流量特征` / `证据检查清单`。
 
 > 命名说明：OpenAI 兼容接口不允许函数名含 `.`，代码层工具名为 `knowledge_query`（语义等价于需求中的 `knowledge.query`）。
 
@@ -255,6 +255,8 @@ src/sec_agent/deep_agent/
 ├── agent.py          调查闭环（LLM 驱动）
 ├── llm.py            LLM 客户端（OpenAI 兼容）
 ├── models.py         输入事件 / 输出报告模型
+├── knowledge/
+│   └── webshell-knowledge.md   最小 WebShell 知识包（沈洪旭维护，检索源，package-data 随包分发）
 ├── tools/
 │   ├── base.py       工具基类 + 注册表 + 内部别名层
 │   ├── mock.py       6 个 Mock 工具
@@ -262,8 +264,5 @@ src/sec_agent/deep_agent/
 │   └── mcp_client.py 深信服 MCP 客户端（19 个真实工具）
 ├── mcp_servers.local.json  深信服 MCP 地址（gitignore）
 └── llm_config.local.json   LLM API 配置（gitignore）
-
-docs/modules/scenario-knowledge/
-└── webshell-knowledge.md   最小 WebShell 知识包（沈洪旭维护，检索源）
 ```
 ```

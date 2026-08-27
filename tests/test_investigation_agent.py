@@ -39,17 +39,37 @@ class TestReportOutputPath(unittest.TestCase):
     def test_timestamp_inserted_before_extension(self):
         p = timestamped_output_path("report.json")
         self.assertEqual(p.suffix, ".json")
-        self.assertRegex(p.stem, r"^report_\d{8}_\d{6}$")
+        self.assertRegex(p.stem, r"^report_\d{8}_\d{6}_\d{6}$")
 
     def test_preserves_parent_dir_and_nested_stem(self):
         p = timestamped_output_path("reports/foo.json")
         self.assertEqual(str(p.parent), "reports")
-        self.assertRegex(p.stem, r"^foo_\d{8}_\d{6}$")
+        self.assertRegex(p.stem, r"^foo_\d{8}_\d{6}_\d{6}$")
 
     def test_no_extension_still_timestamped(self):
         p = timestamped_output_path("report")
         self.assertEqual(p.suffix, "")
-        self.assertRegex(p.stem, r"^report_\d{8}_\d{6}$")
+        self.assertRegex(p.stem, r"^report_\d{8}_\d{6}_\d{6}$")
+
+    def test_existing_file_gets_unique_suffix(self):
+        """同名文件已存在时（同微秒残留），追加 _1/_2 唯一序号避免覆盖。"""
+        import tempfile
+        from datetime import datetime as _datetime
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "report.json"
+            # 固定时间戳，避免两次调用跨越微秒边界导致时间戳本身不同
+            with mock.patch(
+                "sec_agent.deep_agent.main.datetime",
+                wraps=_datetime,
+            ) as mdt:
+                mdt.now.return_value = _datetime(2026, 8, 25, 16, 5, 43, 123456)
+                first = timestamped_output_path(base)
+                first.write_text("x", encoding="utf-8")  # 先占住这个文件名
+                second = timestamped_output_path(base)
+            self.assertNotEqual(first.name, second.name)
+            self.assertEqual(second.stem, f"{first.stem}_1")
 
 
 class TestModels(unittest.TestCase):
