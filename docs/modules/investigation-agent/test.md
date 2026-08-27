@@ -57,7 +57,7 @@
 | `tests/fixtures/investigation/sample_event.json` | 人工构造 | WebShell 固定样例（Mock），非真实平台数据 |
 | `src/sec_agent/platforms/fixed_sample.py`（`webshell-001`） | 人工构造 | 主链样例：src_ip=10.10.2.15 / dst_ip=172.16.8.21 / 告警 xdr-alert-001/002 |
 | `src/sec_agent/deep_agent/tools/mock.py` 内置表 | 人工构造 | 仅覆盖 192.168.1.100（OA 服务器）；未知 IP 按设计返回 failed/数据不可得 |
-| `src/sec_agent/deep_agent/knowledge/webshell_min.md` | 人工构造（知识包最小集） | 攻击原理 / 特征速查 / 工具流量 / 检查清单 / 处置建议 / 人工接管 |
+| `docs/modules/scenario-knowledge/webshell-knowledge.md` | 人工构造（知识包最小集，沈洪旭维护的权威版） | 攻击原理 / 特征速查 / 工具流量 / 检查清单 / 处置建议 / 人工接管 |
 | 《问答样本示例_v1.md》 | 人工构造 | 5 题评测样本，用于知识包检索覆盖验证 |
 
 ## 5. 测试用例
@@ -98,7 +98,16 @@
 | `test_registered_in_registry` | 注册进 `ToolRegistry`，schema 名唯一 |
 | `test_sample1..5` | 问答样本覆盖：样本 1/3/4/5 命中对应条目；样本 2（攻击组织）为知识缺口（如实标记） |
 
-### 5.3 bridge 集成（`tests/test_investigation_and_dispatcher_integration.py`）
+### 5.3 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
+
+| 用例 | 验证点 |
+|------|--------|
+| `TestExtractText` 3 例 | `_extract_text` 兼容 content 列表 / structuredContent / 纯字符串 |
+| `TestDbproxyContract` 5 例 | dbproxy 契约：空数据→`partial`、非空→`success`、`code!=0`→`failed`、`code="0"` 字符串兼容 |
+| `TestNonDbproxyTool` 2 例 | 无 code/data 结构（如 secgpt 研判）按文本 `success`，不误判 |
+| `TestMCPToolEndToEnd` 2 例 | `MCPTool.call` 端到端：空结果 `partial`、有数据 `success`，供 Agent 消费 |
+
+### 5.4 bridge 集成（`tests/test_investigation_and_dispatcher_integration.py`）
 
 | 用例 | 验证点 |
 |------|--------|
@@ -119,6 +128,22 @@
 | 结束状态 | 报告含人工接管标记 | 主链停在 `HUMAN_REQUIRED` | — |
 
 判定「真实 LLM 路径 / 内部回退子链」的依据：工具名（真实路径为 `query_asset`/`query_alerts`/`dbproxy_*` 等 deep_agent 工具集，内部子链为 `evidence_lookup`/`xdr_log_query`）与 `tool_results` 数量（8 次 vs 2 次）。
+
+### 6.1 2026-08-27 固定样例完整调查（知识源统一 + partial 契约后）
+
+用 `tests/fixtures/investigation/sample_event.json` 固定样例跑通完整结构化调查（报告 `report_20260827_214442.json`，本次提交后生成），证明「工具结果真正影响证据/结论」，而非仅证明函数可导入：
+
+| 复验项 | 结果 |
+|---|---|
+| 调查 Agent 正常执行 | ✅ 8 次工具调用（6 Mock + `knowledge_query` + `query_asset` 失败 1 次），产出完整结构化报告 |
+| 工具结果进入调查过程 | ✅ `tool_call_records` 完整留痕：工具名 / 输入 / 输出 / 状态，逐条可审计 |
+| 知识源切换生效 | ✅ `knowledge_query`（关键词「WebShell证据检查清单」）返回正文来自沈洪旭权威版 `docs/modules/scenario-knowledge/webshell-knowledge.md`（5 项检查清单 + `[引用来源：NSA/CISA 联合报告；CISA Eliminate Web Shells (CM0106)]`） |
+| 工具返回影响证据来源 | ✅ `evidence_refs`（NSA/CISA、CM0106）结构化进入 `tool_call_records`，并同步进入报告的 `evidence_source` |
+| 工具返回影响处置建议 | ✅ `disposal_suggestions` 8 条，由知识包处置模板（CISA CM0106 隔离→保全→删除→改密→根因→恢复→加固）驱动 |
+| 工具返回影响结论与置信度 | ✅ 结论判定「真实 WebShell 攻击」，`confidence=0.88`（随 Mock 资产/告警/漏洞证据上调） |
+| 未内部 fallback | ✅ 工具名全为 deep_agent 工具集（非 `evidence_lookup`/`xdr_log_query`） |
+
+本轮报告的 `report_*.json` 不入库（gitignore），上述结论为对报告字段的实际核对。
 
 ## 7. 执行方式（真实执行命令）
 
@@ -161,7 +186,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | Mock 工具稳定复验 | ✅ 16 passed / 1 skipped（不依赖 LLM），主链 `tool_mock` 后端全链 COMPLETED |
 | 实际运行路径确认 | ✅ 真实加载 PR #13 Agent + **实际调用 LLM** + **未发生内部 fallback**（按工具名与调用次数判据） |
 | 文档按模板同步三份 | ✅ `design.md` / `development.md` / `test.md`（本文件）均按 0-10 节模板完善，能力性质边界区分见 `development.md` 第 7 节 |
-| 知识包纳入 git 提交 | ✅ `webshell_min.md` 入库，`knowledge_query` 随本次提交 |
+| 知识包纳入 git 提交 | ✅ 统一读沈洪旭权威版 `docs/modules/scenario-knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`，`knowledge_query` 随本次提交 |
 
 ## 10. 已知问题与上游分析
 
@@ -189,7 +214,84 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 
 核心含义：① ② 的「证据不足 → 人工接管」本质是**上游喂了虚构样例实体**，不是调查链路或工具的问题。真实接入时事件来自真实库，这两个问题会同时消失。这也解释了为什么 `tool_mock` 内部子链那轮没失败——它走的是 fixed_sample **自带种子数据**（上游数据源一致），所以一路走通到 COMPLETED。
 
-## 11. 变更记录
+## 11. 28 日真实平台联调步骤（调查阶段）
+
+面向 8 月 28 日真实平台工具接入，与杨嘉琪对齐 dbproxy 等真实工具契约后，按以下清单执行联调。目标：证明真实平台工具按约定返回后，调查 Agent 能正常消费；真实调用失败时能按预期 fallback。
+
+### 11.1 所需配置
+
+| 配置项 | 来源 | 说明 |
+|---|---|---|
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 环境变量或 `llm_config.local.json`（gitignore） | 深度调查推理；未配置则 agent 报错 |
+| `MCP_URLS`（或 `mcp_servers.local.json`） | 环境变量 / gitignore 本地文件 | 5 个深信服 MCP 服务地址，真实地址不入库 |
+| `MCP_API_KEY`（可选） | 同上 | MCP 鉴权；多数 dbproxy 服务带 `apikey` 头 |
+| `MCP_VERIFY_SSL`（可选） | 同上 | 默认关闭证书校验（内网自签） |
+| `INVESTIGATION_BACKEND=auto` | 环境变量 | 主链调查后端：bridge 优先，失败回退内部子链 |
+| `PYTHONPATH=src` | 环境变量 | 保证 `sec_agent` 可导入 |
+| `tzdata` | `pip install tzdata` | Windows 必需，否则主链 import 报 `ZoneInfoNotFoundError` |
+
+### 11.2 调用入口
+
+```text
+# ① CLI 独立调查（最快验证工具消费，无需起服务）
+PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
+
+# ② 主链 HTTP 联调（真实事件经 RECEIVED→…→INVESTIGATING 触发调查）
+$env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
+#   POST /runs  body {"source":"<真实平台接入源>","sample_id":"<真实事件ID>"}
+#   观察 GET /events/{id}/timeline 中 INVESTIGATING 阶段
+```
+
+### 11.3 预期工具调用（真实平台）
+
+WebShell 类事件典型调用序列，按证据缺口推进：
+
+| 步骤 | 工具（真实名） | 输入 | 成功返回 | 空结果（本模块识别为） |
+|---|---|---|---|---|
+| 1 查资产 | `dbproxy_资产数据查询工具` | `{"param":{"query_type":"detail","request_body":{"filter":{...ip...},"limit":10}}}` | `{"code":0,"data":[{资产字段...}]}` → `success` | `{"code":0,"data":[]}` → `partial` |
+| 2 查告警 | `dbproxy_告警数据查询工具` | 同上（告警 filter/sort/size） | `data` 非空 → `success` | `data:[]` → `partial` |
+| 3 查漏洞 | `dbproxy_脆弱性数据查询工具` | `{"filter":{"asset":ip,"data_type":"loophole"},"limit":20}` | `data` 非空 → `success` | `data:[]` → `partial` |
+| 4 查威胁实体 | `dbproxy_威胁实体数据查询工具` | `{"filter":{"operationTarget.nodeInfo.ip":src}}` | `data` 非空 → `success` | `data:[]` → `partial` |
+| 5 研判 | `secgpt_告警事件解读研判` / `secgpt_威胁实体的调查分析` | `{"content":事件描述}` | 研判文本 → `success`（无 code/data 结构） | 文本为空 → 视文本内容 |
+| 6 知识包 | `knowledge_query` | `{"keyword":"WebShell处置建议"}` | 命中条目 + `evidence_refs` → `success` | 无关词 → `failed` |
+
+> dbproxy 契约要点：`code==0` 且 `data` 为空 → `partial`（查询成功但无数据）；`code!=0` → `failed`（业务错误，`msg` 为错误信息）；`code==0` 且 `data` 非空 → `success`。三种状态经 `ToolResult.to_str()` 分别以「[部分成功] / [失败] / 原文」回填给 LLM，使其按「数据为空」触发停止条件而非静默成功。
+
+### 11.4 工具记录检查（`tool_call_records`）
+
+报告 JSON 的 `tool_call_records` 由代码侧真实采集，逐条核对：
+
+| 检查项 | 通过标准 |
+|---|---|
+| 工具名 | 为真实名（如 `dbproxy_告警数据查询工具`），非 ASCII 内部别名 |
+| `status` | 只出现 `success` / `partial` / `failed` 三态；空数据必须是 `partial` 而非 `success` |
+| `output` | 与真实平台返回一致；空数据 output 为 `[部分成功] 查询成功但无数据` |
+| `knowledge_query` 记录 | 命中时含 `evidence_refs` 结构化字段 |
+| 调用次数 | 不超过 `AGENT_MAX_TOOL_CALLS`（默认 12） |
+
+### 11.5 调查报告检查
+
+| 检查项 | 通过标准 |
+|---|---|
+| `evidence_source` | 含知识包引用（如 `CISA Eliminate Web Shells (CM0106)`）与真实工具来源 |
+| `key_evidence` | 有具体数据支撑，无「数据不可得」当作真实证据编造 |
+| `confidence` | 随证据合理调整（0~1），空结果不抬高置信度 |
+| `need_manual_takeover` | 关键工具 `partial`/`failed` 且证据不足时置 `true` |
+| `disposal_suggestions` | 由知识包处置模板驱动（CISA CM0106 流程），不自动执行 |
+
+### 11.6 真实平台失败时的 fallback
+
+| 失败情形 | 表现 | fallback 行为 |
+|---|---|---|
+| MCP 服务连接失败 | 注册阶段 `[warn] MCP 服务「xxx」连接失败，跳过` | 该服务全部工具跳过，仅剩 Mock + 知识包 + 其它可达服务 |
+| dbproxy 返回空数据 | `partial`（查询成功但无数据） | 回填 LLM → 触发「数据为空」停止条件 → 人工接管 |
+| dbproxy 业务错误 `code!=0` | `failed`（`msg` 为错误信息） | 回填 LLM → 记录「数据不可得」→ 不编造证据 |
+| 全部真实工具不可达 | `--list-tools` 仅剩 Mock + 知识包 | 调查仍可产出报告，但证据来自 Mock/知识包，`need_manual_takeover` 置 `true` |
+| LLM 未配置 | agent 抛「LLM 未配置」 | 主链 `auto` 后端回退内部子链（`evidence_lookup`+`xdr_log_query`） |
+
+> 联调核心判据：真实平台按契约返回（`code==0`+数据 / `code==0`+空 / `code!=0`）后，`tool_call_records` 的 `status` 分别正确落为 `success` / `partial` / `failed`，且报告结论、置信度、人工接管标记随之变化——即证明「真实工具返回真正影响证据与结论」，而非仅证明函数可导入。
+
+## 12. 变更记录
 
 | 日期 | PR/Commit | 变更内容 |
 |---|---|---|
@@ -198,3 +300,4 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 2026-08-25 | `3c49db2` | `-o` 报告时间戳 |
 | 2026-08-26 | 本次 T0826-03 提交 | 新增 `test_knowledge_tool.py`（19 用例）；本文件按模板重写并补本轮复验（真实加载 / 工具调用 / 结构化报告 / fallback 实际结果） |
 | 2026-08-26 | 本次（方案 C 提交） | 新增降级报告提炼与 AgentConfig 步数上限用例；执行命令预期更新为 47 passed / 1 skipped |
+| 2026-08-27 | 本次 T0827-03 提交 | 知识源统一到沈洪旭权威版；新增 `test_mcp_client.py`（11 用例）验证 dbproxy 空结果 `partial` / 结构化错误 `failed` / 有数据 `success` 契约 |

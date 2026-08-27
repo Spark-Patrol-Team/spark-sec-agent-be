@@ -55,6 +55,25 @@
 | `triage` | dict | 否 | 上游 triage | 完整研判结果（真实性/风险分/证据缺口） |
 | `trace_id` / `run_id` | str | 否 | orchestrator | 全链路追踪编号 |
 
+输入 JSON 示例（上游传入）：
+
+```json
+{
+  "event_id": "EVENT-001",
+  "event_type": "WebShell",
+  "severity": "HIGH",
+  "timestamp": "2026-08-22 10:23:15",
+  "source_ip": "10.10.10.25",
+  "target_ip": "192.168.1.100",
+  "initial_verdict": "疑似真实攻击",
+  "confidence": 0.72,
+  "evidence": [
+    "检测到疑似WebShell通信",
+    "攻击源与目标存在通信关系"
+  ]
+}
+```
+
 ### 3.2 输出
 
 `InvestigationReport`（`deep_agent/models.py`），经 bridge 转为主链 `InvestigationReport` 领域模型。
@@ -110,7 +129,7 @@
 | bridge 双包名兼容（`deep_agent` / `sec_agent.deep_agent`） | 包位置在合并中反复变化，避免导入路径耦合 | 硬编码单包名（曾导致 `auto` 恒回退内部子链） |
 | 报告文件名自动加时间戳（`-o`） | 避免重复运行覆盖旧报告 | 固定文件名（会覆盖） |
 | 知识包检索工具代码名 `knowledge_query` | 函数名不允许 `.`，`knowledge.query` 非法 | 直接用 `knowledge.query`（OpenAI 拒绝） |
-| 知识包 md 文件入库（`deep_agent/knowledge/webshell_min.md`） | Agent 运行资源需随仓库分发、可追溯 | 运行时读外部路径（不可移植） |
+| 知识包统一读沈洪旭权威版（`docs/modules/scenario-knowledge/webshell-knowledge.md`） | 避免与 PR #8（沈洪旭知识包交付）建立第二套知识入口；运行资源随仓库分发、可追溯 | 各自维护一份副本（重复知识源，已废弃 `webshell_min.md`） |
 | 三后端（`auto` / `deep_agent` / `tool_mock`） | 真实 Agent、仅桥接、仅内部子链三种运行模式按需选择 | 单后端（无法区分真实/回退路径） |
 | `max_tool_calls=12` 硬上限（可环境变量 `AGENT_MAX_TOOL_CALLS` 覆盖） | 防 LLM 死循环、控制单次调查成本；8 次实测偏紧（LLM 常耗尽步数未收尾而降级），扩到 12 并接近上限注入收尾提醒 | 无限循环（不可控）；步数过紧（原 8 次） |
 
@@ -140,7 +159,8 @@
 | 2026-08-24 | PR #13 | 深度调查 Agent 子智能体落地 `sec_agent.deep_agent` | 是 |
 | 2026-08-25 | `383fec7` | bridge 双包名修复（`deep_agent` / `sec_agent.deep_agent`），补回归测试 | 是 |
 | 2026-08-25 | `3c49db2` | `-o` 报告名自动加时间戳，不覆盖旧报告 | 是 |
-| 2026-08-26 | 随本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具（`tools/knowledge.py` + `knowledge/webshell_min.md`），CLI 与主链 bridge 注册 | 是（单测与检索验证通过，真实 LLM 轮待跑） |
+| 2026-08-26 | 随本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具（`tools/knowledge.py` + 知识包），CLI 与主链 bridge 注册 | 是（单测与检索验证通过，真实 LLM 轮待跑） |
+| 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `docs/modules/scenario-knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`，「Agent 输入输出约定」章节迁至本文第 3 节 | 是 |
 | 2026-08-26 | 本次（方案 C 提交） | 步数上限 `max_tool_calls` 8→12（可 `AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限注入收尾提醒；降级报告提炼已采证据与知识包引用 | 是（47 passed / 1 skipped） |
 
 ---

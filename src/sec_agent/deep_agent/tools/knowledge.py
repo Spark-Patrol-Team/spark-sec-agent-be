@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 """知识包检索工具（对应需求中的 `knowledge.query`）。
 
-把《最小 WebShell 知识包》（deep_agent/knowledge/webshell_min.md）解析为可检索条目，
-Agent 在调查中通过关键词获取：攻击原理 / 攻击特征 / 管理工具流量特征 /
-证据检查清单 / 处置建议模板 等参考信息，返回结果带 `evidence_refs`，
-Agent 可直接填入调查报告的 evidence_source / key_evidence。
+把《最小 WebShell 知识包》（docs/modules/scenario-knowledge/webshell-knowledge.md，
+沈洪旭维护的权威版）解析为可检索条目，Agent 在调查中通过关键词获取：
+攻击原理 / 攻击特征 / 管理工具流量特征 / 证据检查清单 / 处置建议模板 等参考信息，
+返回结果带 `evidence_refs`，Agent 可直接填入调查报告的 evidence_source / key_evidence。
+
+知识源说明：本工具统一读取沈洪旭维护的权威知识包
+`docs/modules/scenario-knowledge/webshell-knowledge.md`，不维护第二份知识副本，
+避免与 PR #8（沈洪旭的知识包交付）建立重复入口。
 
 命名说明：OpenAI 兼容接口强制函数名匹配 `^[a-zA-Z0-9_-]+$`，不允许 "."，
 因此工具真实名取 `knowledge_query`（语义上等价于需求中的 `knowledge.query`），
@@ -19,8 +23,11 @@ from typing import Any
 
 from .base import Tool, ToolResult
 
-# 知识包 md（位于 deep_agent 子包同级的 knowledge/ 目录下）
-_DEFAULT_KNOWLEDGE_PATH = Path(__file__).resolve().parent.parent / "knowledge" / "webshell_min.md"
+# 权威知识包 md：沈洪旭维护，位于项目根 docs/modules/scenario-knowledge/ 下。
+# 本文件位于 src/sec_agent/deep_agent/tools/，往上 4 级（parents[4]）即项目根。
+_DEFAULT_KNOWLEDGE_PATH = (
+    Path(__file__).resolve().parents[4] / "docs" / "modules" / "scenario-knowledge" / "webshell-knowledge.md"
+)
 
 
 @dataclass
@@ -190,5 +197,5 @@ class KnowledgeQueryTool(Tool):
 
 
 def build_knowledge_tools(md_path: Path | None = None) -> list[Tool]:
-    """构建知识包检索工具（默认读取内置 webshell_min.md）。"""
+    """构建知识包检索工具（默认读取沈洪旭权威版 webshell-knowledge.md）。"""
     return [KnowledgeQueryTool(load_knowledge_entries(md_path))]
