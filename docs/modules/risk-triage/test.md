@@ -37,6 +37,27 @@ PYTHONPATH=src python -m pytest -q
 - `opposing_evidence_refs` 当前固定为空，符合第一版规则限制。
 - 最新主干将深度调查后端改为 `deep_agent`（LLM）优先、`tool_mock` 兜底，不影响研判输出字段与「研判→调查」的交接；`triage.py` 与 `TriageResult` 模型在本次合并中无改动。
 
+## 关键边界测试（T0827-07，2026-08-27）
+
+为收口 `VERDICT_CONFIDENCE` 固定档位与「固定值 / 经验阈值」占位，补充 12 个边界用例至 `tests/test_triage.py`。更新后全量测试：`85 passed, 1 skipped`（原 73 + 新增 12，跳过项不变）。全部通过，无回归。
+
+| 用例 | 覆盖点 | 结果 |
+|---|---|---|
+| `test_unknown_severity_contributes_zero` | 缺失严重度：空串 / 中文等级 / 大小写空白 → 严重度计 0 分 | 通过 |
+| `test_unknown_attack_type_contributes_zero` | 未知攻击类型（`other` / 未知值）→ 攻击类型计 0 分 | 通过 |
+| `test_missing_severity_and_unknown_type_collapses_to_zero` | 严重度与攻击类型均缺失且无证据 → 归零 + 证据缺口 | 通过 |
+| `test_threshold_exactly_70_is_malicious` | 高风险阈值上边界：`=70` → malicious / high / 调查 | 通过 |
+| `test_threshold_just_below_70_is_uncertain` | `69` → uncertain / medium / 调查 | 通过 |
+| `test_threshold_exactly_40_is_uncertain_investigates` | 中风险阈值下边界：`=40` → uncertain / medium / 调查 | 通过 |
+| `test_threshold_just_below_40_is_benign` | `39` → benign / low / 不调查 | 通过 |
+| `test_confidence_matches_verdict_tiers` | `VERDICT_CONFIDENCE` 固定档位：0.85 / 0.65 / 0.70，只随 verdict | 通过 |
+| `test_non_benign_always_investigates` | 需调查条件：非 benign 一律应进入调查 | 通过 |
+| `test_uncertain_without_evidence_has_both_gaps` | 证据不足 + uncertain → 双缺口 | 通过 |
+| `test_evidence_present_has_no_gap` | 有证据且非 uncertain → 无缺口 | 通过 |
+| `test_correlation_bonus_crosses_high_threshold` | 关联加成把 60 分推过 70 阈值（60+15=75） | 通过 |
+
+> 边界结论：`risk_score == 70` 判 `malicious`、`== 40` 判 `uncertain`（含等号）；`< 40` 判 `benign` 且不调查；`confidence` 为固定档位；未映射严重度 / 未知攻击类型计 0 分，会让分数塌缩，属需在真实数据中重点观察的缺失处理路径。
+
 ## 分数边界
 
 - `>= 70`：`malicious / high / should_investigate=True`
