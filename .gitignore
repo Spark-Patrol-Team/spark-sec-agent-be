@@ -40,6 +40,6 @@ temp/
 .idea/
 .vscode/
 
-# 深度调查运行产物（调查报告输出，不入库）
-report.json
+# 深度调查运行产物（调查报告输出，不入库；-o 自动加时间戳，report_*.json 同规则）
+report*.json
 

@@ -106,6 +106,47 @@ def _extract_text(result: Any) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
+def _try_parse_json(text: str) -> Optional[dict]:
+    """把文本按 JSON 解析为对象；非 JSON 或非对象时返回 None。"""
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _is_success_code(code: Any) -> bool:
+    """dbproxy 约定 code==0（或字符串 "0"）表示查询成功。"""
+    return code == 0 or code == "0"
+
+
+def _is_empty_data(data: Any) -> bool:
+    """判断 dbproxy 返回的 data 是否为空（None / 空列表 / 空 dict / 空字符串）。"""
+    return data is None or data == [] or data == {} or data == ""
+
+
+def _to_tool_result(result: Any) -> ToolResult:
+    """把 MCP tools/call 返回统一为 ToolResult，识别 dbproxy 空结果与结构化错误。
+
+    dbproxy 系列工具返回形如 ``{"code":0,"msg":"","data":[...]}`` 的 JSON：
+      - code != 0            -> failed（业务错误，msg 作为错误信息）；
+      - code == 0 且 data 空 -> partial（查询成功但无数据）；
+      - code == 0 且 data 非空 -> success（文本原样）。
+    其它工具返回不含 code/data 结构时，按文本原样作为 success summary。
+    """
+    text = _extract_text(result)
+    payload = _try_parse_json(text)
+    if payload is not None and "code" in payload and "data" in payload:
+        code = payload.get("code")
+        data = payload.get("data")
+        if not _is_success_code(code):
+            msg = payload.get("msg") or f"业务错误 code={code}"
+            return ToolResult(status="failed", error=msg, summary=f"查询失败：{msg}")
+        if _is_empty_data(data):
+            return ToolResult(status="partial", summary="查询成功但无数据", data=[])
+    return ToolResult(summary=text)
+
+
 class MCPTool(Tool):
     """把 MCP 工具包装成统一 Tool 接口。"""
 
@@ -119,7 +160,7 @@ class MCPTool(Tool):
     def call(self, params):
         try:
             result = self._client.call_tool(self.name, params)
-            return ToolResult(summary=_extract_text(result))
+            return _to_tool_result(result)
         except Exception as e:  # noqa: BLE001
             return ToolResult(status="failed", error=f"{type(e).__name__}: {e}", summary="MCP 调用失败")
 
