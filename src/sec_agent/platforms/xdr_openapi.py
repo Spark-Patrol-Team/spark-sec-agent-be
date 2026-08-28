@@ -166,18 +166,57 @@ class XdrOpenApiAdapter:
                     kwargs = {"params": {"event_id": lookup_id} if lookup_id else {"limit": 20}}
                 response = request(self._endpoint(), headers=self._headers(), timeout=self._timeout(), **kwargs)
             except requests.Timeout as exc:
-                raise PlatformIngestError(kind="timeout", message="XDR OpenAPI 请求超时", retryable=True,
-                                           allow_fallback=self._config.allow_fixed_sample_fallback) from exc
+                raise PlatformIngestError(
+                    kind="timeout",
+                    message="XDR OpenAPI 请求超时",
+                    retryable=True,
+                    allow_fallback=self._config.allow_fixed_sample_fallback
+                ) from exc
             except requests.RequestException as exc:
-                raise PlatformIngestError(kind="unreachable", message=f"XDR OpenAPI 不可达: {exc}", retryable=True,
-                                           allow_fallback=self._config.allow_fixed_sample_fallback) from exc
-            self._raise_for_status(response)
+                raise PlatformIngestError(
+                    kind="unreachable",
+                    message=f"XDR OpenAPI 不可达: {exc}",
+                    retryable=True,
+                    allow_fallback=self._config.allow_fixed_sample_fallback
+                ) from exc
+            
+            # 处理 HTTP 状态码
+            status = int(response.status_code)
+            if status in {401, 403}:
+                raise PlatformIngestError(
+                    kind="auth",
+                    message="XDR OpenAPI 鉴权失败",
+                    retryable=False,
+                    allow_fallback=False,
+                    platform_status=str(status)
+                )
+            if status >= 500:
+                raise PlatformIngestError(
+                    kind="platform_error",
+                    message="XDR OpenAPI 返回服务端错误",
+                    retryable=True,
+                    allow_fallback=True,
+                    platform_status=str(status)
+                )
+            if status >= 400:
+                raise PlatformIngestError(
+                    kind="platform_error",
+                    message="XDR OpenAPI 返回客户端错误",
+                    retryable=False,
+                    allow_fallback=False,
+                    platform_status=str(status)
+                )
+            
             try:
                 payload = response.json()
             except ValueError as exc:
-                raise PlatformIngestError(kind="field_mapping", message="XDR OpenAPI 返回内容不是合法 JSON",
-                                           retryable=False, allow_fallback=False,
-                                           platform_status=str(response.status_code)) from exc
+                raise PlatformIngestError(
+                    kind="field_mapping",
+                    message="XDR OpenAPI 返回内容不是合法 JSON",
+                    retryable=False,
+                    allow_fallback=False,
+                    platform_status=str(response.status_code)
+                ) from exc
             try:
                 items, page_total, next_page = self._extract_page(payload)
                 total = page_total if page_total is not None else total
@@ -196,26 +235,23 @@ class XdrOpenApiAdapter:
                 if page > 1000:
                     raise ValueError("XDR 分页超过安全上限")
             except (RawAlertNormalizationError, KeyError, TypeError, ValueError, ValidationError) as exc:
-                raise PlatformIngestError(kind="field_mapping", message=f"XDR 字段转换失败: {exc}", retryable=False,
-                                           allow_fallback=False, platform_status=str(response.status_code)) from exc
+                # 字段映射失败，使用 field_mapping kind
+                raise PlatformIngestError(
+                    kind="field_mapping",
+                    message=f"XDR 字段转换失败: {exc}",
+                    retryable=False,
+                    allow_fallback=False,
+                    platform_status=str(response.status_code)
+                ) from exc
         try:
             return [self._to_alert_record(item) for item in seen.values()]
         except (RawAlertNormalizationError, KeyError, TypeError, ValueError, ValidationError) as exc:
-            raise PlatformIngestError(kind="field_mapping", message=f"XDR 字段转换失败: {exc}", retryable=False,
-                                       allow_fallback=False) from exc
-
-    @staticmethod
-    def _raise_for_status(response: Any) -> None:
-        status = int(response.status_code)
-        if status in {401, 403}:
-            raise PlatformIngestError(kind="auth", message="XDR OpenAPI 鉴权失败", retryable=False,
-                                       allow_fallback=False, platform_status=str(status))
-        if status >= 500:
-            raise PlatformIngestError(kind="platform_error", message="XDR OpenAPI 返回服务端错误", retryable=True,
-                                       allow_fallback=True, platform_status=str(status))
-        if status >= 400:
-            raise PlatformIngestError(kind="platform_error", message="XDR OpenAPI 返回客户端错误", retryable=False,
-                                       allow_fallback=False, platform_status=str(status))
+            raise PlatformIngestError(
+                kind="field_mapping",
+                message=f"XDR 字段转换失败: {exc}",
+                retryable=False,
+                allow_fallback=False
+            ) from exc
 
     def _extract_page(self, payload: Any) -> tuple[list[Mapping[str, Any]], int | None, bool | None]:
         if isinstance(payload, list):
@@ -340,7 +376,8 @@ class XdrOpenApiAdapter:
                 retryable=False,
                 allow_fallback=False,
             )
-        sample_id = lookup_id if lookup_id == "webshell-001" else "webshell-001"
+        # 使用 lookup_id 作为 sample_id，如果无法匹配则使用默认值
+        sample_id = lookup_id if lookup_id and lookup_id in ["webshell-001", "REAL-XDR-001"] else "webshell-001"
         alerts = self._fallback_adapter.fetch_alerts(sample_id=sample_id)
         fallback_alerts: list[AlertRecord] = []
         for alert in alerts:
