@@ -43,6 +43,9 @@ class ApiHttpTest(unittest.TestCase):
         started = start_response.json()
         event_id = started["event_id"]
         self.assertEqual(started["status"], "APPROVAL_REQUIRED")
+        self.assertEqual(started["requested_source"], "fixed_sample")
+        self.assertEqual(started["effective_source"], "fixed_sample")
+        self.assertIsNone(started["fallback_source"])
 
         detail_response = self.client.get(f"/events/{event_id}")
         self.assertEqual(detail_response.status_code, 200)
@@ -82,6 +85,8 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(list_response.status_code, 200)
         self.assertEqual(len(list_response.json()), 1)
         self.assertEqual(list_response.json()[0]["event_id"], event_id)
+        self.assertEqual(list_response.json()[0]["requested_source"], "fixed_sample")
+        self.assertEqual(list_response.json()[0]["effective_source"], "fixed_sample")
 
         metrics_response = self.client.get("/metrics")
         self.assertEqual(metrics_response.status_code, 200)

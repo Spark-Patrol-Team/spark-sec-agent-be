@@ -57,12 +57,14 @@ class Orchestrator:
                 event_id=f"evt-{uuid4()}",
                 status=BusinessStatus.FAILED,
                 source=request.source,
+                requested_source=request.source,
                 timeline=[TimelineEntry(status=BusinessStatus.FAILED, message="告警接入失败")],
                 errors=[ErrorRecord(stage="ingest", message=str(exc), recoverable=True)],
             )
             return self._store.save(ctx)
 
         fallback_reason = self._platform_fallback_reason(alerts)
+        fallback_source = self._fallback_source(alerts)
         received_message = "已接收告警输入"
         initial_errors: list[ErrorRecord] = []
         if fallback_reason:
@@ -82,6 +84,9 @@ class Orchestrator:
             event_id=event_id,
             status=BusinessStatus.RECEIVED,
             source=request.source,
+            requested_source=request.source,
+            effective_source=self._effective_source(alerts),
+            fallback_source=fallback_source,
             alert_refs=[alert.alert_id for alert in alerts],
             timeline=[TimelineEntry(status=BusinessStatus.RECEIVED, message=received_message)],
             errors=initial_errors,
@@ -183,6 +188,21 @@ class Orchestrator:
     def _platform_fallback_reason(alerts: list[AlertRecord]) -> str | None:
         for alert in alerts:
             value = alert.scenario_fields.get("platform_fallback_reason")
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+    @staticmethod
+    def _effective_source(alerts: list[AlertRecord]) -> str | None:
+        for alert in alerts:
+            if alert.source:
+                return alert.source
+        return None
+
+    @staticmethod
+    def _fallback_source(alerts: list[AlertRecord]) -> str | None:
+        for alert in alerts:
+            value = alert.scenario_fields.get("platform_fallback_source")
             if isinstance(value, str) and value:
                 return value
         return None

@@ -72,6 +72,7 @@ class ConfigTest(unittest.TestCase):
                 "XDR_AUTH_TYPE": "token",
                 "XDR_TOKEN": "unit-test-token",
                 "XDR_ALERTS_PATH": "/openapi/alerts",
+                "XDR_LOGS_PATH": "/openapi/logs",
                 "XDR_CONNECT_TIMEOUT_SECONDS": "1.5",
                 "XDR_READ_TIMEOUT_SECONDS": "9",
                 "XDR_STARTUP_CHECK": "true",
@@ -85,6 +86,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.platform_backend, "xdr_openapi")
         self.assertEqual(settings.xdr_base_url, "https://xdr.example.test")
         self.assertEqual(settings.xdr_alerts_path, "/openapi/alerts")
+        self.assertEqual(settings.xdr_logs_path, "/openapi/logs")
         self.assertEqual(settings.xdr_connect_timeout_seconds, 1.5)
         self.assertEqual(settings.xdr_read_timeout_seconds, 9)
         self.assertTrue(settings.xdr_startup_check)

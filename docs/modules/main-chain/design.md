@@ -54,7 +54,7 @@
 
 | 字段/对象 | 类型 | 去向 | 含义与约束 |
 |---|---|---|---|
-| `EventContext` | Pydantic 模型 | API 响应、仓储、主流程脚本 | 一次事件处理的完整上下文，包含 `trace_id`、`run_id`、`event_id`、状态、时间线和模块结果 |
+| `EventContext` | Pydantic 模型 | API 响应、仓储、主流程脚本 | 一次事件处理的完整上下文，包含 `trace_id`、`run_id`、`event_id`、状态、`requested_source/effective_source/fallback_source`、时间线和模块结果 |
 | `TimelineEntry` | Pydantic 模型列表 | API 响应、仓储 | 记录每次状态变化及说明 |
 | `SecurityEvent` | Pydantic 模型 | 风险研判、调查、API 响应 | 告警关联后的安全事件摘要 |
 | `TriageResult` | Pydantic 模型 | 调查、处置决策、API 响应 | 风险研判结论、置信度、优先级和是否进入调查 |
@@ -130,7 +130,7 @@
 |---|---|---|
 | 性能与时延 | 当前主链为同步调用，适用于 MVP 样例和接口联调；暂未定义生产时延 SLA | `pytest`、`run_flow`、HTTP 接口测试 |
 | 稳定性与可重复性 | fixed_sample 和 jsonl_sample 应可重复产生稳定状态线；审批幂等键避免重复执行 | `tests/test_state_flow.py`、`tests/test_jsonl_platform.py` |
-| 可观测性 | `EventContext.timeline` 记录状态变化；`errors` 记录失败阶段；`trace_id` 串联工具调用 | 查询 `/events/{event_id}`、`/events/{event_id}/timeline` |
+| 可观测性 | `EventContext.timeline` 记录状态变化；`errors` 记录失败阶段；`trace_id` 串联工具调用；`requested_source/effective_source/fallback_source` 区分请求来源、实际来源和降级来源 | 查询 `/events/{event_id}`、`/events/{event_id}/timeline` |
 | 审计与追踪 | `trace_id`、`run_id`、`event_id`、`idempotency_key`、`ToolRequest.call_id`、`ToolResult.raw_result_ref` 支持基本追踪 | API 响应、仓储记录、测试断言 |
 
 ## 9. 当前限制与后续事项

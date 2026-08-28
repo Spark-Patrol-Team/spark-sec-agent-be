@@ -476,7 +476,10 @@ src/sec_agent/platforms/xdr_openapi.py
 | `run_id` | 本次运行编号 |
 | `event_id` | 安全事件编号 |
 | `status` | 当前业务状态 |
-| `source` | 数据来源 |
+| `source` | 请求数据来源，兼容旧字段 |
+| `requested_source` | API 或脚本请求来源，如 `xdr` |
+| `effective_source` | 实际生效来源，如 `xdr_openapi` 或 `fixed_sample_fallback` |
+| `fallback_source` | 发生降级时的回退来源，如 `fixed_sample` |
 | `alert_refs` | 原始告警引用 |
 | `event_summary` | 关联后的安全事件摘要 |
 | `triage` | 风险研判结果 |

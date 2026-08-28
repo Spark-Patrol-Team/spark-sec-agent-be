@@ -52,6 +52,7 @@ def _build_platform(settings: Settings) -> PlatformAdapter:
                 access_key=settings.xdr_access_key,
                 secret_key=settings.xdr_secret_key,
                 alerts_path=settings.xdr_alerts_path,
+                logs_path=settings.xdr_logs_path,
                 connect_timeout_seconds=settings.xdr_connect_timeout_seconds,
                 read_timeout_seconds=settings.xdr_read_timeout_seconds,
                 startup_check=settings.xdr_startup_check,

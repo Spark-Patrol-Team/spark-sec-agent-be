@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+import secrets
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin, urlsplit
 
 import requests
 from pydantic import ValidationError
@@ -13,14 +19,18 @@ from sec_agent.domain.models import (
     AlertRecord,
     EvidenceRef,
     NormalizedAlertRecord,
+    ToolCallStatus,
+    ToolErrorType,
     ToolRequest,
     ToolResult,
+    ToolSideEffectType,
+    utc_now,
 )
 from sec_agent.platforms.errors import PlatformIngestError
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.platforms.mock_state import StatefulMockLedger
 from sec_agent.platforms.raw_jsonl import RawAlertNormalizationError, RawJsonlNormalizer
-from sec_agent.tools.base import ToolDispatcher
+from sec_agent.tools.base import ToolDispatcher, ToolHandler
 from sec_agent.tools.tool_dispatcher import build_platform_tool_dispatcher
 
 
@@ -32,6 +42,7 @@ class XdrOpenApiConfig:
     access_key: str | None = None
     secret_key: str | None = None
     alerts_path: str = "/api/v1/alerts"
+    logs_path: str = "/api/v1/logs"
     connect_timeout_seconds: float = 5
     read_timeout_seconds: float = 30
     startup_check: bool = True
@@ -52,10 +63,12 @@ class XdrOpenApiAdapter:
         *,
         session: requests.Session | None = None,
         fallback_adapter: FixedSampleAdapter | None = None,
+        xdr_log_query_handler: ToolHandler | None = None,
     ) -> None:
         self._config = config
         self._session = session or requests.Session()
         self._fallback_adapter = fallback_adapter
+        self._fallback_alert_ids: set[str] = set()
         self._normalizer = RawJsonlNormalizer()
         self._ledger = StatefulMockLedger()
         self._dispatcher = build_platform_tool_dispatcher(
@@ -64,6 +77,7 @@ class XdrOpenApiAdapter:
             raw_result_prefix="xdr:/",
             action_ref_prefix="xdr:/",
             source_label="XDR OpenAPI",
+            xdr_log_query_handler=xdr_log_query_handler or self._handle_xdr_log_query,
         )
         if config.startup_check:
             self.validate_startup_config()
@@ -85,8 +99,8 @@ class XdrOpenApiAdapter:
     def preflight_check(self) -> None:
         try:
             response = self._session.get(
-                self._endpoint(),
-                headers=self._headers(),
+                self._endpoint(self._config.alerts_path),
+                headers=self._headers("GET", self._config.alerts_path, {"limit": 1}),
                 params={"limit": 1},
                 timeout=self._timeout(),
             )
@@ -142,6 +156,8 @@ class XdrOpenApiAdapter:
         return alerts
 
     def run_tool(self, request: ToolRequest) -> ToolResult:
+        if self._should_use_fallback_tools(request):
+            return self._fallback_adapter.run_tool(request)
         return self._dispatcher.dispatch(request)
 
     def query_action_status(self, idempotency_key: str) -> str:
@@ -151,8 +167,8 @@ class XdrOpenApiAdapter:
         params = {"event_id": lookup_id} if lookup_id else {"limit": 20}
         try:
             response = self._session.get(
-                self._endpoint(),
-                headers=self._headers(),
+                self._endpoint(self._config.alerts_path),
+                headers=self._headers("GET", self._config.alerts_path, params),
                 params=params,
                 timeout=self._timeout(),
             )
@@ -315,10 +331,12 @@ class XdrOpenApiAdapter:
             )
         sample_id = lookup_id if lookup_id == "webshell-001" else "webshell-001"
         alerts = self._fallback_adapter.fetch_alerts(sample_id=sample_id)
+        self._fallback_alert_ids.update(alert.alert_id for alert in alerts)
         fallback_alerts: list[AlertRecord] = []
         for alert in alerts:
             scenario_fields = dict(alert.scenario_fields)
             scenario_fields["platform_fallback"] = True
+            scenario_fields["platform_fallback_source"] = "fixed_sample"
             scenario_fields["platform_fallback_reason"] = reason
             fallback_alerts.append(
                 alert.model_copy(
@@ -332,6 +350,14 @@ class XdrOpenApiAdapter:
             )
         return fallback_alerts
 
+    def _should_use_fallback_tools(self, request: ToolRequest) -> bool:
+        if self._fallback_adapter is None or not self._fallback_alert_ids:
+            return False
+        alert_refs = request.params.get("alert_refs", [])
+        if not isinstance(alert_refs, list):
+            return False
+        return any(str(alert_ref) in self._fallback_alert_ids for alert_ref in alert_refs)
+
     def _resolve_evidence_refs(self, request: ToolRequest) -> list[str]:
         alert_refs = request.params.get("alert_refs", [])
         if not isinstance(alert_refs, list):
@@ -341,15 +367,155 @@ class XdrOpenApiAdapter:
     def _can_fallback(self, exc: PlatformIngestError) -> bool:
         return self._config.allow_fixed_sample_fallback and exc.allow_fallback
 
-    def _endpoint(self) -> str:
-        base_url = self._config.base_url or ""
-        return urljoin(base_url.rstrip("/") + "/", self._config.alerts_path.lstrip("/"))
+    def _handle_xdr_log_query(self, request: ToolRequest) -> ToolResult:
+        started_at = utc_now()
+        params = self._request_params(request.params)
+        try:
+            response = self._session.get(
+                self._endpoint(self._config.logs_path),
+                headers=self._headers("GET", self._config.logs_path, params),
+                params=params,
+                timeout=self._timeout(),
+            )
+            if response.status_code in {401, 403}:
+                return self._tool_failed_result(request, started_at, "XDR 日志查询鉴权失败", "auth", response.status_code)
+            if response.status_code >= 400:
+                return self._tool_failed_result(
+                    request,
+                    started_at,
+                    "XDR 日志查询平台返回错误",
+                    "platform_error",
+                    response.status_code,
+                    retryable=response.status_code >= 500,
+                )
+            payload = response.json()
+            records = self._extract_items(payload)
+        except requests.Timeout:
+            return self._tool_failed_result(request, started_at, "XDR 日志查询超时", "timeout", retryable=True)
+        except requests.RequestException as exc:
+            return self._tool_failed_result(request, started_at, f"XDR 日志查询不可达: {exc}", "platform_error", retryable=True)
+        except (ValueError, TypeError) as exc:
+            return self._tool_failed_result(request, started_at, f"XDR 日志查询返回转换失败: {exc}", "validation")
 
-    def _headers(self) -> dict[str, str]:
+        raw_result_ref = f"xdr://openapi/logs/{request.call_id}"
+        ended_at = utc_now()
+        return ToolResult(
+            call_id=request.call_id,
+            trace_id=request.trace_id,
+            event_id=request.event_id,
+            tool_name=request.tool_name,
+            action_name=request.action_name,
+            idempotency_key=request.idempotency_key,
+            status=ToolCallStatus.SUCCESS,
+            summary=f"已从 XDR OpenAPI 查询到 {len(records)} 条日志",
+            raw_result_ref=raw_result_ref,
+            evidence_refs=[raw_result_ref],
+            output_refs=[raw_result_ref],
+            output_preview={"records": list(records)},
+            retryable=False,
+            error_type=None,
+            error_message=None,
+            platform_status=ToolCallStatus.SUCCESS.value,
+            external_side_effect=False,
+            side_effect_type=ToolSideEffectType.READ_ONLY,
+            attempt=request.attempt,
+            max_attempts=request.max_attempts,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_ms=max(1, int((ended_at - started_at).total_seconds() * 1000)),
+        )
+
+    def _tool_failed_result(
+        self,
+        request: ToolRequest,
+        started_at: datetime,
+        message: str,
+        error_type: str,
+        platform_status: int | None = None,
+        retryable: bool = False,
+    ) -> ToolResult:
+        ended_at = utc_now()
+        return ToolResult(
+            call_id=request.call_id,
+            trace_id=request.trace_id,
+            event_id=request.event_id,
+            tool_name=request.tool_name,
+            action_name=request.action_name,
+            idempotency_key=request.idempotency_key,
+            status=ToolCallStatus.FAILED,
+            summary=message,
+            output_preview={},
+            retryable=retryable,
+            error_type=ToolErrorType(error_type),
+            error_message=message,
+            platform_status=str(platform_status) if platform_status is not None else ToolCallStatus.FAILED.value,
+            external_side_effect=False,
+            side_effect_type=ToolSideEffectType.READ_ONLY,
+            attempt=request.attempt,
+            max_attempts=request.max_attempts,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_ms=max(1, int((ended_at - started_at).total_seconds() * 1000)),
+        )
+
+    def _endpoint(self, path: str) -> str:
+        base_url = self._config.base_url or ""
+        return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+
+    def _headers(self, method: str, path: str, params: Mapping[str, Any] | None = None) -> dict[str, str]:
         if self._config.auth_type == "token":
             return {"Authorization": f"Bearer {self._config.token}"}
-        # HMAC 签名串需按 28 日联调确认的 XDR 文档补齐；这里先只隔离敏感配置边界。
-        return {"X-XDR-Access-Key": self._config.access_key or ""}
+        return self._aksk_headers(method, path, params or {})
+
+    def _aksk_headers(self, method: str, path: str, params: Mapping[str, Any]) -> dict[str, str]:
+        timestamp = str(int(time.time()))
+        nonce = secrets.token_hex(16)
+        canonical_path = urlsplit(path).path or "/"
+        canonical_query = self._canonical_query(params)
+        body_sha256 = hashlib.sha256(b"").hexdigest()
+        canonical = "\n".join(
+            [
+                method.upper(),
+                canonical_path,
+                canonical_query,
+                timestamp,
+                nonce,
+                body_sha256,
+            ]
+        )
+        digest = hmac.new(
+            (self._config.secret_key or "").encode("utf-8"),
+            canonical.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        return {
+            "X-XDR-Access-Key": self._config.access_key or "",
+            "X-XDR-Timestamp": timestamp,
+            "X-XDR-Nonce": nonce,
+            "X-XDR-Signature-Method": "HMAC-SHA256",
+            "X-XDR-Signature": base64.b64encode(digest).decode("ascii"),
+        }
+
+    def _canonical_query(self, params: Mapping[str, Any]) -> str:
+        pairs = [(key, self._stringify_param(value)) for key, value in params.items() if value is not None]
+        return "&".join(
+            f"{quote(str(key), safe='')}={quote(value, safe='')}"
+            for key, value in sorted(pairs)
+        )
+
+    @staticmethod
+    def _request_params(params: Mapping[str, Any]) -> dict[str, str]:
+        return {key: XdrOpenApiAdapter._stringify_param(value) for key, value in params.items() if value is not None}
+
+    @staticmethod
+    def _stringify_param(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, int | float):
+            return str(value)
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def _timeout(self) -> tuple[float, float]:
         return (self._config.connect_timeout_seconds, self._config.read_timeout_seconds)

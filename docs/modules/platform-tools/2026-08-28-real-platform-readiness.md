@@ -4,7 +4,7 @@
 
 真实平台接入应落在平台适配层，不应把 XDR HTTP、鉴权、字段转换逻辑写入业务 service。
 
-本轮已完成 `xdr_openapi` 接入边界、启动前配置检查、统一失败语义、固定样例降级开关和最小集成测试。当前仍不能声称真实平台已闭环，因为还缺 28 日实机 Base URL、只读凭据、真实响应样例、分页规则、AK/SK 签名串和一次可复现外部调用记录。
+本轮已完成 `xdr_openapi` 接入边界、AK/SK HMAC 示例签名、启动前配置检查、统一失败语义、固定样例降级开关、真实 XDR 查询可注入 handler、来源字段和最小集成测试。当前仍不能声称真实平台已闭环，因为还缺受控环境中的真实 Base URL、只读凭据、真实响应样例、分页规则和一次可复现外部调用记录。
 
 ## 当前主链调用关系
 
@@ -27,6 +27,7 @@
    - 进入 `AlertIngestService.ingest()`。
    - 接入失败时保留同一个 `trace_id`，状态置为 `FAILED`。
    - 如真实平台超时/不可达/空结果且显式允许降级，则继续主链，并在 `timeline/errors` 中标记“已降级到固定样例”。
+   - `EventContext` 中同时保留 `requested_source`、`effective_source` 和 `fallback_source`。
 
 5. `src/sec_agent/services/ingest.py`
    - 不再对 `source=xdr` 硬编码 `NotImplementedError`。
@@ -36,6 +37,8 @@
 6. `src/sec_agent/platforms/xdr_openapi.py`
    - 真实 XDR OpenAPI 适配器边界。
    - 负责 HTTP 调用、鉴权头、超时、字段转换、空结果判断和降级触发。
+   - `XDR_AUTH_TYPE=aksk` 时按正式示例生成 `HMAC-SHA256` 签名头。
+   - `xdr_log_query` 默认走 XDR OpenAPI 日志路径，也可通过构造参数注入真实 handler，不再使用内置样例。
 
 7. `src/sec_agent/platforms/raw_jsonl.py`
    - 陈敏负责的 XDR 字段映射规则应优先沉淀在这里或复用这里的 `RawJsonlNormalizer`。
@@ -50,7 +53,7 @@
 
 | 事项 | 负责人 | 接入位置 | 当前状态 |
 | --- | --- | --- | --- |
-| XDR OpenAPI HTTP/鉴权/分页/真实接口路径 | 杨嘉琪 | `src/sec_agent/platforms/xdr_openapi.py` | 已有适配器壳；真实签名和分页待实机确认 |
+| XDR OpenAPI HTTP/鉴权/分页/真实接口路径 | 杨嘉琪 | `src/sec_agent/platforms/xdr_openapi.py` | 已有适配器壳和 AK/SK HMAC 示例；分页待实机确认 |
 | XDR 字段映射 | 陈敏 | `src/sec_agent/platforms/raw_jsonl.py` 与 `XdrOpenApiAdapter._to_normalizer_raw()` | 已覆盖最小字段；真实字段名待样例确认 |
 | 主链装配 | 李雨妍 | `src/sec_agent/bootstrap/container.py` | 已支持 `PLATFORM_BACKEND=xdr_openapi` |
 | 工具分发 | 杨景凡 | `src/sec_agent/tools/tool_dispatcher.py` | 已保留 `extra_handlers` 扩展点 |
@@ -69,6 +72,7 @@
 | `XDR_ACCESS_KEY` | AK/SK 鉴权访问键 | 是 | 空 |
 | `XDR_SECRET_KEY` | AK/SK 鉴权密钥 | 是 | 空 |
 | `XDR_ALERTS_PATH` | 告警查询路径 | 否 | `/api/v1/alerts` |
+| `XDR_LOGS_PATH` | 日志查询路径 | 否 | `/api/v1/logs` |
 | `XDR_CONNECT_TIMEOUT_SECONDS` | 连接超时 | 否 | `5` |
 | `XDR_READ_TIMEOUT_SECONDS` | 读取超时 | 否 | `30` |
 | `XDR_STARTUP_CHECK` | 启动前配置检查 | 否 | `true` |
@@ -119,6 +123,18 @@ uv run --python /opt/homebrew/bin/python3.11 python -m uvicorn sec_agent.main:ap
 | 字段转换失败 | `FAILED` | 不允许 |
 | 平台 5xx | `FAILED` | 仅 `XDR_ALLOW_FIXED_SAMPLE_FALLBACK=true` 时允许 |
 
+一键回退到固定样例：
+
+```bash
+./scripts/rollback_to_fixed_sample.sh
+```
+
+等价手工命令：
+
+```bash
+PLATFORM_BACKEND=fixed_sample uv run --python /opt/homebrew/bin/python3.11 python -m uvicorn sec_agent.main:app --host 127.0.0.1 --port 8000
+```
+
 ## 失败处理约定
 
 | 失败类型 | 主链状态 | `trace_id` | 前端展示 | 降级策略 |
@@ -141,6 +157,9 @@ uv run --python /opt/homebrew/bin/python3.11 python -m uvicorn sec_agent.main:ap
 - 字段转换失败即使开启降级也进入 `FAILED`，避免污染字段契约。
 - 启动前检查能拦截缺失 `XDR_BASE_URL` 和 `XDR_TOKEN`。
 - `source=xdr` 必须配合 `PLATFORM_BACKEND=xdr_openapi`，不能被固定样例后端静默处理。
+- AK/SK 模式会生成 `X-XDR-Access-Key`、`X-XDR-Timestamp`、`X-XDR-Nonce`、`X-XDR-Signature-Method` 和 `X-XDR-Signature`。
+- `xdr_log_query` 在真实适配器下走 OpenAPI 或注入 handler，不返回 `builtin://xdr-log-query` 内置样例。
+- `requested_source/effective_source/fallback_source` 能区分请求来源、实际执行来源和降级来源。
 
 建议实机最小补测：
 
@@ -178,17 +197,18 @@ uv run --python /opt/homebrew/bin/python3.11 python -m sec_agent.scripts.run_flo
 uv run --python /opt/homebrew/bin/python3.11 --with pytest --with httpx -m pytest -q
 ```
 
-结果：`135 passed, 1 skipped`。
+结果：`139 passed, 1 skipped`。
 
 已知限制：
 
 - 本轮按仓库规则未执行 Git 命令，因此未读取当前 HEAD，也未确认唯一候选 Commit。
 - PR18 合入后的候选 Commit 需由负责人在允许执行 Git 的环境中确认，例如记录 `git rev-parse HEAD` 和 `git log -1 --oneline` 的输出。
-- 当前 `aksk` 只完成配置边界隔离，HMAC 签名串需等真实平台文档或抓包记录确认后补齐。
+- 当前 `aksk` 已按示例实现 HMAC-SHA256 签名头；如真实平台要求不同 canonical string，需要在实机联调后按平台文档调整。
 - 当前真实告警路径默认 `/api/v1/alerts`，28 日联调时需按实机 OpenAPI 调整 `XDR_ALERTS_PATH`。
+- 当前真实日志路径默认 `/api/v1/logs`，28 日联调时需按实机 OpenAPI 调整 `XDR_LOGS_PATH`。
 - 当前没有提交真实平台凭据、真实平台地址或未脱敏响应。
 
 证据位置建议：
 - 测试命令输出：联调记录或 CI 日志。
 - 脱敏真实响应：联调证据目录，不提交原始敏感信息。
-- 本仓库代码证据：`tests/test_xdr_openapi_platform.py`、`.env.example`、`src/sec_agent/platforms/xdr_openapi.py`。
+- 本仓库代码证据：`tests/test_xdr_openapi_platform.py`、`.env.example`、`src/sec_agent/platforms/xdr_openapi.py`、`scripts/rollback_to_fixed_sample.sh`。

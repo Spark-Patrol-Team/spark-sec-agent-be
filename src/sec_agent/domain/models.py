@@ -298,6 +298,9 @@ class EventContext(BaseModel):
     event_id: str
     status: BusinessStatus
     source: str
+    requested_source: str | None = None
+    effective_source: str | None = None
+    fallback_source: str | None = None
     alert_refs: list[str] = Field(default_factory=list)
     event_summary: SecurityEvent | None = None
     triage: TriageResult | None = None
@@ -326,4 +329,7 @@ class EventListItem(BaseModel):
     trace_id: str
     status: BusinessStatus
     source: str
+    requested_source: str | None = None
+    effective_source: str | None = None
+    fallback_source: str | None = None
     summary: str | None = None
