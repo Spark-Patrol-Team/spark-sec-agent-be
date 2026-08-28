@@ -149,11 +149,24 @@ class ToolConfig:
     mcp_verify_ssl: bool = os.getenv("MCP_VERIFY_SSL", "0") == "1"
 
 
+def _env_int(name: str, default: int) -> int:
+    """按环境变量读取整数，非法/缺失时回退默认值。"""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class AgentConfig:
-    """深度调查行为参数。"""
-    max_steps: int = 5          # 停止条件二：调查步数 >= 5
-    max_tool_calls: int = 8     # 单次调查最多工具调用次数（硬上限，防死循环）
+    """深度调查行为参数（均可通过环境变量覆盖，便于调优）。"""
+    max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 5))     # 停止条件二：调查步数 >= 5
+    # 单次调查最多工具调用次数（硬上限，防死循环）：接近上限时 agent 会提醒 LLM 收尾，
+    # 超限仍无报告时降级报告会提炼已采集证据（见 agent.py _fallback_report）
+    max_tool_calls: int = field(default_factory=lambda: _env_int("AGENT_MAX_TOOL_CALLS", 12))
 
 
 @dataclass

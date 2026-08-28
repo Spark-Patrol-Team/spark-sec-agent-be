@@ -14,58 +14,77 @@
 
 1. `ResponseDecisionService` 根据调查报告和上游 `TriageResult` 生成 `ResponsePlan`。
 2. 高风险处置方案进入 `APPROVAL_REQUIRED`，等待审批结果。
-3. 审批通过后，`ResponseExecutionService` 通过 `PlatformAdapter` 发起处置工具调用。
-4. 执行成功后进入 `VERIFYING`，由 `ResponseVerificationService` 独立查询处置状态。
-5. 根据查询结果进入 `COMPLETED`、`HUMAN_REQUIRED` 或 `FAILED`。
+3. 审批通过后，`ResponseExecutionService` 通过 `PlatformAdapter.run_tool()` 发起 `stateful_response_mock` 调用。
+4. 执行成功后进入 `VERIFYING`，由 `ResponseVerificationService` 通过 `response_verify` 独立查询处置状态。
+5. 根据执行和查询结果进入 `COMPLETED`、`HUMAN_REQUIRED` 或 `FAILED`。
 
 业务模块不直接推进业务状态，状态推进由 `Orchestrator` 和状态机统一完成。
 
-## 当前 MVP 已实现
+## 工具调用链
 
-- 调查结果可以进入处置方案生成。
-- 处置方案包含动作、目标、风险等级、审批要求和回滚可用性。
-- 固定样例和 JSONL 样例均支持有状态 Mock 处置。
-- 处置执行使用统一 `ToolRequest` / `ToolResult` 契约。
-- 执行结果明确标记 `mode=mock`，不代表真实平台处置。
-- 执行使用 `idempotency_key`，Mock 账本不会用同一幂等键覆盖已有记录。
-- 执行后通过平台适配器查询处置状态，不能仅依据调用成功判断处置已经生效。
-- 验证结果支持有效、无效和未知，并可分别进入完成或人工接管路径。
+固定样例和 JSONL 样例适配器都通过 `build_platform_tool_dispatcher()` 注册以下工具：
 
-## Mock 实现边界
+```text
+evidence_lookup
+xdr_log_query
+stateful_response_mock
+response_verify
+stateful_mock
+```
 
-### 处置闭环 Mock
-
-`src/sec_agent/platforms/mock_state.py` 中的 `StatefulMockLedger` 是处置专用状态账本：
-
-- 使用 `idempotency_key` 标识一次处置请求；
-- 保存 `action_status`、证据引用和结果摘要；
-- 为执行结果和执行后验证提供同一份状态来源；
-- 当前状态保存在进程内存中，服务重启后不会保留。
-
-固定样例和 JSONL 适配器通过该账本实现：
+处置闭环只使用其中的：
 
 ```text
 stateful_response_mock
-  -> record_action()
-  -> response_verify
-  -> query_action_status()
+  -> StatefulMockLedger.record_action()
+response_verify
+  -> StatefulMockLedger.query_action_status()
+  -> StatefulMockLedger.get()
 ```
 
-### 通用工具 Mock
+## 幂等与状态
 
-`src/sec_agent/tools/stateful_mock_tool.py` 是通用工具调度路径中的会话 Mock：
+- `Orchestrator.approve()` 先通过仓库的 `claim_idempotency_key()` 抢占审批幂等键；
+- 同一审批幂等键重复提交时直接返回当前事件，不重复推进主流程；
+- `StatefulMockLedger.record_action()` 对同一处置幂等键只保留首次记录；
+- 处置账本和通用 `stateful_mock` 的状态空间相互独立；
+- 当前内存仓库和处置账本都不提供跨进程、跨重启恢复。
 
-- 使用 `session_id` 隔离不同工具会话；
-- 使用 `input_data` 合并会话状态；
-- 使用 `idempotency_key` 避免同一工具请求重复写入；
-- 不负责表达处置是否生效，也不替代处置专用账本。
+## 结果处理
 
-## 尚未实现
+### 执行成功
 
-- 真实平台处置工具接入。
-- Mock 状态持久化。
-- 处置回滚。
-- 实际超时控制和自动重试。
-- 更细粒度的部分成功和多动作处置结果。
-- 风险分数与风险等级的最终团队统一规则。
+`ResponseExecutionService` 将 `ToolResult.status == success` 映射为：
+
+```text
+ExecutionResult.executed = true
+ExecutionResult.mode = mock
+```
+
+随后必须进入 `VERIFYING`，不能直接结束为 `COMPLETED`。
+
+### 执行失败
+
+当处置工具返回非 `success`：
+
+- `ExecutionResult.executed = false`；
+- 主流程进入 `FAILED`；
+- 不调用执行后验证；
+- 当前实现不会自动重试。
+
+### 验证结果
+
+验证服务读取独立查询返回的 `action_status`：
+
+- `executed`：`effective -> COMPLETED`；
+- `failed`：`ineffective -> HUMAN_REQUIRED`；
+- `not_found` 或其他无法确认状态：`unknown -> HUMAN_REQUIRED`。
+
+## 当前实现边界
+
+- `timeout_seconds=30` 和 `max_attempts=1` 会写入 `ToolRequest`，但当前没有真正的超时控制和重试调度；
+- `rollback_available=true` 只是方案字段，实际回滚动作尚未实现；
+- 当前每个方案只执行第一个目标和一个固定 Mock 动作；
+- 固定样例和 JSONL 样例的状态账本均为进程内存；
+- 真实平台、真实副作用、持久化恢复和多动作部分成功尚未接入。
 

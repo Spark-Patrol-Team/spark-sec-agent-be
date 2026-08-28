@@ -5,6 +5,9 @@
   PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json
   PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
 
+  -o 指定的文件名会自动插入微秒级时间戳（report.json -> report_20260825_160543_123456.json），
+  每次运行生成独立文件，重复运行不会互相覆盖。
+
 依赖环境变量（可选，未设置时走 Mock + 需另配 LLM）：
   LLM_BASE_URL     LLM 接口地址（OpenAI 兼容），如 https://api.deepseek.com
   LLM_API_KEY      LLM 密钥
@@ -19,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from .config import load_config
@@ -27,6 +31,7 @@ from .models import SecurityEventInput
 from .agent import DeepInvestigationAgent
 from .tools.base import ToolRegistry
 from .tools.mock import build_mock_tools
+from .tools.knowledge import build_knowledge_tools
 from .tools.mcp_client import build_mcp_tools
 
 
@@ -37,6 +42,10 @@ def build_tools(config) -> ToolRegistry:
     if config.tools.mode in ("mock", "auto"):
         for t in build_mock_tools():
             registry.register(t)
+
+    # 知识包检索工具（knowledge.query）：本地资源，所有工具模式下都注册
+    for t in build_knowledge_tools():
+        registry.register(t)
 
     # 真实 MCP 工具
     if config.tools.mode in ("mcp", "auto"):
@@ -49,10 +58,29 @@ def build_tools(config) -> ToolRegistry:
     return registry
 
 
+def timestamped_output_path(path: str | Path) -> Path:
+    """在输出文件名中插入微秒级时间戳，避免重复运行互相覆盖。
+
+    report.json -> report_20260825_160543_123456.json
+    reports/foo.json -> reports/foo_20260825_160543_123456.json
+
+    微秒级时间戳已能避免绝大多数同秒重名；若目标文件已存在（极少见的同微秒内
+    两次调用或残留文件），自动追加 _1/_2 … 唯一序号，确保绝不重名覆盖。
+    """
+    p = Path(path)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    candidate = p.with_name(f"{p.stem}_{stamp}{p.suffix}")
+    seq = 1
+    while candidate.exists():
+        candidate = p.with_name(f"{p.stem}_{stamp}_{seq}{p.suffix}")
+        seq += 1
+    return candidate
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="深度调查 Agent")
     parser.add_argument("--event", required=True, help="事件输入 JSON 文件路径")
-    parser.add_argument("--output", "-o", help="报告输出 JSON 文件路径（默认打印到 stdout）")
+    parser.add_argument("--output", "-o", help="报告输出 JSON 文件路径（自动在文件名中插入时间戳，默认打印到 stdout）")
     parser.add_argument("--list-tools", action="store_true", help="仅列出当前可用工具后退出")
     args = parser.parse_args(argv)
 
@@ -79,8 +107,9 @@ def main(argv=None) -> int:
     output = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
 
     if args.output:
-        Path(args.output).write_text(output, encoding="utf-8")
-        print(f"报告已写入：{args.output}")
+        out_path = timestamped_output_path(args.output)
+        out_path.write_text(output, encoding="utf-8")
+        print(f"报告已写入：{out_path}")
     else:
         print(output)
     return 0

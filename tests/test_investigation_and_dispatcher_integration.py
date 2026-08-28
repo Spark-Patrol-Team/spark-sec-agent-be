@@ -15,7 +15,7 @@ from sec_agent.domain.models import (
 )
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.platforms.mock_state import StatefulMockLedger
-from sec_agent.services.deep_agent_bridge import DeepAgentBridgeUnavailable
+from sec_agent.services.deep_agent_bridge import DeepAgentBridge, DeepAgentBridgeUnavailable
 from sec_agent.services.investigation import DeepInvestigationAgent
 from sec_agent.services.response import ResponseDecisionService
 from sec_agent.tools.tool_dispatcher import build_platform_tool_dispatcher
@@ -36,6 +36,14 @@ class InvestigationAndDispatcherIntegrationTest(unittest.TestCase):
             ["evidence_lookup", "xdr_log_query"],
         )
         self.assertEqual(len(report.tool_results), 2)
+
+    def test_bridge_loads_real_deep_agent_modules(self) -> None:
+        """bridge 应从 sec_agent.deep_agent 加载真实模块（回归：顶层 deep_agent 导入路径 bug）。"""
+        modules = DeepAgentBridge()._load_modules()
+        self.assertIn("DeepInvestigationAgent", modules)
+        self.assertIn("SecurityEventInput", modules)
+        self.assertIn("ToolRegistry", modules)
+        self.assertTrue(callable(modules["DeepInvestigationAgent"]))
 
     def test_platform_dispatcher_supports_main_chain_tools(self) -> None:
         ledger = StatefulMockLedger()
