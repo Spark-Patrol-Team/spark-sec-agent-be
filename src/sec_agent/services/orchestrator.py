@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from sec_agent.domain.models import (
     ApprovalDecision,
+    AlertRecord,
     BusinessStatus,
     ErrorRecord,
     EventContext,
@@ -55,6 +56,19 @@ class Orchestrator:
             )
             return self._store.save(ctx)
 
+        fallback_reason = self._platform_fallback_reason(alerts)
+        received_message = "已接收告警输入"
+        initial_errors: list[ErrorRecord] = []
+        if fallback_reason:
+            received_message = "已接收告警输入；真实平台失败，已降级到固定样例"
+            initial_errors.append(
+                ErrorRecord(
+                    stage="ingest",
+                    message=f"真实平台降级到固定样例: {fallback_reason}",
+                    recoverable=True,
+                )
+            )
+
         event_id = f"evt-{uuid4()}"
         ctx = EventContext(
             trace_id=trace_id,
@@ -63,7 +77,8 @@ class Orchestrator:
             status=BusinessStatus.RECEIVED,
             source=request.source,
             alert_refs=[alert.alert_id for alert in alerts],
-            timeline=[TimelineEntry(status=BusinessStatus.RECEIVED, message="已接收告警输入")],
+            timeline=[TimelineEntry(status=BusinessStatus.RECEIVED, message=received_message)],
+            errors=initial_errors,
         )
         self._store.save(ctx)
 
@@ -157,3 +172,11 @@ class Orchestrator:
 
     def _move(self, ctx: EventContext, next_status: BusinessStatus, message: str) -> EventContext:
         return self._store.save(self._state.move(ctx, next_status, message))
+
+    @staticmethod
+    def _platform_fallback_reason(alerts: list[AlertRecord]) -> str | None:
+        for alert in alerts:
+            value = alert.scenario_fields.get("platform_fallback_reason")
+            if isinstance(value, str) and value:
+                return value
+        return None
