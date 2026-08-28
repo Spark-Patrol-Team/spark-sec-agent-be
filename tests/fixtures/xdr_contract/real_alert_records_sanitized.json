@@ -1,0 +1,60 @@
+{
+  "provenance": "sanitized_structure_only",
+  "note": "字段名称、类型和映射来自真实只读响应观察；所有值均为脱敏占位或 RFC 5737 文档地址，不是可用于查询的真实实体。",
+  "normalized": {
+    "event_id": "xdr-alert-REDACTED-001",
+    "event_time": "2023-11-15T06:13:20+08:00",
+    "source_device_type": "XDR",
+    "source_device_name": "XDR-REDACTED",
+    "event_type": "sql_injection",
+    "rule_or_event_name": "示例 SQL 注入攻击",
+    "severity": "high",
+    "source_ip": "192.0.2.10",
+    "source_port": 12345,
+    "destination_ip": "198.51.100.20",
+    "destination_port": 80,
+    "transport_protocol": "tcp",
+    "application_protocol": "http",
+    "affected_asset": "198.51.100.20",
+    "evidence_source": "xdr_security_alert",
+    "evidence_refs": ["name", "severity", "srcIp", "srcPort", "dstIp", "dstPort", "firstTime", "traceBackId"],
+    "sample_nature": "platform_derived",
+    "status": "new",
+    "risk_score_seed": 80,
+    "investigation_hint": "核查目标 Web 资产、同源 IP 历史访问、SQL 注入规则命中次数，以及是否存在后续 WebShell 行为。",
+    "recommended_action": "人工审批后限制源 IP 对目标 Web 服务的访问，并保留原始证据。"
+  },
+  "alert_record": {
+    "alert_id": "xdr-alert-REDACTED-001",
+    "source": "xdr_openapi",
+    "occurred_at": "2023-11-15T06:13:20+08:00",
+    "name": "示例 SQL 注入攻击",
+    "alert_type": "sql_injection",
+    "raw_severity": "high",
+    "src_ip": "192.0.2.10",
+    "dst_ip": "198.51.100.20",
+    "src_port": 12345,
+    "dst_port": 80,
+    "assets": ["198.51.100.20"],
+    "attack_status": "new",
+    "scenario_fields": {
+      "source_device_type": "XDR",
+      "source_device_name": "XDR-REDACTED",
+      "transport_protocol": "tcp",
+      "application_protocol": "http",
+      "affected_asset": "198.51.100.20",
+      "evidence_source": "xdr_security_alert",
+      "sample_nature": "platform_derived",
+      "risk_score_seed": 80,
+      "investigation_hint": "核查目标 Web 资产、同源 IP 历史访问、SQL 注入规则命中次数，以及是否存在后续 WebShell 行为。",
+      "recommended_action": "人工审批后限制源 IP 对目标 Web 服务的访问，并保留原始证据。"
+    },
+    "evidence_refs": [
+      {"ref_id": "xdr-alert-REDACTED-001:name", "source": "xdr_security_alert", "kind": "xdr_field", "summary": "XDR 字段引用: name"},
+      {"ref_id": "xdr-alert-REDACTED-001:severity", "source": "xdr_security_alert", "kind": "xdr_field", "summary": "XDR 字段引用: severity"},
+      {"ref_id": "xdr-alert-REDACTED-001:dstIp", "source": "xdr_security_alert", "kind": "xdr_field", "summary": "XDR 字段引用: dstIp"},
+      {"ref_id": "xdr-alert-REDACTED-001:firstTime", "source": "xdr_security_alert", "kind": "xdr_field", "summary": "XDR 字段引用: firstTime"}
+    ],
+    "raw_record_ref": "xdr://openapi/alerts#xdr-alert-REDACTED-001"
+  }
+}

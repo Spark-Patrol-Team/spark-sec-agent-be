@@ -26,9 +26,20 @@ class Settings(BaseModel):
     api_port: int = 8000
     api_reload: bool = True
     storage_backend: Literal["memory", "mysql"] = "memory"
-    platform_backend: Literal["fixed_sample", "jsonl_sample"] = "fixed_sample"
+    platform_backend: Literal["fixed_sample", "jsonl_sample", "xdr_openapi"] = "fixed_sample"
     jsonl_sample_dir: Path = Path("tests/fixtures/fixed_alerts")
     jsonl_input_mode: Literal["normalized", "raw"] = "normalized"
+    xdr_base_url: str | None = None
+    xdr_auth_type: Literal["token", "aksk"] = "token"
+    xdr_token: str | None = None
+    xdr_access_key: str | None = None
+    xdr_secret_key: str | None = None
+    xdr_alerts_path: str = "/api/xdr/v1/alerts/list"
+    xdr_connect_timeout_seconds: float = 5
+    xdr_read_timeout_seconds: float = 30
+    xdr_startup_check: bool = True
+    xdr_preflight_http_check: bool = False
+    xdr_allow_fixed_sample_fallback: bool = False
     investigation_backend: Literal["auto", "deep_agent", "tool_mock"] = "auto"
     cors_allowed_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ALLOWED_ORIGINS))
     cors_allowed_origin_regex: str | None = None
@@ -54,6 +65,17 @@ def load_settings() -> Settings:
         platform_backend=os.getenv("PLATFORM_BACKEND", "fixed_sample"),
         jsonl_sample_dir=resolve_project_path(os.getenv("JSONL_SAMPLE_DIR", "tests/fixtures/fixed_alerts")),
         jsonl_input_mode=os.getenv("JSONL_INPUT_MODE", "normalized"),
+        xdr_base_url=os.getenv("XDR_BASE_URL") or None,
+        xdr_auth_type=os.getenv("XDR_AUTH_TYPE", "token"),
+        xdr_token=os.getenv("XDR_TOKEN") or None,
+        xdr_access_key=os.getenv("XDR_ACCESS_KEY") or None,
+        xdr_secret_key=os.getenv("XDR_SECRET_KEY") or None,
+        xdr_alerts_path=os.getenv("XDR_ALERTS_PATH", "/api/xdr/v1/alerts/list"),
+        xdr_connect_timeout_seconds=parse_float(os.getenv("XDR_CONNECT_TIMEOUT_SECONDS", "5")),
+        xdr_read_timeout_seconds=parse_float(os.getenv("XDR_READ_TIMEOUT_SECONDS", "30")),
+        xdr_startup_check=parse_bool(os.getenv("XDR_STARTUP_CHECK", "true")),
+        xdr_preflight_http_check=parse_bool(os.getenv("XDR_PREFLIGHT_HTTP_CHECK", "false")),
+        xdr_allow_fixed_sample_fallback=parse_bool(os.getenv("XDR_ALLOW_FIXED_SAMPLE_FALLBACK", "false")),
         investigation_backend=os.getenv("INVESTIGATION_BACKEND", "auto"),
         cors_allowed_origins=parse_csv(os.getenv("CORS_ALLOWED_ORIGINS"), DEFAULT_CORS_ALLOWED_ORIGINS),
         cors_allowed_origin_regex=os.getenv("CORS_ALLOWED_ORIGIN_REGEX") or None,
@@ -118,6 +140,10 @@ def resolve_project_path(value: str) -> Path:
 
 def parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def parse_float(value: str) -> float:
+    return float(value.strip())
 
 
 def parse_csv(value: str | None, default: list[str]) -> list[str]:
