@@ -10,7 +10,7 @@
 | 实现状态 | 已实现未复验 |
 | 能力性质 | 自研代码；当前平台接入、处置执行和验证包含 Mock / fixed_sample / jsonl_sample 能力 |
 | 关联任务/需求 | 搭建最小主流程空壳、状态流转、模块接入主链、后端主链技术集成 |
-| 关联正式交付章节 | docs/deliverables/系统开发与运行说明.md；docs/deliverables/安全智能体系统设计说明书V2.md |
+| 关联正式交付章节 | docs/deliverables/system-development-and-operation-guide.md；docs/deliverables/安全智能体系统设计说明书V2.md |
 | 对应PR或Commit | 当前 main 分支：5c05d61；本文件为工作区新增文档 |
 | 最后更新时间 | 2026-08-26 |
 | 最后复验时间 | 2026-08-26 |
@@ -44,9 +44,9 @@
 
 | 字段/对象 | 类型 | 必填 | 来源 | 含义与约束 |
 |---|---|---|---|---|
-| `StartRunRequest.source` | `fixed_sample / jsonl_sample / xdr` | 是 | API 或脚本 | 指定告警来源；当前容器实际支持 `fixed_sample`、`jsonl_sample`，`xdr` 为请求模型保留值 |
+| `StartRunRequest.source` | `fixed_sample / jsonl_sample / xdr` | 是 | API 或脚本 | 指定告警来源；`source=xdr` 需配合 `PLATFORM_BACKEND=xdr_openapi` 使用 |
 | `StartRunRequest.sample_id` | `str | None` | 否 | API 或脚本 | 固定样例或 JSONL 样例 ID；未提供时由适配器按默认样例处理 |
-| `StartRunRequest.xdr_event_id` | `str | None` | 否 | API 或脚本 | 预留真实 XDR 事件 ID；当前未接入真实 XDR 查询 |
+| `StartRunRequest.xdr_event_id` | `str | None` | 否 | API 或脚本 | 真实 XDR 事件 ID；当前已具备适配器边界，实机路径、鉴权和分页仍待联调确认 |
 | `ApprovalDecision` | Pydantic 模型 | 审批阶段必填 | API 或脚本 | 包含是否同意、审批人、原因、幂等键 |
 | `Settings` | Pydantic 模型 | 是 | 环境变量 / `.env` / 默认值 | 决定平台适配器、存储后端、调查后端、CORS、MySQL 等运行配置 |
 

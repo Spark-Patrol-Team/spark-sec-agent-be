@@ -136,6 +136,17 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertNotEqual(response.headers.get("access-control-allow-origin"), "http://evil.test")
 
+    def test_xdr_source_requires_xdr_openapi_backend(self) -> None:
+        response = self.client.post(
+            "/runs",
+            json={"source": "xdr", "xdr_event_id": "REAL-XDR-001"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAILED")
+        self.assertIn("不匹配", payload["errors"][0]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

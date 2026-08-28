@@ -27,10 +27,16 @@ from sec_agent.repositories.base import EventRepository
 
 
 class Orchestrator:
-    def __init__(self, platform: PlatformAdapter, store: EventRepository, investigation_backend: str = "auto") -> None:
+    def __init__(
+        self,
+        platform: PlatformAdapter,
+        store: EventRepository,
+        investigation_backend: str = "auto",
+        platform_backend: str | None = None,
+    ) -> None:
         self._store = store
         self._state = StateMachine()
-        self._ingest = AlertIngestService(platform)
+        self._ingest = AlertIngestService(platform, platform_backend=platform_backend)
         self._correlation = AlertCorrelationService()
         self._triage = RiskTriageService()
         self._investigation = DeepInvestigationAgent(platform, backend=investigation_backend)

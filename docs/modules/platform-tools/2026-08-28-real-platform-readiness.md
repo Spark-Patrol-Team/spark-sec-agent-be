@@ -12,7 +12,7 @@
 
 1. `src/sec_agent/api/routes/events.py`
    - `POST /runs` 接收 `StartRunRequest`。
-   - `source=xdr` 时进入同一条编排主链。
+   - `PLATFORM_BACKEND=xdr_openapi` 时，请求来源应使用 `source=xdr`，进入同一条编排主链。
 
 2. `src/sec_agent/api/deps.py`
    - 从 `app.state.container` 取运行时容器。
@@ -31,6 +31,7 @@
 5. `src/sec_agent/services/ingest.py`
    - 不再对 `source=xdr` 硬编码 `NotImplementedError`。
    - 统一调用 `PlatformAdapter.fetch_alerts()`。
+   - 容器装配出的主链会校验请求来源与运行时平台后端，避免 `source=xdr` 被固定样例静默处理。
 
 6. `src/sec_agent/platforms/xdr_openapi.py`
    - 真实 XDR OpenAPI 适配器边界。
@@ -51,8 +52,8 @@
 | --- | --- | --- | --- |
 | XDR OpenAPI HTTP/鉴权/分页/真实接口路径 | 杨嘉琪 | `src/sec_agent/platforms/xdr_openapi.py` | 已有适配器壳；真实签名和分页待实机确认 |
 | XDR 字段映射 | 陈敏 | `src/sec_agent/platforms/raw_jsonl.py` 与 `XdrOpenApiAdapter._to_normalizer_raw()` | 已覆盖最小字段；真实字段名待样例确认 |
-| 主链装配 | 李雨妍| `src/sec_agent/bootstrap/container.py` | 已支持 `PLATFORM_BACKEND=xdr_openapi` |
-| 工具分发 | 杨景凡| `src/sec_agent/tools/tool_dispatcher.py` | 已保留 `extra_handlers` 扩展点 |
+| 主链装配 | 李雨妍 | `src/sec_agent/bootstrap/container.py` | 已支持 `PLATFORM_BACKEND=xdr_openapi` |
+| 工具分发 | 杨景凡 | `src/sec_agent/tools/tool_dispatcher.py` | 已保留 `extra_handlers` 扩展点 |
 | 前端展示 | 黄佳丽 | `EventContext.timeline/errors/trace_id/status` | 已能展示失败和降级原因 |
 
 ## 配置方案
@@ -104,7 +105,7 @@ XDR_AUTH_TYPE=token \
 XDR_TOKEN=<由本地 .env 或密钥系统注入> \
 XDR_STARTUP_CHECK=true \
 XDR_PREFLIGHT_HTTP_CHECK=false \
-uvicorn sec_agent.main:app --host 127.0.0.1 --port 8000
+uv run --python /opt/homebrew/bin/python3.11 python -m uvicorn sec_agent.main:app --host 127.0.0.1 --port 8000
 ```
 
 真实平台与固定样例 fallback 切换规则：
@@ -126,6 +127,7 @@ uvicorn sec_agent.main:app --host 127.0.0.1 --port 8000
 | 超时/不可达 | 默认 `FAILED`；开启降级后继续主链 | 保留同一个 `trace_id` | `timeline[0]` 展示已降级，`errors` 展示原因 | 联调演示可降级 |
 | 空结果 | 默认 `FAILED`；开启降级后继续主链 | 保留同一个 `trace_id` | `errors` 展示 `empty_result` | 联调演示可降级 |
 | 字段转换失败 | `FAILED` | 保留本次 `trace_id` | `errors` 展示 `field_mapping` | 不降级，应修映射 |
+| 请求来源与平台后端不匹配 | `FAILED` | 保留本次 `trace_id` | `errors` 展示“不匹配”和期望来源 | 不降级，应修启动配置或请求参数 |
 | 工具不存在 | 调查链记录工具失败，必要时 `HUMAN_REQUIRED` | `ToolRequest/ToolResult` 保留 | 工具结果中展示 `unsupported_tool` | 不进入真实执行 |
 
 ## 最小集成测试
@@ -138,6 +140,7 @@ uvicorn sec_agent.main:app --host 127.0.0.1 --port 8000
 - 空结果未开启降级时进入 `FAILED`。
 - 字段转换失败即使开启降级也进入 `FAILED`，避免污染字段契约。
 - 启动前检查能拦截缺失 `XDR_BASE_URL` 和 `XDR_TOKEN`。
+- `source=xdr` 必须配合 `PLATFORM_BACKEND=xdr_openapi`，不能被固定样例后端静默处理。
 
 建议实机最小补测：
 
@@ -175,7 +178,7 @@ uv run --python /opt/homebrew/bin/python3.11 python -m sec_agent.scripts.run_flo
 uv run --python /opt/homebrew/bin/python3.11 --with pytest --with httpx -m pytest -q
 ```
 
-结果：`131 passed, 1 skipped`。
+结果：`135 passed, 1 skipped`。
 
 已知限制：
 

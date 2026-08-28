@@ -28,6 +28,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         platform=platform,
         store=repository,
         investigation_backend=resolved_settings.investigation_backend,
+        platform_backend=resolved_settings.platform_backend,
     )
     return AppContainer(
         settings=resolved_settings,
