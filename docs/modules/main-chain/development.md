@@ -10,7 +10,7 @@
 | 实现状态 | 已实现未复验 |
 | 能力性质 | 自研代码；fixed_sample / jsonl_sample / Mock / fallback 混合能力 |
 | 关联任务/需求 | 后端主链技术集成、统一工具调度、状态流转、HTTP 接口联调 |
-| 关联正式交付章节 | docs/deliverables/系统开发与运行说明.md；第9章模块说明与接入位置 |
+| 关联正式交付章节 | docs/deliverables/system-development-and-operation-guide.md；第9章模块说明与接入位置 |
 | 对应PR或Commit | 当前 main 分支：5c05d61；本文件为工作区新增文档 |
 | 适用代码版本 | main / 5c05d61，包含当前工作区未提交文档与 CORS 白名单补充 |
 | 最后更新时间 | 2026-08-26 |
@@ -174,7 +174,7 @@ curl -s -X POST 'http://127.0.0.1:8000/events/<event_id>/approval' \
 
 | 能力 | 当前实际实现 | 触发条件 | 不得误写为 |
 |---|---|---|---|
-| 告警输入 | fixed_sample / jsonl_sample | `PLATFORM_BACKEND=fixed_sample` 或 `jsonl_sample` | 真实 XDR 全量接入 |
+| 告警输入 | fixed_sample / jsonl_sample / xdr_openapi 边界 | `PLATFORM_BACKEND=fixed_sample`、`jsonl_sample` 或 `xdr_openapi` | 真实 XDR 已完整闭环 |
 | JSONL 接入 | 本地实现 | `JsonlSampleAdapter` 读取样例目录 | 真实平台实时拉取 |
 | 深度调查 | 本地工具链 / deep agent 桥接 / fallback | `INVESTIGATION_BACKEND` 控制 | 未配置 LLM 时的真实 Agent 闭环 |
 | XDR 日志查询 | 内置样例工具 | `xdr_log_query` | 真实深信服 XDR OpenAPI |

@@ -49,7 +49,7 @@
 │   │   └── frontend/
 │   └── deliverables/
 │       ├── 安全智能体系统设计说明书V2.md
-│       ├── 系统开发与运行说明.md
+│       ├── system-development-and-operation-guide.md
 │       ├── 测试方案与测试报告.md
 │       └── 仓库提交规则.md
 ├── src/
@@ -163,7 +163,7 @@ MYSQL_AUTO_CREATE_SCHEMA=true
 | `API_PORT` | `8000` | HTTP 服务端口，当前主要给启动脚本预留 |
 | `API_RELOAD` | `true` | 是否启用热重载，当前主要给启动脚本预留 |
 | `STORAGE_BACKEND` | `memory` | 存储后端，支持 `memory`、`mysql` |
-| `PLATFORM_BACKEND` | `fixed_sample` | 平台适配器，当前支持固定样例 |
+| `PLATFORM_BACKEND` | `fixed_sample` | 平台适配器，当前支持 `fixed_sample`、`jsonl_sample` 和 `xdr_openapi` 接入边界 |
 | `MYSQL_HOST` | `127.0.0.1` | MySQL 地址 |
 | `MYSQL_PORT` | `3306` | MySQL 端口 |
 | `MYSQL_USER` | `sec_agent` | MySQL 用户名 |
@@ -476,7 +476,10 @@ src/sec_agent/platforms/xdr_openapi.py
 | `run_id` | 本次运行编号 |
 | `event_id` | 安全事件编号 |
 | `status` | 当前业务状态 |
-| `source` | 数据来源 |
+| `source` | 请求数据来源，兼容旧字段 |
+| `requested_source` | API 或脚本请求来源，如 `xdr` |
+| `effective_source` | 实际生效来源，如 `xdr_openapi` 或 `fixed_sample_fallback` |
+| `fallback_source` | 发生降级时的回退来源，如 `fixed_sample` |
 | `alert_refs` | 原始告警引用 |
 | `event_summary` | 关联后的安全事件摘要 |
 | `triage` | 风险研判结果 |
@@ -611,7 +614,7 @@ curl http://127.0.0.1:8000/health
 
 ### 13.1 接 XDR OpenAPI
 
-待资料补齐后新增：
+当前已新增适配器边界：
 
 ```text
 src/sec_agent/platforms/xdr_openapi.py
@@ -623,7 +626,7 @@ src/sec_agent/platforms/xdr_openapi.py
 PLATFORM_BACKEND=xdr_openapi
 ```
 
-当前缺少资料：
+当前仍缺少资料：
 
 - Base URL。
 - 鉴权方式。

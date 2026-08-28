@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from sec_agent.domain.models import (
     ApprovalDecision,
+    AlertRecord,
     BusinessStatus,
     ErrorRecord,
     EventContext,
@@ -26,10 +27,16 @@ from sec_agent.repositories.base import EventRepository
 
 
 class Orchestrator:
-    def __init__(self, platform: PlatformAdapter, store: EventRepository, investigation_backend: str = "auto") -> None:
+    def __init__(
+        self,
+        platform: PlatformAdapter,
+        store: EventRepository,
+        investigation_backend: str = "auto",
+        platform_backend: str | None = None,
+    ) -> None:
         self._store = store
         self._state = StateMachine()
-        self._ingest = AlertIngestService(platform)
+        self._ingest = AlertIngestService(platform, platform_backend=platform_backend)
         self._correlation = AlertCorrelationService()
         self._triage = RiskTriageService()
         self._investigation = DeepInvestigationAgent(platform, backend=investigation_backend)
@@ -50,10 +57,25 @@ class Orchestrator:
                 event_id=f"evt-{uuid4()}",
                 status=BusinessStatus.FAILED,
                 source=request.source,
+                requested_source=request.source,
                 timeline=[TimelineEntry(status=BusinessStatus.FAILED, message="告警接入失败")],
                 errors=[ErrorRecord(stage="ingest", message=str(exc), recoverable=True)],
             )
             return self._store.save(ctx)
+
+        fallback_reason = self._platform_fallback_reason(alerts)
+        fallback_source = self._fallback_source(alerts)
+        received_message = "已接收告警输入"
+        initial_errors: list[ErrorRecord] = []
+        if fallback_reason:
+            received_message = "已接收告警输入；真实平台失败，已降级到固定样例"
+            initial_errors.append(
+                ErrorRecord(
+                    stage="ingest",
+                    message=f"真实平台降级到固定样例: {fallback_reason}",
+                    recoverable=True,
+                )
+            )
 
         event_id = f"evt-{uuid4()}"
         ctx = EventContext(
@@ -62,8 +84,12 @@ class Orchestrator:
             event_id=event_id,
             status=BusinessStatus.RECEIVED,
             source=request.source,
+            requested_source=request.source,
+            effective_source=self._effective_source(alerts),
+            fallback_source=fallback_source,
             alert_refs=[alert.alert_id for alert in alerts],
-            timeline=[TimelineEntry(status=BusinessStatus.RECEIVED, message="已接收告警输入")],
+            timeline=[TimelineEntry(status=BusinessStatus.RECEIVED, message=received_message)],
+            errors=initial_errors,
         )
         self._store.save(ctx)
 
@@ -157,3 +183,26 @@ class Orchestrator:
 
     def _move(self, ctx: EventContext, next_status: BusinessStatus, message: str) -> EventContext:
         return self._store.save(self._state.move(ctx, next_status, message))
+
+    @staticmethod
+    def _platform_fallback_reason(alerts: list[AlertRecord]) -> str | None:
+        for alert in alerts:
+            value = alert.scenario_fields.get("platform_fallback_reason")
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+    @staticmethod
+    def _effective_source(alerts: list[AlertRecord]) -> str | None:
+        for alert in alerts:
+            if alert.source:
+                return alert.source
+        return None
+
+    @staticmethod
+    def _fallback_source(alerts: list[AlertRecord]) -> str | None:
+        for alert in alerts:
+            value = alert.scenario_fields.get("platform_fallback_source")
+            if isinstance(value, str) and value:
+                return value
+        return None

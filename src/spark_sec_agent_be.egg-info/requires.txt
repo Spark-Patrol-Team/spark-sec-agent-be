@@ -1,7 +1,11 @@
-fastapi>=0.115.0
-pydantic>=2.10.0
-pymysql>=1.1.0
-sqlalchemy>=2.0.0
-uvicorn>=0.30.0
+fastapi==0.115.12
+openai<2.0.0,>=1.0.0
+pydantic==2.13.3
+pymysql<2.0.0,>=1.1.0
+requests<3.0.0,>=2.32.0
+sqlalchemy<3.0.0,>=2.0.0
+uvicorn<1.0.0,>=0.30.0
 
 [dev]
+httpx<1.0.0,>=0.27.0
+pytest<9.0.0,>=8.0.0
