@@ -34,6 +34,10 @@ SYSTEM_PROMPT = """你是「深度调查安全分析 Agent」，运行在深信�
 # 可用工具
 工具清单见系统提供的 tools 定义，你可自主决定调用哪些工具、调用几次（可多轮组合）。
 WebShell 类事件典型调查路径：先查目标资产信息，再查相关告警与漏洞，必要时做攻击检测、调用安全GPT研判、查询漏洞情报。
+需要攻击原理 / 攻击特征 / 证据检查清单 / 处置建议等参考知识时，调用 knowledge_query（关键词示例：WebShell攻击原理、WebShell证据检查清单、WebShell处置建议）；其返回内容带 evidence_refs（证据引用），应填入报告的 evidence_source。
+
+# 收尾原则（重要）
+工具调用次数有限，不要为「多查一点」耗尽步数。证据足以支撑结论时，立即停止调用工具，直接输出最终调查报告 JSON；始终为「直接输出报告」保留至少一次收尾（只输出 JSON、不调用工具的轮次）。工具返回为空或失败时，如实记录「数据不可得」，不要反复调用同一工具。
 
 # 停止条件（满足任一即停止调用工具，直接输出报告）
 1. 证据充分：已能支撑明确的调查结论；
@@ -70,6 +74,14 @@ WebShell 类事件典型调查路径：先查目标资产信息，再查相关�
 - 所有字段都必须填写，无法获得的信息填"未知"或空字符串，不得省略任何字段。"""
 
 
+# 接近工具调用上限时注入的收尾提醒（防止 LLM 耗尽步数导致降级）
+_WRAPUP_REMINDER = (
+    "注意：你已接近工具调用上限（剩余约 {remaining} 次）。"
+    "若现有证据足以支撑结论，请立即停止调用工具，直接输出最终调查报告 JSON；"
+    "不要为求全继续调用工具。"
+)
+
+
 class DeepInvestigationAgent:
     def __init__(self, config: Config, llm: LLMClient, tools: ToolRegistry):
         self.config = config
@@ -86,8 +98,15 @@ class DeepInvestigationAgent:
         tool_records: list[dict] = []
         max_calls = self.config.agent.max_tool_calls
         tool_call_count = 0
+        wrapup_reminded = False
 
         while tool_call_count < max_calls:
+            # 接近上限：注入收尾提醒，避免 LLM 耗尽步数后降级
+            remaining = max_calls - tool_call_count
+            if remaining <= 2 and not wrapup_reminded:
+                messages.append({"role": "system", "content": _WRAPUP_REMINDER.format(remaining=remaining)})
+                wrapup_reminded = True
+
             assistant = self.llm.chat(messages, tools=schemas or None)
             messages.append(assistant)
 
@@ -102,12 +121,18 @@ class DeepInvestigationAgent:
                 real_name = self.tools.resolve(tc["function"]["name"])
                 args = self._safe_json_loads(tc["function"]["arguments"])
                 result = self.tools.call(real_name, args)
-                tool_records.append({
+                record = {
                     "tool": real_name,
                     "input": args,
                     "output": result.to_str(),
                     "status": result.status,
-                })
+                }
+                # 知识包命中：结构化保留 evidence_refs，供降级报告提炼进证据来源
+                if real_name == "knowledge_query" and isinstance(result.data, dict):
+                    refs = result.data.get("evidence_refs") or []
+                    if refs:
+                        record["evidence_refs"] = list(refs)
+                tool_records.append(record)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
@@ -187,7 +212,34 @@ class DeepInvestigationAgent:
     # ------------------------------------------------------------------
     @staticmethod
     def _fallback_report(event: SecurityEventInput, tool_records: list[dict], reason: str = "") -> InvestigationReport:
-        """LLM 未给出有效报告或调查无法继续时的降级报告（证据不足 → 人工接管）。"""
+        """LLM 未给出有效报告或调查无法继续时的降级报告（证据不足 → 人工接管）。
+
+        尽力提炼已采集的证据，避免降级报告完全为空：
+        - knowledge_query 命中的 evidence_refs → evidence_source（"知识包引用: ..."）；
+        - 成功工具的调用名 → evidence_source（"来源工具: ..."）；
+        - 成功工具的返回摘要 → key_evidence（截断 200 字符）。
+        """
+        key_evidence = [e for e in event.evidence if e]
+        evidence_source = ["上游风险研判"]
+        seen_ev, seen_src = set(key_evidence), set(evidence_source)
+
+        for rec in tool_records:
+            if rec.get("status") != "success":
+                continue
+            tool = rec.get("tool", "")
+            output = (rec.get("output") or "").strip()
+            for ref in (rec.get("evidence_refs") or []):
+                label = f"知识包引用: {ref}"
+                if label not in seen_src:
+                    seen_src.add(label)
+                    evidence_source.append(label)
+            if tool and f"来源工具: {tool}" not in seen_src:
+                seen_src.add(f"来源工具: {tool}")
+                evidence_source.append(f"来源工具: {tool}")
+            if output and output not in seen_ev:
+                seen_ev.add(output)
+                key_evidence.append(output[:200])
+
         return InvestigationReport(
             event_basic_info={
                 "event_id": event.event_id,
@@ -197,11 +249,11 @@ class DeepInvestigationAgent:
                 "source_ip": event.source_ip,
                 "target_ip": event.target_ip,
             },
-            conclusion="证据不足，无法得出明确调查结论",
+            conclusion="证据不足，无法得出明确调查结论（已采集部分工具证据，详见 key_evidence / evidence_source）",
             risk_level=event.severity or "未知",
             attack_type=event.event_type or "未知",
-            key_evidence=list(event.evidence),
-            evidence_source=["上游风险研判"],
+            key_evidence=key_evidence,
+            evidence_source=evidence_source,
             investigation_steps=[],
             tool_call_records=tool_records,
             attack_chain="未知",

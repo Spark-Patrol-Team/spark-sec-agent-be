@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sec_agent.core.config import build_mysql_dsn, load_dotenv, parse_bool, parse_csv
+from sec_agent.core.config import DEFAULT_CORS_ALLOWED_ORIGINS, build_mysql_dsn, load_dotenv, parse_bool, parse_csv
 
 
 class ConfigTest(unittest.TestCase):
@@ -20,6 +20,10 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(parse_csv("http://a.test, http://b.test ,,", ["default"]), ["http://a.test", "http://b.test"])
         self.assertEqual(parse_csv("", ["default"]), [])
         self.assertEqual(parse_csv(None, ["default"]), ["default"])
+
+    def test_default_cors_origins_include_frontend_dashboard(self) -> None:
+        self.assertIn("http://localhost:8080", DEFAULT_CORS_ALLOWED_ORIGINS)
+        self.assertIn("http://127.0.0.1:8080", DEFAULT_CORS_ALLOWED_ORIGINS)
 
     def test_build_mysql_dsn_from_split_env(self) -> None:
         with patch.dict(
