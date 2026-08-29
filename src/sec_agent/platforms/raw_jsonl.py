@@ -235,11 +235,20 @@ class RawJsonlNormalizer:
             "固定回归样例": "fixed_regression_fixture",
         }.get(sample_source, default)
 
-    def _parse_time(self, value: str) -> datetime:
+    def _parse_time(self, value: Any) -> datetime:
+        if isinstance(value, int | float):
+            return datetime.fromtimestamp(value, tz=self._SHANGHAI)
+        
+        text = str(value).strip()
+        # 尝试解析 Unix 时间戳字符串
+        if text.isdigit():
+            return datetime.fromtimestamp(int(text), tz=self._SHANGHAI)
+            
         try:
-            parsed = datetime.fromisoformat(value)
+            parsed = datetime.fromisoformat(text)
         except ValueError:
-            parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            parsed = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+            
         if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
             return parsed.replace(tzinfo=self._SHANGHAI)
         return parsed
