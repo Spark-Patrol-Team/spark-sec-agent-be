@@ -1,0 +1,34 @@
+{
+  "event_id": "EMPTY-XDR-001",
+  "event_type": "SQL注入攻击",
+  "severity": "HIGH",
+  "timestamp": "2026-08-25 12:00:00",
+  "source_ip": "203.0.113.10",
+  "target_ip": "203.0.113.20",
+  "alerts": [
+    "疑似SQL注入攻击"
+  ],
+  "evidence": [
+    "上游检测到疑似SQL注入行为"
+  ],
+  "initial_verdict": "疑似真实攻击",
+  "confidence": 0.6,
+  "triage": {
+    "verdict": "suspicious",
+    "confidence": 0.6,
+    "risk_score": 70,
+    "priority": "high",
+    "supporting_evidence": [
+      "存在疑似SQL注入行为"
+    ],
+    "opposing_evidence": [],
+    "evidence_gaps": [
+      "目标资产信息",
+      "相关告警",
+      "关联漏洞"
+    ],
+    "enter_investigation": true
+  },
+  "trace_id": "trace-empty-xdr-001",
+  "run_id": "run-empty-xdr-001"
+}

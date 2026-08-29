@@ -1,0 +1,37 @@
+{
+  "event_id": "REAL-XDR-001",
+  "event_type": "SQL注入攻击",
+  "severity": "HIGH",
+  "timestamp": "2026-08-21 12:00:00",
+  "source_ip": "192.168.100.100",
+  "target_ip": "192.168.100.200",
+  "alerts": [
+    "SQL server数据库查询sa账户密码攻击",
+    "通用SQL注入攻击"
+  ],
+  "evidence": [
+    "XDR检测到数据库攻击利用相关告警",
+    "存在SQL注入攻击行为",
+    "相关告警已被XDR研判为真实攻击成功"
+  ],
+  "initial_verdict": "疑似真实攻击",
+  "confidence": 0.8,
+  "triage": {
+    "verdict": "malicious",
+    "confidence": 0.8,
+    "risk_score": 85,
+    "priority": "high",
+    "supporting_evidence": [
+      "XDR检测到SQL注入及数据库攻击利用相关告警"
+    ],
+    "opposing_evidence": [],
+    "evidence_gaps": [
+      "目标资产信息",
+      "关联漏洞情况",
+      "事件聚合情况"
+    ],
+    "enter_investigation": true
+  },
+  "trace_id": "trace-real-xdr-001",
+  "run_id": "run-real-xdr-001"
+}
