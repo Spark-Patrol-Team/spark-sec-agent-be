@@ -1,158 +1,275 @@
-# 平台工具模块设计
+# 告警接入与关联模块开发说明
 
 ## 0. 文档信息
 
 | 项目 | 内容 |
 |---|---|
-| 模块 | 平台工具模块（Platform Tools） |
-| 负责人 | 杨嘉琪 |
-| 文档状态 | 已复验 |
-| 实现状态 | 固定样例、JSONL 样例和 Mock 工具已实现并复验；真实 XDR 只读查询待平台条件就绪后接入 |
-| 能力性质 | 自研代码、固定样例、Mock、fallback；真实平台能力为候选项，当前未接通 |
-| 关联任务/需求 | `T0826-07` 平台工具调度器复测；`T0827-05` 工具模块收口与真实平台接入准备 |
-| 关联正式交付章节 | 系统设计说明书中的平台工具、调查编排与安全边界章节；具体章号待总文档负责人统一 |
-| 对应 PR 或 Commit | 复测基线 `main@95defad5e6d8a44fdb601d844d876f25544f479d`；本文档 PR 待创建 |
-| 最后更新时间 | 2026-08-28 |
-| 最后复验时间 | 2026-08-28 |
+| 模块 | `alert-correlation`（告警接入与关联） |
+| 负责人 | 陈敏 |
+| 文档状态 | 当前有效 |
+| 实现状态 | 已复验 |
+| 能力性质 | 自研代码 + 固定 JSONL fallback + Mock 主链；真实 XDR/MCP 未接入。 |
+| 关联任务/需求 | `T0826-06`｜固定 JSONL 告警接入关联回归与文档补齐。 |
+| 关联正式交付章节 | `docs/deliverables/系统开发与运行说明.md`：第 8 章主流程说明、第 9 章模块说明与接入位置、第 11 章测试与验证。 |
+| 对应 PR 或 Commit | PR #17；`1a5bbf1`（后续模板对齐提交追加至同一 PR）。 |
+| 适用代码版本 | `main@95defad` 加 PR #17 内容（隔离工作区重放并联调）。 |
+| 最后更新时间 | 2026-08-26 |
 
-## 1. 目标与非目标
+## 1. 当前实现摘要
 
-### 1.1 目标
+### 1.1 已实现
 
-- 为业务 service 和 Agent 提供唯一、统一、可审计的工具调用入口。
-- 使用 `ToolRequest` 和 `ToolResult` 统一工具输入、输出、错误和副作用描述。
-- 在同一调度器中注册证据查询、XDR 日志查询、有状态 Mock、Mock 响应和响应验证能力。
-- 对未知工具返回结构化失败结果，不向上层抛出未处理的查找异常。
-- 保持固定样例、JSONL 样例、Mock 和未来真实平台之间清晰的数据来源边界。
-- 为真实 XDR 只读查询预留最小适配位置，取得权限和接口后不需要重建调度链路。
+- `JsonlSampleAdapter` 在 `normalized` 模式下读取标准化固定样例，在 `raw` 模式下读取原始 JSONL 并调用 `RawJsonlNormalizer`。
+- 原始样例可映射为 `NormalizedAlertRecord`，再适配为统一 `AlertRecord`。
+- 固定映射支持 STA/XDR 来源设备、目的资产优先、`host_ip` 回退、WebShell 蚁剑专项 `critical/95` 与字段级证据引用。
+- `AlertCorrelationService` 对同一候选活动执行事件类型、资产、来源设备和 15 分钟窗口校验，并输出 `SecurityEvent`。
+- `Orchestrator` 在关联后调用风险研判；raw WebShell 固定样例可实际进入 `TRIAGED`、`APPROVAL_REQUIRED`，Mock 审批后到 `COMPLETED`。
 
-### 1.2 非目标
+### 1.2 未实现或未复验
 
-- 当前不声明真实 XDR OpenAPI 已接通。
-- 当前内置 `xdr_log_query` 不代表真实平台数据。
-- 本模块不负责研判规则、风险阈值和 Agent 决策逻辑。
-- 本阶段不实现真实隔离、封禁、删除等有副作用处置动作。
-- 本模块不保存真实凭据，不在源码、文档、日志或样例中记录 Token、Secret 和内网地址。
-- 不新建第二套 `ToolDispatcher`、XDR 专用调度器或平行工具契约。
+- 真实 XDR OpenAPI/MCP 鉴权、实时查询、分页、限流、网络超时、重试和返回字段映射未实现。
+- 真实平台上的关联准确率、召回率、性能吞吐量和长时间窗口稳定性未具备可靠计算条件。
 
-## 2. 职责与边界
+## 2. 代码位置
 
-- 本模块负责：工具注册与分发、工具输入输出契约、结构化错误、审计字段、副作用标记、固定样例与 Mock 能力装配，以及真实平台适配入口。
-- 本模块不负责：Agent 研判决策、前端展示逻辑、真实 XDR 字段标准制定、生产凭据发放和真实处置审批。
-- 需要人工参与的环节：真实平台权限申请、接口与字段确认、凭据托管、脱敏规则确认，以及所有未来高风险真实动作的审批。
+| 路径 | 主要对象/入口 | 作用 |
+|---|---|---|
+| `src/sec_agent/platforms/raw_jsonl.py` | `RawJsonlNormalizer` | 原始 STA/XDR JSONL 到 `NormalizedAlertRecord` 的映射与校验。 |
+| `src/sec_agent/platforms/jsonl_sample.py` | `JsonlSampleAdapter` | 读取 raw/normalized 固定样例，生成 `AlertRecord`，提供证据查询 Mock。 |
+| `src/sec_agent/services/ingest.py` | `AlertIngestService.ingest` | 按来源调用平台适配器；不重复解析来源字段。 |
+| `src/sec_agent/services/correlation.py` | `AlertCorrelationService.correlate` | 执行最小关联、实体汇总和关联依据生成。 |
+| `src/sec_agent/services/orchestrator.py` | `Orchestrator.start` | 接入→关联→风险研判→调查→处置的统一状态编排。 |
+| `src/sec_agent/services/triage.py` | `RiskTriageService.triage` | 使用 `SecurityEvent` 与参与告警生成风险研判。 |
+| `tests/test_alert_correlation_regression.py` | `AlertCorrelationRegressionTest` | T0826-06 关联专项回归。 |
 
-## 3. 输入与输出
+## 3. 依赖与配置
 
-### 3.1 输入
-
-统一输入对象为 `ToolRequest`。
-
-| 字段/对象 | 类型 | 必填 | 来源 | 含义与约束 |
-|---|---|---|---|---|
-| `call_id` | `str` | 否 | 模型自动生成 | 单次工具调用标识 |
-| `trace_id` | `str` | 是 | 上游编排链 | 跨模块追踪标识 |
-| `event_id` | `str` | 是 | 安全事件 | 关联事件标识 |
-| `stage` | `BusinessStatus` | 是 | 状态机/业务 service | 调用发生时的业务阶段 |
-| `tool_name` | `str` | 是 | Agent 或业务 service | 必须匹配已注册工具名 |
-| `action_name` | `str` | 是 | Agent 或业务 service | 工具内具体动作 |
-| `params` | `dict` | 是 | 调用方 | 参数需在 handler 内校验；敏感字段需脱敏 |
-| `reason` | `str` | 是 | 调用方 | 调用原因和审计说明 |
-| `idempotency_key` | `str` | 是 | 调用方 | 幂等与动作追踪标识 |
-| `risk_level` | `ToolRiskLevel` | 是 | 调用方 | 工具风险等级 |
-| `approval_status` | `ApprovalStatus` | 否 | 审批流程 | 高风险动作的审批状态；只读查询通常无需审批 |
-| `timeout_seconds` | `int` | 否 | 调用配置 | 调用超时上限 |
-| `attempt` / `max_attempts` | `int` | 否 | 调度或重试逻辑 | 当前尝试次数和最大次数 |
-| `sensitive_param_keys` | `list[str]` | 否 | 调用方 | 审计输出时需要遮蔽的参数键 |
-
-### 3.2 输出
-
-统一输出对象为 `ToolResult`。
-
-| 字段/对象 | 类型 | 去向 | 含义与约束 |
+| 名称 | 必需/可选 | 获取方式 | 未配置时行为 |
 |---|---|---|---|
-| `call_id` / `trace_id` / `event_id` | `str` | 上游编排、日志和审计 | 与请求保持关联 |
-| `tool_name` / `action_name` | `str` | 上游调用方 | 标识实际工具和动作 |
-| `idempotency_key` | `str` | 幂等与验证流程 | 与请求保持一致 |
-| `status` | `ToolCallStatus` | Agent、业务 service、前端 | `SUCCESS`、`FAILED` 或 `PARTIAL_SUCCESS` |
-| `summary` | `str` | 上游和审计 | 可展示的脱敏摘要 |
-| `raw_result_ref` | `str \| None` | 证据/审计 | 原始结果引用，不直接承载敏感原文 |
-| `evidence_refs` / `output_refs` | `list[str]` | 调查链和证据链 | 证据及输出引用 |
-| `output_preview` | `dict` | Agent、业务 service、前端 | 脱敏后的结构化预览 |
-| `retryable` | `bool` | 上层调度逻辑 | 是否允许重试或替换其他工具 |
-| `error_type` / `error_message` | 枚举/字符串 | 上层错误处理 | 结构化错误类型及脱敏说明 |
-| `external_side_effect` | `bool` | 审批和安全控制 | 是否产生外部系统副作用 |
-| `side_effect_type` | `ToolSideEffectType` | 审批和审计 | `NONE`、`READ_ONLY` 或 `STATE_CHANGE` |
-| 时间及尝试字段 | 时间/整数 | 可观测与审计 | 记录开始、结束、耗时和尝试次数 |
+| Python `>=3.11` | 必需 | 按 `pyproject.toml` 与团队运行说明配置。 | 无法运行项目测试和主流程。 |
+| `PLATFORM_BACKEND=jsonl_sample` | 运行固定 JSONL 主链时必需 | `.env` 或命令行环境变量。 | 默认可改用 `fixed_sample`，但不走 JSONL 路径。 |
+| `JSONL_SAMPLE_DIR=tests/fixtures/fixed_alerts` | 运行固定 JSONL 时必需 | 相对项目根目录配置。 | 样例文件缺失时读取失败。 |
+| `JSONL_INPUT_MODE=normalized|raw` | 运行 JSONL 时可选 | `.env` 或命令行环境变量。 | 默认 `normalized`；`raw` 走标准化器。 |
+| `STORAGE_BACKEND=memory` | 本地演示可选 | `.env` 或命令行环境变量。 | 默认内存存储；不需要 MySQL。 |
+| 深信服 MCP 地址 | 可选 | 受控环境变量或本地受控配置。 | 测试框架跳过依赖真实 MCP 的 1 项测试；固定 JSONL 和 Mock 主链不受影响。 |
 
-## 4. 核心流程与状态变化
+- 支持的运行环境：项目声明 Python `>=3.11`；本轮使用 Python 3.12 实测。
+- 敏感配置只通过环境变量或受控配置注入；文档、代码和固定样例中不填写真实凭据、Token、接入码、MCP URL 或内网地址。
 
-1. Agent 或业务 service 根据当前事件和业务阶段构造 `ToolRequest`。
-2. 平台适配器将请求交给当前唯一 `ToolDispatcher`。
-3. `ToolDispatcher` 根据 `tool_name` 在 handler 映射中查找处理函数。
-4. 已注册工具执行参数校验、样例读取、证据查询或 Mock 状态操作。
-5. handler 返回完整 `ToolResult`，包含状态、审计字段、输出预览、错误和副作用描述。
-6. 未注册工具不执行外部调用，直接返回 `FAILED / UNSUPPORTED_TOOL / retryable=true`。
-7. 调查或响应 service 根据结构化结果继续编排、重新选择工具、进入审批或人工处理。
+## 4. 启动与调试
 
-平台工具模块本身不直接推进业务状态机。业务状态变化由调查、响应和编排 service 根据 `ToolResult` 决定。
+在仓库根目录执行：
 
-## 5. 上下游关系与契约
+```bash
+# 专项回归
+PYTHONPATH=src python -m unittest tests.test_alert_correlation_regression
 
-| 方向 | 模块/接口 | 契约或文档位置 | 当前状态 |
+# JSONL 接入和关联相关回归
+PYTHONPATH=src python -m unittest \
+  tests.test_alert_correlation_regression \
+  tests.test_raw_jsonl_ingest_and_correlation \
+  tests.test_jsonl_platform
+
+# 全量测试；外部环境变量干扰配置测试时可先清除相关变量
+env -u APP_ENV -u APP_NAME -u PLATFORM_BACKEND -u JSONL_INPUT_MODE \
+  -u JSONL_SAMPLE_DIR -u STORAGE_BACKEND \
+  PYTHONPATH=src python -m unittest discover -s tests
+
+# raw 固定 JSONL 主链
+APP_ENV=local STORAGE_BACKEND=memory PLATFORM_BACKEND=jsonl_sample \
+JSONL_INPUT_MODE=raw JSONL_SAMPLE_DIR=tests/fixtures/fixed_alerts \
+PYTHONPATH=src python -m sec_agent.scripts.run_flow
+```
+
+- 成功判据：专项关联回归通过；全量测试返回 `OK`；raw WebShell 主链依次记录 `RECEIVED`、`CORRELATING`、`TRIAGED`、`APPROVAL_REQUIRED`，Mock 审批后最终为 `COMPLETED`。
+- 常见失败及排查：样例文件不存在时检查 `JSONL_SAMPLE_DIR`；`APP_ENV=PROD` 等外部变量导致配置枚举不匹配时使用本地配置或清除变量；Python 版本不满足时安装/启用合规解释器，不使用 Python 3.9 强行运行。
+
+## 5. 调用与接入方法
+
+### 5.1 调用入口
+
+- 主链入口：`Orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))`。
+- 接入入口：`AlertIngestService.ingest` 调用 `JsonlSampleAdapter.fetch_alerts`。
+- 关联入口：`AlertCorrelationService.correlate(alerts)`。
+- 证据查询入口：JSONL 适配器的 `evidence_lookup` Mock 工具，根据 `SecurityEvent.alert_refs` 查询字段级 `evidence_refs`。
+
+### 5.2 最小示例
+
+```python
+from pathlib import Path
+from sec_agent.platforms.jsonl_sample import JsonlSampleAdapter
+from sec_agent.services.correlation import AlertCorrelationService
+
+adapter = JsonlSampleAdapter(Path("tests/fixtures/fixed_alerts"), input_mode="raw")
+alerts = adapter.fetch_alerts(sample_id="FIX-XDR-WEBSHELL-001")
+event = AlertCorrelationService(window_minutes=15).correlate(alerts)
+```
+
+```text
+SecurityEvent：
+- alert_refs: ["FIX-XDR-WEBSHELL-001"]
+- entities.assets: ["198.51.100.11"]
+- event_count_after: 1
+- correlation_reason: 包含事件类型、资产、设备和时间窗口
+```
+
+### 5.3 上下游接入注意事项
+
+- 所有平台字段先在 `platforms/` 适配，不要在 `services/correlation.py` 重复解析 JSON。
+- 关联前的告警必须具有一致事件类型、受影响资产和来源设备；不一致时由上层拆分事件。
+- 关联模块不直接写状态，必须由 `orchestrator.py` 推进 `EventContext`。
+- `sample_nature` 必须保留，避免将合成回归样例混入平台字段派生样例展示。
+
+## 6. 异常处理与安全控制
+
+- 输入错误：空告警、样例不存在、`sample_id/xdr_event_id` 冲突、事件类型/资产/设备冲突和 15 分钟窗口超时均返回可读异常。
+- 依赖或工具失败：固定 JSONL 读取错误会使编排器记录 `ingest` 或 `orchestrator` 错误；真实平台依赖未接入，不进行伪造 fallback。
+- 重复调用与幂等：关联为纯内存计算；后续审批和 Mock 处置的幂等由 `EventRepository` 与 `idempotency_key` 管理。
+- 超时、重试与回滚：固定样例关联未实现网络超时/重试/回滚；真实平台接入时必须单独实现和测试。
+- 权限、审批与敏感数据：关联不访问真实凭据也不触发外部动作；高风险处置仍由后续响应模块走人工审批；证据仅保留引用。
+
+## 7. 真实平台、Mock 与 fallback 边界
+
+| 能力 | 当前实际实现 | 触发条件 | 不得误写为 |
 |---|---|---|---|
-| 上游 | 调查 service | `src/sec_agent/services/investigation.py`、`ToolRequest` | 已对齐 |
-| 上游 | 响应 service | `src/sec_agent/services/response.py`、`ToolRequest` | 已对齐 |
-| 上游 | 平台适配器 | `src/sec_agent/platforms/fixed_sample.py`、`jsonl_sample.py` | 已对齐 |
-| 核心 | 工具调度器 | `src/sec_agent/tools/base.py`、`tool_dispatcher.py` | 已复验 |
-| 下游 | 固定/JSONL 样例 | `src/sec_agent/platforms/`、`tests/fixtures/` | 已实现并复验 |
-| 下游 | 真实 XDR 只读接口 | `docs/modules/platform-tools/xdr-readonly-readiness.md` | 待平台条件就绪 |
-| 下游 | 审计与证据链 | `ToolResult` 的引用和审计字段 | 已对齐 |
+| 原始/标准化告警读取 | 固定 JSONL fallback | `PLATFORM_BACKEND=jsonl_sample` | “已实时拉取 XDR 告警”。 |
+| STA/XDR 字段映射 | 本地实现 | `JSONL_INPUT_MODE=raw` | “已调用真实 STA/XDR 接口”。 |
+| 证据查询 | JSONL 字段级 Mock | 调用 `evidence_lookup` | “已获得真实平台原始日志”。 |
+| 风险研判衔接 | 自研主链代码 | 关联成功后由编排器调用 | “已验证所有真实告警风险”。 |
+| 处置和验证 | 有状态 Mock | 高风险样例审批后 | “已执行真实隔离/封禁”。 |
+| 真实 XDR OpenAPI/MCP | 未实现 | 不适用 | “已完成平台正式接入”。 |
 
-## 6. 安全边界
+## 8. 已知限制与待办
 
-- 权限与审批：只读查询必须使用最小只读权限；未来真实有副作用动作必须单独设计审批，不复用 Mock 作为真实执行证明。
-- 输入校验：handler 必须校验必填参数、类型、时间范围、分页和平台限制；非法参数不得发往外部平台。
-- 敏感信息处理：凭据不进入源码、Markdown、样例、日志、异常堆栈和前端响应；`sensitive_param_keys` 用于审计脱敏。
-- 失败、超时与人工接管：平台错误统一转换为结构化 `ToolResult`；不可恢复错误由上层决定是否人工处理。
-- 真实执行与 Mock 边界：真实平台、固定样例、JSONL 样例和 Mock 必须具有不同的数据来源标识；不得静默用样例结果冒充真实数据。
-- 只读边界：真实 XDR 查询应返回 `external_side_effect=false`、`side_effect_type=READ_ONLY`。
+| 优先级 | 事项 | 是否影响主链 | 负责人/完成条件 |
+|---|---|---|---|
+| P0 | 真实 XDR OpenAPI 路径、鉴权和返回字段映射未确认。 | 不影响固定 JSONL 主链；影响真实平台演示。 | 平台接口资料明确后，由平台适配器负责人实现。 |
+| P1 | 未实现跨资产、跨设备和跨场景攻击图谱。 | 不影响当前最小关联。 | 获得评估数据和业务规则后扩展。 |
+| P1 | 真实平台超时、限流和重试未实现。 | 不影响固定样例。 | 真实客户端开发时补齐。 |
 
-## 7. 关键设计决策
+## 9. 运行观测、版本兼容与迁移
 
-| 决策 | 原因 | 未采用方案及原因 |
-|---|---|---|
-| 保留唯一 `ToolDispatcher` | 避免多套注册表和错误契约分叉 | 不新建 XDR 专用调度器，避免业务链选择入口 |
-| 使用 handler 映射分发 | 工具扩展简单，测试可注入 | 不在 service 中写大量工具名条件分支 |
-| 通过 `extra_handlers` 扩展或覆盖 | 真实平台可覆盖默认 `xdr_log_query`，不破坏现有样例 | 不直接把 HTTP 调用写进固定/JSONL 样例适配器 |
-| 统一使用 `ToolRequest` / `ToolResult` | 保持审计、错误和副作用字段一致 | 不为真实 XDR 新建平行响应模型 |
-| 未知工具返回结构化错误 | 上层可以识别并选择其他工具 | 不抛出未捕获 `KeyError`，不返回模糊空值 |
-| 固定样例 fallback 必须显式启用并标源 | 防止演示数据被误认为真实数据 | 不允许平台失败后静默伪装成功 |
-
-## 8. 非功能、可观测与审计要求
-
-| 维度 | 当前要求或设计 | 验证方式 |
-|---|---|---|
-| 性能与时延 | 记录 `duration_ms`；真实平台超时应受 `timeout_seconds` 和配置限制 | 单元/集成测试及运行日志 |
-| 稳定性与可重复性 | 固定样例与 JSONL 样例可重复；有状态 Mock 在同一 ledger 生命周期内保持状态 | `tests/test_mvp_tool.py`、集成测试 |
-| 可观测性 | 返回状态、摘要、平台状态、错误类型、重试属性及输出预览 | 检查 `ToolResult` |
-| 审计与追踪 | 保留 `call_id`、`trace_id`、`event_id`、`idempotency_key`、尝试次数和时间字段 | 工具契约测试与结果记录 |
-| 数据来源 | 固定、JSONL、内置 XDR 和未来真实 XDR 必须可区分 | 检查 `source`、引用前缀和输出来源标识 |
-
-## 9. 当前限制与后续事项
-
-| 限制或未实现项 | 对主链影响 | 后续条件/负责人 |
-|---|---|---|
-| `handle_xdr_query()` 当前固定返回一条内置 SQL 注入日志 | 不阻塞固定样例主链；阻塞真实 XDR 验证 | 获得 XDR 接口、权限、鉴权和脱敏样例后实现真实 adapter |
-| 真实 XDR 配置名称和接口字段尚未确认 | 不阻塞当前样例链 | 平台负责人确认，杨嘉琪完成适配说明 |
-| 真实平台错误码映射尚未实测 | 不阻塞当前样例链 | 取得成功、空结果和错误响应样例后补测 |
-| Stateful Mock 状态仅保存在内存中 | 不阻塞演示；不能作为真实动作记录 | 真实动作由响应模块另行设计持久化和审批 |
-| Windows 缺少 `tzdata` 时无法加载 `Asia/Shanghai` | 不影响 Linux 主链；影响部分 Windows 本地测试 | Windows `.venv` 安装 `tzdata` |
-| XDR OpenAPI、MCP、FastGPT/OpenClaw 真实接入未完成 | 当前不阻塞固定样例主链 | 按平台优先级逐项接入和复验 |
+- 日志与关键指标位置：当前 MVP 主要通过 `EventContext.timeline`、`errors`、`alert_refs`、`event_summary` 和测试输出观测；未实现独立监控指标或集中日志平台。
+- 健康检查或运行状态判断：主流程关注 `status`、`timeline`、`triage.risk_score`、`response.execution` 和 `response.verification`；HTTP 服务健康检查见 `GET /health`。
+- 兼容的接口/Schema/平台版本：固定样例契约为 `NormalizedAlertRecord`，`schema_version=2026-08-21.mvp.v1`；仅支持仓库内固定 JSONL 结构。
+- 升级、迁移或回退注意事项：调整字段映射、风险种子或关联条件时必须同步更新固定 JSONL、映射说明和回归测试；真实平台适配器应新增实现，不应破坏 `PlatformAdapter` 与 `AlertRecord` 契约。
 
 ## 10. 变更记录
 
-| 日期 | PR/Commit | 变更内容 | 是否复验 |
+| 日期 | PR/Commit | 实现变化 | 相关测试 |
 |---|---|---|---|
-| 2026-08-26 | `5defad5e6d8a44fdb601d844d876f25544f479d` | `T0826-07`：平台工具调度器目标测试复验及 Windows `tzdata` 问题记录 | 是 |
-| 2026-08-28 | `95defad5e6d8a44fdb601d844d876f25544f479d` | `T0827-05`：统一调度结构复核、五类工具复测和真实 XDR 就绪设计补充 | 是 |
+| 2026-08-25 | PR #17 / `1a5bbf1` | 新增告警关联专项回归与固定 JSONL 主链验证。 | `tests/test_alert_correlation_regression.py`、`test_raw_jsonl_ingest_and_correlation.py`、`test_jsonl_platform.py`。 |
+| 2026-08-25 | PR #17 后续提交 | 对齐团队开发说明模板，补充运行、配置、调用、异常、安全、边界、限制与兼容性信息。 | 文档事实对照同一 GitHub main 基线复核。 |
+| 2026-08-26 | PR #17 后续联调提交 | 在最新 `main@95defad` 上重放 PR #17，复验 JSONL 固定样例接入、关联和主链调用。 | 专项 17 项、全量 79 项通过，框架 skipped 1；raw WebShell 主链到 `COMPLETED`。 |
+| 2026-08-27 | PR #22 / `5ea5a53` | 在不改动上述 8 月 25 26 日历史内容和变更记录的前提下，新增真实 XDR 输入契约、字段映射、脱敏结构样例及接入前验证准备；未新增真实客户端代码。 | `test_xdr_input_contract.py` 4 项通过；既有 JSONL/关联回归 17 项通过。 |
+| 2026-08-28 | T0828-06 | 实现 `XdrOpenApiAdapter` 并完成真实字段映射逻辑，支持真实响应结构解析。 | `test_xdr_real_contract.py` 4 项通过；既有回归保持通过。 |
 
+## 11. T0827-06 补充：真实 XDR 输入适配准备
+
+本节追加于原开发说明之后，原有 `raw_jsonl.py`、`jsonl_sample.py`、`AlertIngestService`、`AlertCorrelationService`、`Orchestrator` 和风险研判实现说明均继续有效。本轮交付不修改 `src/` 目录中的平台读取、关联、调查或 MCP 代码；它提供真实 XDR 接入实施前的输入契约和回归护栏，使未来适配器能够以 PR #17 已复验的下游链路为目标接入。
+
+### 11.1 当前代码边界
+
+当前 `src/sec_agent/platforms/base.py` 已定义 `PlatformAdapter.fetch_alerts(sample_id, xdr_event_id)` 这一统一读取边界。`src/sec_agent/platforms/raw_jsonl.py` 负责固定 raw JSONL 到 `NormalizedAlertRecord` 的受控标准化，`src/sec_agent/platforms/jsonl_sample.py` 负责 raw/normalized 固定样例到 `AlertRecord` 的适配；二者是离线 fallback 和回归实现，不是 XDR OpenAPI 客户端。
+
+`src/sec_agent/services/ingest.py` 对 `source="xdr"` 仍抛出 `NotImplementedError`，原因是 XDR OpenAPI 路径、鉴权和字段映射尚未确认；容器层也没有注册 `PLATFORM_BACKEND=xdr_openapi`。因此，PR #22 当前实现状态应表述为“**真实 XDR 输入契约与脱敏样例已准备，真实读取适配器尚未实现**”，不能表述为真实接口已连通。
+
+### 11.2 本轮新增材料与实施作用
+
+| 文件 | 作用 | 与既有实现的衔接 |
+|---|---|---|
+| `docs/modules/platform-tools/xdr_input_contract.md` | 定义真实 XDR 的最小输入、必填/可选字段、错误、零记录、分页、去重、脱敏与接入日验收规则。 | 规定未来适配器输出应满足 `NormalizedAlertRecord`/`AlertRecord` 的下游语义。 |
+| `docs/modules/platform-tools/xdr_field_mapping.csv` | 提供 14 条机器可读映射，包括来源确定性、缺失处理和敏感信息限制。 | 历史结构已确认字段和接入日候选字段分列；候选字段不得当作厂商官方 schema。 |
+| `tests/fixtures/xdr_contract/xdr_list_alerts_request_sanitized.json` | 表达含时区时间窗口、筛选、分页和本地认证边界的请求结构。 | 不包含可执行端点、认证头或凭据。 |
+| `tests/fixtures/xdr_contract/xdr_list_alerts_response_sanitized.json` | 表达最小记录、分页、零记录和证据引用结构。 | 使用语义化占位符和 RFC 5737 文档地址，不是平台原始响应。 |
+| `tests/test_xdr_input_contract.py` | 验证上述结构、字段规则、资产/设备回退和脱敏边界。 | 防止后续真实适配器的字段设计破坏既有回归契约。 |
+
+### 11.3 未来适配器的最小实现顺序
+
+1. 平台负责人仅在本地受控环境确认只读 XDR schema、认证、TLS、允许查询范围、分页模型和限流约束，不向仓库、PR 或群聊提交真实值。
+2. 新增独立的 `src/sec_agent/platforms/xdr_openapi.py`，实现 `PlatformAdapter.fetch_alerts(...)`。该适配器只能负责请求构造、响应解析、固定时间窗口、分页、稳定 ID 去重、字段标准化、结构化错误和受控证据引用。
+3. 按 [xdr_field_mapping.csv](xdr_field_mapping.csv) 将输入转换为 `NormalizedAlertRecord` 或等价标准化对象，再输出与现有 `JsonlSampleAdapter` 相同语义的 `AlertRecord`。下游 `services/` 不应直接解析厂商 JSON。
+4. 强制保持既有规则：稳定 ID、可解析且带时区的时间、非空告警名称、可映射严重性、来源设备和最少一个审计证据引用为最小条件；`destination_ip` 优先，只有缺失时回退 `host_ip`；XDR 优先 `source_device_name`，再回退 `data_source`，最终回退 `XDR`。
+5. 不得将固定专项规则扩展为通用平台规则：SQLi 保持 `high/80`，横向移动保持 `medium/65` 和 `synthetic_regression`；仅“WebShell蚁剑工具文件管理 + 高危”的固定专项样例为 `critical/95`。真实 XDR 严重性必须由接入日确认的枚举经受控词典映射。
+6. 在容器层注册真实后端前，补充认证、超时、平台错误、响应校验、分页、跨页去重和零记录测试，然后复跑原有固定 JSONL/关联回归，确认真实输入只替换上游来源而不破坏现有链路。
+
+### 11.4 错误、零记录与 MCP 分工
+
+真实 XDR 读取中，认证/授权失败应分类为 `auth`；网络问题为 `timeout`；非成功响应和结构解析失败分别为 `platform_error`/`validation`。请求成功而 `records=[]` 必须记为 `success + zero_records`，既不是连接失败，也不得产生虚构告警或 `SecurityEvent`。读取型网络重试只能在固定时间窗口与同一幂等审计上下文内执行。
+
+真实 MCP 的“传输成功但业务空结果”与“连接/认证失败”的进一步代码区分，属于深度调查/MCP 负责人后续的专门改动；本轮不修改该模块，也不将固定样例 RFC 5737 地址用于真实 MCP 查询。这样可避免把平台数据可用性、调查证据不足和固定样例降级路径混为同一问题。
+
+### 11.5 本轮实际验证
+
+本轮已在隔离环境执行以下命令，未访问真实 XDR、真实 MCP 或网络：
+
+```bash
+env -u APP_ENV -u PLATFORM_BACKEND -u JSONL_INPUT_MODE \
+  PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_xdr_input_contract.py'
+
+env -u APP_ENV -u PLATFORM_BACKEND -u JSONL_INPUT_MODE \
+  PYTHONPATH=src python3 -m unittest \
+  tests.test_jsonl_platform \
+  tests.test_raw_jsonl_ingest_and_correlation \
+  tests.test_alert_correlation_regression
+```
+
+第一组命令运行 4 项 XDR 脱敏契约测试并返回 `OK`；第二组命令运行 17 项固定 JSONL/关联回归并返回 `OK`。这些结果只证明契约材料可解析且没有破坏既有离线主链，不证明真实 XDR API、真实 MCP、真实分页、认证或性能已经完成验证。
+
+
+## 12. 2026 年 8 月 29 日真实 XDR 接入收口（T0828-06）
+
+以下内容根据 2026 年 8 月 29 日真实 XDR 联调反馈追加，原文件 27 日及之前的章节、结构和变更记录全部保留。
+
+### 12.1 文档信息
+
+| 项目 | 内容 |
+|---|---|
+| 模块 | `platform-tools`（平台工具） |
+| 负责人 | 陈敏 |
+| 实现状态 | 真实 XDR 字段映射已完成；真实 `auth_code` 签名调用及 8 条真实数据联调结果以受控环境联调记录为准。 |
+| 基线方案 | 《2026年8月29日真实XDR告警输入接入解决方案》 |
+| 最后更新时间 | 2026-08-29 |
+
+### 12.2 真实接入实现细节
+
+#### 12.2.1 签名鉴权边界
+
+根据联调反馈，真实平台使用深信服标准的 HMAC-SHA256 签名方式，并通过 `XDR_AUTH_CODE` 进行受控联动。`XDR_AUTH_CODE` 及签名原文、签名结果、真实请求头和真实响应均不得写入仓库、PR、日志或文档。仓库只保留鉴权类型、配置变量名和非敏感调用边界。
+
+#### 12.2.2 字段映射与结构对齐
+
+针对 8 月 29 日确认的真实响应结构，字段映射规则如下：
+
+| 真实字段 | 处理规则 | 标准化去向 |
+|---|---|---|
+| `data.item` | 按单数 `item` 提取告警列表 | `NormalizedAlertRecord` 列表 |
+| `uuId` | 作为稳定事件标识并用于跨页去重 | `event_id` / `alert_id` |
+| `lastTime` | 按 Unix 秒或毫秒时间戳解析并转为带时区时间 | `event_time` / `occurred_at` |
+| `hostIp` | 在真实结构中优先作为受影响资产来源 | `affected_asset` / `assets` |
+| `dstIp` | 作为目的地址备选字段，按映射规则进入标准化记录 | `destination_ip` / `dst_ip` |
+
+真实值只在受控联调环境中使用；本仓库中的测试和示例仅记录字段存在性、类型、枚举和映射关系。
+
+#### 12.2.3 联调配置参考
+
+```dotenv
+PLATFORM_BACKEND=xdr_openapi
+XDR_AUTH_TYPE=auth_code
+XDR_AUTH_CODE=<受控注入>
+XDR_ALERTS_PATH=/api/xdr/v1/alerts/list
+XDR_ALLOW_FIXED_SAMPLE_FALLBACK=false
+```
+
+上述配置仅为变量名和占位符示例，不包含任何真实凭据。若当前代码分支的配置枚举尚未包含 `auth_code`，应先由负责真实接口鉴权的同学补齐配置和签名实现，再宣称真实 `auth_code` 调用已由代码复现；本节不以文档替代代码和实机验证。
+
+### 12.3 变更记录追加
+
+| 日期 | PR/Commit | 实现变化 | 相关测试 |
+|---|---|---|---|
+| 2026-08-29 | PR #28 | 根据真实联调反馈收口 `data.item`、`uuId`、`lastTime`、`hostIp`/`dstIp` 字段对齐，并记录 `auth_code` 受控签名边界。 | 真实只读联调记录；脱敏字段映射测试。 |
+| 2026-08-29 | 联调收口 | 真实 XDR 只读调用取得 8 条记录；原始响应和敏感值不进入 GitHub。 | 实机联调结果由受控环境保存。 |
+
+### 12.4 与下游任务的交接
+
+本节只收口陈敏负责的 T0828-06 字段映射和输入质量，不替代下游同学的 T0828-07 统一候选研判。下游使用统一候选 Commit 和运行方式，先运行固定告警样例并保留结果，再使用脱敏的 `NormalizedAlertRecord`/`AlertRecord` 对照原始字段、规则输出和差异。

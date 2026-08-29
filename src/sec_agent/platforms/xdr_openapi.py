@@ -41,6 +41,7 @@ class XdrOpenApiConfig:
     token: str | None = None
     access_key: str | None = None
     secret_key: str | None = None
+    auth_code: str | None = None
     alerts_path: str = "/api/v1/alerts"
     logs_path: str = "/api/v1/logs"
     connect_timeout_seconds: float = 5
@@ -89,9 +90,11 @@ class XdrOpenApiAdapter:
             raise ValueError("启用 PLATFORM_BACKEND=xdr_openapi 时必须配置 XDR_BASE_URL")
         if self._config.auth_type == "token" and not self._config.token:
             raise ValueError("XDR_AUTH_TYPE=token 时必须配置 XDR_TOKEN")
-        if self._config.auth_type == "aksk" and not (self._config.access_key and self._config.secret_key):
-            raise ValueError("XDR_AUTH_TYPE=aksk 时必须配置 XDR_ACCESS_KEY 和 XDR_SECRET_KEY")
-        if self._config.auth_type not in {"token", "aksk"}:
+        if self._config.auth_type == "auth_code" and not self._config.auth_code:
+            raise ValueError("XDR_AUTH_TYPE=auth_code 时必须配置 XDR_AUTH_CODE")
+        if self._config.auth_type == "aksk" and not (self._config.access_key and self._config.secret_key) and not self._config.auth_code:
+            raise ValueError("XDR_AUTH_TYPE=aksk 时必须配置凭据 (AK/SK 或 联动码)")
+        if self._config.auth_type not in {"token", "aksk", "auth_code"}:
             raise ValueError(f"不支持的 XDR_AUTH_TYPE: {self._config.auth_type}")
         if self._config.connect_timeout_seconds <= 0 or self._config.read_timeout_seconds <= 0:
             raise ValueError("XDR 连接超时和读取超时必须大于 0")
@@ -164,12 +167,16 @@ class XdrOpenApiAdapter:
         return self._ledger.query_action_status(idempotency_key)
 
     def _fetch_real_alerts(self, lookup_id: str | None) -> list[AlertRecord]:
-        params = {"event_id": lookup_id} if lookup_id else {"limit": 20}
+        # 根据 8/29 方案：使用 POST 方法，并按契约传参
+        params = {"page": 1, "pageSize": 10}
+        if lookup_id:
+            params["uuId"] = lookup_id
+            
         try:
-            response = self._session.get(
+            response = self._session.post(
                 self._endpoint(self._config.alerts_path),
-                headers=self._headers("GET", self._config.alerts_path, params),
-                params=params,
+                headers=self._headers("POST", self._config.alerts_path, params),
+                json=params,
                 timeout=self._timeout(),
             )
         except requests.Timeout as exc:
@@ -239,12 +246,18 @@ class XdrOpenApiAdapter:
             items = payload
         elif isinstance(payload, dict):
             data = payload.get("data", payload)
-            if isinstance(data, dict) and "items" in data:
-                items = data["items"]
-            elif isinstance(data, list):
-                items = data
+            if isinstance(data, dict):
+                # 精准对齐《XDR_OpenAPI更新版》：data 下的字段是 item (单数)
+                if "item" in data:
+                    items = data["item"]
+                elif "items" in data:
+                    items = data["items"]
+                else:
+                    items = [data]
+            elif isinstance(payload, list):
+                items = payload
             else:
-                items = [data]
+                items = [payload]
         else:
             raise ValueError("XDR 返回根节点必须为对象或数组")
 
@@ -260,27 +273,72 @@ class XdrOpenApiAdapter:
         return self._from_normalized(normalized)
 
     def _to_normalizer_raw(self, raw: Mapping[str, Any]) -> dict[str, Any]:
-        event_id = self._first_text(raw, "event_id", "alert_id", "id", "sample_id")
-        event_time = self._first_text(raw, "event_time", "alert_time", "occurred_at", "time", "created_at")
-        alert_name = self._first_text(raw, "alert_name", "rule_name", "name", "title")
+        # 根据 T0828 更新版文档，真实唯一标识为 uuId
+        event_id = raw.get("uuId") or self._first_text(raw, "event_id", "alert_id", "id", "sample_id")
+        
+        # 真实时间戳为 Unix 时间，优先使用最后发生时间
+        event_time = raw.get("lastTime") or raw.get("firstTime") or \
+                     self._first_text(raw, "event_time", "alert_time", "occurred_at", "time", "created_at")
+        
+        alert_name = raw.get("name") or self._first_text(raw, "alert_name", "rule_name", "title")
+        
         if not event_id or not event_time or not alert_name:
-            raise ValueError("缺少 event_id/alert_time/alert_name 等主链必需字段")
+            raise ValueError("缺少 uuId/lastTime/name 等主链必需字段")
+
+        # 严重度数值转换：真实观察到 50, 70 等数值
+        raw_sev = raw.get("severity", 50)
+        severity = "高危" if (isinstance(raw_sev, int) and raw_sev >= 70) else "中危"
+
+        # 资产提取：真实 hostIp 映射到 destination_ip
+        dest_ip = raw.get("hostIp") or self._first_list_text(raw, "dstIp") or \
+                  self._first_text(raw, "destination_ip", "dst_ip", "dst", "affected_asset")
+        
+        # 来源设备：真实 devSourceName
+        dev_source = "XDR"
+        if raw.get("devSourceName") and isinstance(raw["devSourceName"], list) and raw["devSourceName"]:
+            dev_source = raw["devSourceName"][0]
+
         return {
             "sample_id": event_id,
             "sample_nature": "platform_derived",
             "sample_source": "XDR 安全告警分析",
             "alert_time": event_time,
             "alert_name": alert_name,
-            "alert_grade": self._first_text(raw, "alert_grade", "severity", "raw_severity", "level") or "中危",
-            "alert_classification": self._first_text(raw, "alert_classification", "category", "type"),
-            "source_ip": self._first_text(raw, "source_ip", "src_ip", "src"),
-            "source_port": raw.get("source_port", raw.get("src_port")),
-            "destination_ip": self._first_text(raw, "destination_ip", "dst_ip", "dst", "affected_asset"),
-            "destination_port": raw.get("destination_port", raw.get("dst_port")),
-            "host_ip": self._first_text(raw, "host_ip", "asset_ip"),
-            "data_source": self._first_text(raw, "data_source") or "XDR",
-            "source_device_name": self._first_text(raw, "source_device_name", "device_name") or "XDR",
+            "alert_grade": severity,
+            "alert_classification": raw.get("threatClassDesc") or self._first_text(raw, "alert_classification", "category", "type"),
+            "source_ip": self._first_list_text(raw, "srcIp") or self._first_text(raw, "source_ip", "src_ip", "src"),
+            "source_port": self._first_list_int(raw, "srcPort") or raw.get("source_port", raw.get("src_port")),
+            "destination_ip": dest_ip,
+            "destination_port": self._first_list_int(raw, "dstPort") or raw.get("destination_port", raw.get("dst_port")),
+            "host_ip": raw.get("hostIp") or self._first_text(raw, "host_ip", "asset_ip"),
+            "data_source": "Sangfor XDR",
+            "source_device_name": dev_source,
+            # 携带真实扩展字段
+            "scenario_fields": {
+                "gpt_result_desc": raw.get("gptResultDescription"),
+                "confidence": raw.get("confidence"),
+                "attack_stage": raw.get("attackStage") or raw.get("stage"),
+                "attck_technique": raw.get("attckTechnique"),
+                "traceback_ids": raw.get("traceBackId"),
+            }
         }
+
+    def _first_list_text(self, raw: Mapping[str, Any], *keys: str) -> str | None:
+        for key in keys:
+            val = raw.get(key)
+            if isinstance(val, list) and val:
+                return str(val[0])
+        return None
+
+    def _first_list_int(self, raw: Mapping[str, Any], *keys: str) -> int | None:
+        for key in keys:
+            val = raw.get(key)
+            if isinstance(val, list) and val:
+                try:
+                    return int(val[0])
+                except (ValueError, TypeError):
+                    continue
+        return None
 
     def _from_normalized(self, record: NormalizedAlertRecord) -> AlertRecord:
         scenario_fields = {
@@ -463,9 +521,34 @@ class XdrOpenApiAdapter:
         return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
     def _headers(self, method: str, path: str, params: Mapping[str, Any] | None = None) -> dict[str, str]:
+        # 优先支持联动码签名 (auth_code)，这是 8/29 联调确认的正式方式
+        if (self._config.auth_type in {"auth_code", "aksk"}) and self._config.auth_code:
+            return self._auth_code_headers(method, path, params or {})
+        
         if self._config.auth_type == "token":
             return {"Authorization": f"Bearer {self._config.token}"}
+        
         return self._aksk_headers(method, path, params or {})
+
+    def _auth_code_headers(self, method: str, path: str, params: Mapping[str, Any]) -> dict[str, str]:
+        timestamp = str(int(time.time()))
+        import uuid
+        nonce = str(uuid.uuid4())
+        body_str = json.dumps(params, separators=(',', ':'))
+        # 签名算法：HMAC-SHA256(auth_code, method + path + timestamp + nonce + body)
+        string_to_sign = f"{method}{path}{timestamp}{nonce}{body_str}"
+        signature = hmac.new(
+            (self._config.auth_code or "").encode(),
+            string_to_sign.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        return {
+            "Content-Type": "application/json",
+            "x-auth-code": self._config.auth_code or "",
+            "x-timestamp": timestamp,
+            "x-nonce": nonce,
+            "x-signature": signature
+        }
 
     def _aksk_headers(self, method: str, path: str, params: Mapping[str, Any]) -> dict[str, str]:
         timestamp = str(int(time.time()))
