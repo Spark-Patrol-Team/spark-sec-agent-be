@@ -144,6 +144,11 @@ def _to_tool_result(result: Any) -> ToolResult:
             return ToolResult(status="failed", error=msg, summary=f"查询失败：{msg}")
         if _is_empty_data(data):
             return ToolResult(status="partial", summary="查询成功但无数据", data=[])
+    # XDR「网络安全数据查询」等非 dbproxy 契约工具：返回 text 为空（如
+    # vul_资产关联漏洞数据查询 命中不到数据时 content[0].text 为空串）应视为
+    # “成功但无数据”，而不是 success + 空摘要，避免 Agent 把“无数据”误当“出错”。
+    if not text or not text.strip():
+        return ToolResult(status="partial", summary="查询成功但无数据", data=[])
     return ToolResult(summary=text)
 
 

@@ -99,6 +99,15 @@ class TestNonDbproxyTool(unittest.TestCase):
         result = _to_tool_result(_content_result('{"answer":"ok","score":0.9}'))
         self.assertEqual(result.status, "success")
 
+    def test_empty_text_is_partial(self):
+        # XDR「网络安全数据查询」的 vul_资产关联漏洞数据查询 命中不到数据时
+        # content[0].text 为空串（isError 仍为 false），应识别为“成功但无数据”，
+        # 而不是 success + 空摘要，避免 Agent 把“无数据”误当“出错”。
+        result = _to_tool_result(_content_result(""))
+        self.assertEqual(result.status, "partial")
+        self.assertIn("无数据", result.summary)
+        self.assertIn("部分成功", result.to_str())
+
 
 class TestMCPToolEndToEnd(unittest.TestCase):
     """MCPTool.call 端到端：按契约返回后，调查 Agent 能正常消费。"""
