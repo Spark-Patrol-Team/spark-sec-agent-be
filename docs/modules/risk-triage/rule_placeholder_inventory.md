@@ -75,3 +75,9 @@
 - 进入真实数据后，按 `calibration_template.md` 逐条记录「原始字段 → 标准化字段 → 当前规则期望输出 → 真实 / 人工结论 → 差异」。
 - 优先校准 `VERDICT_CONFIDENCE`，再协同校准 `SEVERITY_POINTS` / `ATTACK_TYPE_POINTS` / `CORRELATION_BONUS` / 两条阈值。
 - 任一常量调整后，跑 `pytest tests/test_triage.py tests/test_state_flow.py` 并同步更新 `design.md`、`test.md`。
+
+> **T0828-07 观测更新（2026-08-29）**：已用陈敏交付的真实 XDR 列表响应（脱敏）完成首轮真实现观测，记录见
+> `real_xdr_observation_record_20260829.md` / `real_xdr_calibration_record_20260829.csv`。真实事件
+> `alert-20260828-0001` 走通完整主链并落在 `APPROVAL_REQUIRED`。真实平台已返回 `confidence=95`，但当前规则仍输出
+> `VERDICT_CONFIDENCE` 固定档位 `0.85`。**本观测不触发校准，`VERDICT_CONFIDENCE` 仍为占位**；单条真实事件不
+> 等于完成统计校准，需累积足够样本后再调整并同步 `design.md` / `test.md`。

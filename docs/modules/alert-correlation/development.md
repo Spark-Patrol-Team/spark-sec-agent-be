@@ -10,7 +10,7 @@
 | 实现状态 | 已复验 |
 | 能力性质 | 自研代码 + 固定 JSONL fallback + Mock 主链；真实 XDR/MCP 未接入。 |
 | 关联任务/需求 | `T0826-06`｜固定 JSONL 告警接入关联回归与文档补齐。 |
-| 关联正式交付章节 | `docs/deliverables/系统开发与运行说明.md`：第 8 章主流程说明、第 9 章模块说明与接入位置、第 11 章测试与验证。 |
+| 关联正式交付章节 | `docs/deliverables/system-development-and-operation-guide.md`：第 8 章主流程说明、第 9 章模块说明与接入位置、第 11 章测试与验证。 |
 | 对应 PR 或 Commit | PR #17；`1a5bbf1`（后续模板对齐提交追加至同一 PR）。 |
 | 适用代码版本 | `main@95defad` 加 PR #17 内容（隔离工作区重放并联调）。 |
 | 最后更新时间 | 2026-08-26 |

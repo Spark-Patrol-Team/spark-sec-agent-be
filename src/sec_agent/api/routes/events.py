@@ -35,6 +35,9 @@ def list_events(orchestrator: Orchestrator = Depends(get_orchestrator)) -> list[
                 trace_id=ctx.trace_id,
                 status=ctx.status,
                 source=ctx.source,
+                requested_source=ctx.requested_source,
+                effective_source=ctx.effective_source,
+                fallback_source=ctx.fallback_source,
                 summary=ctx.event_summary.summary if ctx.event_summary else None,
             )
         )

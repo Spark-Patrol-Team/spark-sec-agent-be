@@ -26,6 +26,7 @@ def build_platform_tool_dispatcher(
     raw_result_prefix: str,
     action_ref_prefix: str,
     source_label: str,
+    xdr_log_query_handler: ToolHandler | None = handle_xdr_query,
     extra_handlers: Mapping[str, ToolHandler] | None = None,
 ) -> ToolDispatcher:
     handlers: dict[str, ToolHandler] = {
@@ -45,9 +46,10 @@ def build_platform_tool_dispatcher(
             raw_result_prefix=raw_result_prefix,
             source_label=source_label,
         ),
-        "xdr_log_query": handle_xdr_query,
         "stateful_mock": handle_stateful_mock,
     }
+    if xdr_log_query_handler is not None:
+        handlers["xdr_log_query"] = xdr_log_query_handler
     if extra_handlers:
         handlers.update(extra_handlers)
     return ToolDispatcher(handlers)

@@ -366,6 +366,39 @@
             "type": "string",
             "title": "Source"
           },
+          "requested_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Source"
+          },
+          "effective_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Source"
+          },
+          "fallback_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Source"
+          },
           "alert_refs": {
             "items": {
               "type": "string"
@@ -458,6 +491,39 @@
           "source": {
             "type": "string",
             "title": "Source"
+          },
+          "requested_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Source"
+          },
+          "effective_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Source"
+          },
+          "fallback_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Source"
           },
           "summary": {
             "anyOf": [

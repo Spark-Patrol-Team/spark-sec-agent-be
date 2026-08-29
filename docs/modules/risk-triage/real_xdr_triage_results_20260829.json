@@ -1,0 +1,50 @@
+[
+  {
+    "sample_id": "alert-20260828-0001",
+    "sample_nature": "platform_derived",
+    "source": "xdr_openapi",
+    "source_device_type": "XDR",
+    "source_device_name": "XDR",
+    "rule_name": "WebShell_Detection_Rule",
+    "name": "WebShell 攻击行为 (AntSword)",
+    "severity": "high",
+    "alert_type": "webshell",
+    "risk_score_seed": 80,
+    "alert_count_before": 1,
+    "rule_score": 70,
+    "risk_score": 80,
+    "verdict": "malicious",
+    "confidence": 0.85,
+    "priority": "high",
+    "should_investigate": true,
+    "supporting_count": 7,
+    "supporting_evidence_refs": [
+      "alert-20260828-0001:alert_time",
+      "alert-20260828-0001:alert_name",
+      "alert-20260828-0001:alert_grade",
+      "alert-20260828-0001:alert_classification",
+      "alert-20260828-0001:source_ip",
+      "alert-20260828-0001:destination_ip",
+      "alert-20260828-0001:host_ip"
+    ],
+    "opposing_evidence_refs": [],
+    "evidence_gaps": [],
+    "summary": "规则基线判断为高风险，需要进入深度调查补充证据并生成处置建议",
+    "platform_confidence": 95,
+    "gpt_result_desc": "检测到明显的蚁剑 WebShell 连接特征，攻击者正在尝试执行系统命令。",
+    "attack_stage": "Lateral Movement",
+    "raw_fields": {
+      "uuId": "alert-20260828-0001",
+      "name": "WebShell 攻击行为 (AntSword)",
+      "firstTime": 1724810000,
+      "lastTime": 1724810900,
+      "hostIp": "198.51.100.10",
+      "srcIp": "203.0.113.5",
+      "severity": "high",
+      "confidence": 95,
+      "gpt_result_desc": "检测到明显的蚁剑 WebShell 连接特征，攻击者正在尝试执行系统命令。",
+      "ruleName": "WebShell_Detection_Rule",
+      "attackStage": "Lateral Movement"
+    }
+  }
+]
