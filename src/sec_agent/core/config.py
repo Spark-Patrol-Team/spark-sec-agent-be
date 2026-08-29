@@ -34,8 +34,9 @@ class Settings(BaseModel):
     xdr_token: str | None = None
     xdr_access_key: str | None = None
     xdr_secret_key: str | None = None
-    xdr_alerts_path: str = "/api/v1/alerts"
+    xdr_alerts_path: str = "/api/xdr/v1/alerts/list"
     xdr_logs_path: str = "/api/v1/logs"
+    xdr_page_size: int = 10
     xdr_connect_timeout_seconds: float = 5
     xdr_read_timeout_seconds: float = 30
     xdr_startup_check: bool = True
@@ -71,8 +72,9 @@ def load_settings() -> Settings:
         xdr_token=os.getenv("XDR_TOKEN") or None,
         xdr_access_key=os.getenv("XDR_ACCESS_KEY") or None,
         xdr_secret_key=os.getenv("XDR_SECRET_KEY") or None,
-        xdr_alerts_path=os.getenv("XDR_ALERTS_PATH", "/api/v1/alerts"),
+        xdr_alerts_path=os.getenv("XDR_ALERTS_PATH", "/api/xdr/v1/alerts/list"),
         xdr_logs_path=os.getenv("XDR_LOGS_PATH", "/api/v1/logs"),
+        xdr_page_size=int(os.getenv("XDR_PAGE_SIZE", "10")),
         xdr_connect_timeout_seconds=parse_float(os.getenv("XDR_CONNECT_TIMEOUT_SECONDS", "5")),
         xdr_read_timeout_seconds=parse_float(os.getenv("XDR_READ_TIMEOUT_SECONDS", "30")),
         xdr_startup_check=parse_bool(os.getenv("XDR_STARTUP_CHECK", "true")),

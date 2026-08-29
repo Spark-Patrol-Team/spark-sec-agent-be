@@ -182,7 +182,9 @@ class RawJsonlNormalizer:
     @staticmethod
     def _event_type(name: str) -> str:
         normalized = name.lower()
-        if "sql" in normalized and "注入" in name:
+        if "sql" in normalized and ("注入" in name or "sa" in name or "数据库" in name or "密码" in name):
+            return "sql_injection"
+        if "sql" in normalized:
             return "sql_injection"
         if "webshell" in normalized or "蚁剑" in name:
             return "webshell"

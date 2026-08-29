@@ -1,3 +1,4 @@
 记录ID,日期,来源类型,原始样例ID,实际严重度,实际攻击类型,种子分,关联前告警数,规则分,期望verdict,期望priority,期望should_investigate,期望confidence,真实/人工结论,期望vs真实差异,需校准常量,备注
 R-101,2026-08-29,XDR告警,alert-20260828-0001,high,webshell,80,1,70,malicious,high,True,0.85,malicious,一致,VERDICT_CONFIDENCE（占位）,真实XDR列表响应脱敏样例：severity=high；平台已给confidence=95但规则仍输出占位0.85
 R-102,2026-08-29,XDR告警,alert-20260828-0001,high,webshell,80,1,70,malicious,high,True,0.85,malicious,与固定样例FIX-XDR-WEBSHELL-001差异：critical/95→high/80,SEVERITY_POINTS/种子派生规则,固定样例被标准化器升级为critical/95，真实平台为high/80
+R-103,2026-08-29,XDR告警,alert-9fd0c034-ba09-4311-8360-cf1787206450,高危,sql_injection,80,1,60,malicious,high,True,0.85,malicious,一致,VERDICT_CONFIDENCE（占位）,真实XDR OpenAPI(POST/aksk)实机8条非空；平台GPT“真实攻击成功”；待处置；src=192.168.100.100 dst=192.168.100.200

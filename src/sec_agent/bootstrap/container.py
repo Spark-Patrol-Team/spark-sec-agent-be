@@ -53,6 +53,7 @@ def _build_platform(settings: Settings) -> PlatformAdapter:
                 secret_key=settings.xdr_secret_key,
                 alerts_path=settings.xdr_alerts_path,
                 logs_path=settings.xdr_logs_path,
+                page_size=settings.xdr_page_size,
                 connect_timeout_seconds=settings.xdr_connect_timeout_seconds,
                 read_timeout_seconds=settings.xdr_read_timeout_seconds,
                 startup_check=settings.xdr_startup_check,

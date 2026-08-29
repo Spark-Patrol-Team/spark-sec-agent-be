@@ -42,8 +42,9 @@ class XdrOpenApiConfig:
     token: str | None = None
     access_key: str | None = None
     secret_key: str | None = None
-    alerts_path: str = "/api/v1/alerts"
+    alerts_path: str = "/api/xdr/v1/alerts/list"
     logs_path: str = "/api/v1/logs"
+    page_size: int = 10
     connect_timeout_seconds: float = 5
     read_timeout_seconds: float = 30
     startup_check: bool = True
@@ -98,11 +99,13 @@ class XdrOpenApiAdapter:
             raise ValueError("XDR 连接超时和读取超时必须大于 0")
 
     def preflight_check(self) -> None:
+        request_body = {"page": 1, "pageSize": self._config.page_size}
+        body_bytes = json.dumps(request_body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         try:
-            response = self._session.get(
+            response = self._session.post(
                 self._endpoint(self._config.alerts_path),
-                headers=self._headers("GET", self._config.alerts_path, {"limit": 1}),
-                params={"limit": 1},
+                headers=self._headers("POST", self._config.alerts_path, None, body=body_bytes),
+                json=request_body,
                 timeout=self._timeout(),
             )
         except requests.Timeout as exc:
@@ -165,12 +168,13 @@ class XdrOpenApiAdapter:
         return self._ledger.query_action_status(idempotency_key)
 
     def _fetch_real_alerts(self, lookup_id: str | None) -> list[AlertRecord]:
-        params = {"event_id": lookup_id} if lookup_id else {"limit": 20}
+        request_body = {"page": 1, "pageSize": self._config.page_size}
+        body_bytes = json.dumps(request_body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         try:
-            response = self._session.get(
+            response = self._session.post(
                 self._endpoint(self._config.alerts_path),
-                headers=self._headers("GET", self._config.alerts_path, params),
-                params=params,
+                headers=self._headers("POST", self._config.alerts_path, None, body=body_bytes),
+                json=request_body,
                 timeout=self._timeout(),
             )
         except requests.Timeout as exc:
@@ -225,7 +229,7 @@ class XdrOpenApiAdapter:
             ) from exc
 
         try:
-            return [self._to_alert_record(item) for item in self._extract_items(payload)]
+            records = [self._to_alert_record(item) for item in self._extract_items(payload)]
         except (RawAlertNormalizationError, KeyError, TypeError, ValueError, ValidationError) as exc:
             raise PlatformIngestError(
                 kind="field_mapping",
@@ -234,6 +238,20 @@ class XdrOpenApiAdapter:
                 allow_fallback=False,
                 platform_status=str(response.status_code),
             ) from exc
+        if lookup_id:
+            return self._filter_lookup_records(records, lookup_id)
+        return records
+
+    def _filter_lookup_records(self, records: list[AlertRecord], lookup_id: str) -> list[AlertRecord]:
+        matched = [record for record in records if record.alert_id == lookup_id]
+        if not matched:
+            raise PlatformIngestError(
+                kind="empty_result",
+                message=f"XDR OpenAPI 列表未匹配到告警 {lookup_id}",
+                retryable=True,
+                allow_fallback=self._config.allow_fixed_sample_fallback,
+            )
+        return matched
 
     def _extract_items(self, payload: Any) -> list[Mapping[str, Any]]:
         if isinstance(payload, list):
@@ -527,17 +545,31 @@ class XdrOpenApiAdapter:
         base_url = self._config.base_url or ""
         return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
-    def _headers(self, method: str, path: str, params: Mapping[str, Any] | None = None) -> dict[str, str]:
+    def _headers(
+        self,
+        method: str,
+        path: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        body: bytes | None = None,
+    ) -> dict[str, str]:
         if self._config.auth_type == "token":
             return {"Authorization": f"Bearer {self._config.token}"}
-        return self._aksk_headers(method, path, params or {})
+        return self._aksk_headers(method, path, params or {}, body=body)
 
-    def _aksk_headers(self, method: str, path: str, params: Mapping[str, Any]) -> dict[str, str]:
+    def _aksk_headers(
+        self,
+        method: str,
+        path: str,
+        params: Mapping[str, Any],
+        *,
+        body: bytes | None = None,
+    ) -> dict[str, str]:
         timestamp = str(int(time.time()))
         nonce = secrets.token_hex(16)
         canonical_path = urlsplit(path).path or "/"
         canonical_query = self._canonical_query(params)
-        body_sha256 = hashlib.sha256(b"").hexdigest()
+        body_sha256 = hashlib.sha256(body or b"").hexdigest()
         canonical = "\n".join(
             [
                 method.upper(),

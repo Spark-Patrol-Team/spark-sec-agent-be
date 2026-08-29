@@ -35,7 +35,13 @@ class FakeSession:
         self.calls = []
 
     def get(self, url, **kwargs):
-        self.calls.append((url, kwargs))
+        self.calls.append(("GET", url, kwargs))
+        if self.exc:
+            raise self.exc
+        return self.response
+
+    def post(self, url, **kwargs):
+        self.calls.append(("POST", url, kwargs))
         if self.exc:
             raise self.exc
         return self.response
@@ -95,7 +101,9 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(ctx.triage.risk_score, 95)
         self.assertEqual(ctx.response.plan.target, "198.51.100.11")
         self.assertTrue(session.calls)
-        self.assertEqual(session.calls[0][1]["params"], {"event_id": "REAL-XDR-WEBSHELL-001"})
+        self.assertEqual(session.calls[0][0], "POST")
+        self.assertEqual(session.calls[0][1], "https://xdr.example.test/api/xdr/v1/alerts/list")
+        self.assertEqual(session.calls[0][2]["json"], {"page": 1, "pageSize": 10})
 
     def test_auth_failure_fails_without_fixed_sample_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(
@@ -196,7 +204,7 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(result.raw_result_ref, f"xdr://openapi/logs/{result.call_id}")
         self.assertNotIn("builtin://xdr-log-query", result.raw_result_ref)
         self.assertEqual(result.output_preview["records"], [{"rule_name": "真实XDR日志"}])
-        self.assertEqual(session.calls[0][0], "https://xdr.example.test/openapi/logs")
+        self.assertEqual(session.calls[0][1], "https://xdr.example.test/openapi/logs")
 
     def test_xdr_log_query_can_use_injected_handler(self) -> None:
         def injected_handler(request: ToolRequest) -> ToolResult:
@@ -279,7 +287,72 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(record.scenario_fields.get("stage"), "Lateral Movement")
         self.assertIn("gpt_result_desc", record.scenario_fields)
         self.assertTrue(session.calls)
-        self.assertEqual(session.calls[0][1]["params"], {"event_id": "alert-20260828-0001"})
+        self.assertEqual(session.calls[0][0], "POST")
+        self.assertEqual(session.calls[0][1], "https://xdr.example.test/api/xdr/v1/alerts/list")
+        self.assertEqual(session.calls[0][2]["json"], {"page": 1, "pageSize": 10})
+
+    def test_real_xdr_aksk_list_contract_sql_alert_flows_to_approval(self) -> None:
+        """真实 XDR OpenAPI(doc: 8/29) AK/SK 联动码签名 + POST /api/xdr/v1/alerts/list。
+        响应外层 {code,message,data:{total,page,pageSize,item}}，告警唯一标识为 uuId。
+        以李雨妍建议的 alert-9fd0c034-…（SQL server sa 账户密码攻击，高危/待处置）验证主链。
+        """
+        payload = {
+            "code": "Success",
+            "message": "成功",
+            "data": {
+                "total": 8,
+                "page": 1,
+                "pageSize": 10,
+                "item": [
+                    {
+                        "uuId": "alert-9fd0c034-ba09-4311-8360-cf1787206450",
+                        "name": "SQL server数据库查询sa账户密码攻击",
+                        "firstTime": 1785110400,
+                        "severity": "高危",
+                        "srcIp": "192.168.100.100",
+                        "dstIp": "192.168.100.200",
+                        "hostIp": "192.168.100.200",
+                        "gpt_result_desc": "真实攻击成功",
+                        "attackStatus": "待处置",
+                        "ruleName": "SQLServer_Sa_Password_Attack",
+                        "attackStage": "Lateral Movement",
+                    }
+                ],
+            },
+        }
+        session = FakeSession(FakeResponse(200, payload))
+        adapter = XdrOpenApiAdapter(
+            xdr_config(auth_type="aksk", token=None, access_key="ak", secret_key="sk"),
+            session=session,
+        )
+        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+
+        ctx = orchestrator.start(
+            StartRunRequest(
+                source="xdr",
+                xdr_event_id="alert-9fd0c034-ba09-4311-8360-cf1787206450",
+            )
+        )
+
+        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.source, "xdr")
+        self.assertEqual(ctx.requested_source, "xdr")
+        self.assertEqual(ctx.effective_source, "xdr_openapi")
+        self.assertIsNone(ctx.fallback_source)
+        self.assertEqual(ctx.alert_refs, ["alert-9fd0c034-ba09-4311-8360-cf1787206450"])
+        self.assertEqual(ctx.errors, [])
+        self.assertEqual(ctx.triage.risk_score, 80)
+        self.assertEqual(ctx.triage.verdict, "malicious")
+        self.assertEqual(ctx.triage.confidence, 0.85)
+        self.assertEqual(ctx.triage.priority, "high")
+        self.assertTrue(ctx.triage.should_investigate)
+        self.assertEqual(ctx.response.plan.target, "192.168.100.200")
+
+        self.assertEqual(session.calls[0][0], "POST")
+        self.assertEqual(session.calls[0][1], "https://xdr.example.test/api/xdr/v1/alerts/list")
+        self.assertEqual(session.calls[0][2]["json"], {"page": 1, "pageSize": 10})
+        self.assertIn("X-XDR-Access-Key", session.calls[0][2]["headers"])
+        self.assertIn("X-XDR-Signature", session.calls[0][2]["headers"])
 
     def _xdr_log_request(self) -> ToolRequest:
         return ToolRequest(
