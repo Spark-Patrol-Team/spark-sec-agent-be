@@ -34,10 +34,13 @@ class Settings(BaseModel):
     xdr_token: str | None = None
     xdr_access_key: str | None = None
     xdr_secret_key: str | None = None
-    xdr_alerts_path: str = "/api/v1/alerts"
+    xdr_alerts_path: str = "/api/xdr/v1/alerts/list"
     xdr_logs_path: str = "/api/v1/logs"
     xdr_connect_timeout_seconds: float = 5
     xdr_read_timeout_seconds: float = 30
+    xdr_alert_page_size: int = 50
+    xdr_alert_max_pages: int = 20
+    xdr_alert_start_timestamp: int | None = None
     xdr_startup_check: bool = True
     xdr_preflight_http_check: bool = False
     xdr_allow_fixed_sample_fallback: bool = False
@@ -71,10 +74,13 @@ def load_settings() -> Settings:
         xdr_token=os.getenv("XDR_TOKEN") or None,
         xdr_access_key=os.getenv("XDR_ACCESS_KEY") or None,
         xdr_secret_key=os.getenv("XDR_SECRET_KEY") or None,
-        xdr_alerts_path=os.getenv("XDR_ALERTS_PATH", "/api/v1/alerts"),
+        xdr_alerts_path=os.getenv("XDR_ALERTS_PATH", "/api/xdr/v1/alerts/list"),
         xdr_logs_path=os.getenv("XDR_LOGS_PATH", "/api/v1/logs"),
         xdr_connect_timeout_seconds=parse_float(os.getenv("XDR_CONNECT_TIMEOUT_SECONDS", "5")),
         xdr_read_timeout_seconds=parse_float(os.getenv("XDR_READ_TIMEOUT_SECONDS", "30")),
+        xdr_alert_page_size=int(os.getenv("XDR_ALERT_PAGE_SIZE", "50")),
+        xdr_alert_max_pages=int(os.getenv("XDR_ALERT_MAX_PAGES", "20")),
+        xdr_alert_start_timestamp=parse_optional_int(os.getenv("XDR_ALERT_START_TIMESTAMP")),
         xdr_startup_check=parse_bool(os.getenv("XDR_STARTUP_CHECK", "true")),
         xdr_preflight_http_check=parse_bool(os.getenv("XDR_PREFLIGHT_HTTP_CHECK", "false")),
         xdr_allow_fixed_sample_fallback=parse_bool(os.getenv("XDR_ALLOW_FIXED_SAMPLE_FALLBACK", "false")),
@@ -146,6 +152,12 @@ def parse_bool(value: str) -> bool:
 
 def parse_float(value: str) -> float:
     return float(value.strip())
+
+
+def parse_optional_int(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    return int(value.strip())
 
 
 def parse_csv(value: str | None, default: list[str]) -> list[str]:

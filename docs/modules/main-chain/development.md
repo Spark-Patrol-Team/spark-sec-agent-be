@@ -177,7 +177,7 @@ curl -s -X POST 'http://127.0.0.1:8000/events/<event_id>/approval' \
 | 告警输入 | fixed_sample / jsonl_sample / xdr_openapi 边界 | `PLATFORM_BACKEND=fixed_sample`、`jsonl_sample` 或 `xdr_openapi` | 真实 XDR 已完整闭环 |
 | JSONL 接入 | 本地实现 | `JsonlSampleAdapter` 读取样例目录 | 真实平台实时拉取 |
 | 深度调查 | 本地工具链 / deep agent 桥接 / fallback | `INVESTIGATION_BACKEND` 控制 | 未配置 LLM 时的真实 Agent 闭环 |
-| XDR 日志查询 | 内置样例工具 | `xdr_log_query` | 真实深信服 XDR OpenAPI |
+| XDR 日志查询 | fixed_sample/jsonl_sample 下为内置样例；xdr_openapi 下可走 OpenAPI handler 或注入真实 handler | `xdr_log_query` | 已完成真实平台实机验收 |
 | 处置执行 | Mock / stateful mock | 高风险审批通过后 | 真实封禁、隔离或资产处置 |
 | 处置验证 | Mock / stateful mock | 执行后验证阶段 | 真实平台验证闭环 |
 | 事件存储 | memory / MySQL 代码路径 | `STORAGE_BACKEND` 控制 | 已完成所有生产数据库迁移 |

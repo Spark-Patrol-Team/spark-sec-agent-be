@@ -12,6 +12,7 @@ from sec_agent.core.config import (
     parse_bool,
     parse_csv,
     parse_float,
+    parse_optional_int,
 )
 
 
@@ -31,6 +32,11 @@ class ConfigTest(unittest.TestCase):
 
     def test_parse_float_trims_value(self) -> None:
         self.assertEqual(parse_float(" 2.5 "), 2.5)
+
+    def test_parse_optional_int_trims_empty_value(self) -> None:
+        self.assertEqual(parse_optional_int(" 123 "), 123)
+        self.assertIsNone(parse_optional_int(""))
+        self.assertIsNone(parse_optional_int(None))
 
     def test_default_cors_origins_include_frontend_dashboard(self) -> None:
         self.assertIn("http://localhost:8080", DEFAULT_CORS_ALLOWED_ORIGINS)
@@ -75,6 +81,9 @@ class ConfigTest(unittest.TestCase):
                 "XDR_LOGS_PATH": "/openapi/logs",
                 "XDR_CONNECT_TIMEOUT_SECONDS": "1.5",
                 "XDR_READ_TIMEOUT_SECONDS": "9",
+                "XDR_ALERT_PAGE_SIZE": "20",
+                "XDR_ALERT_MAX_PAGES": "5",
+                "XDR_ALERT_START_TIMESTAMP": "1787880600000",
                 "XDR_STARTUP_CHECK": "true",
                 "XDR_PREFLIGHT_HTTP_CHECK": "false",
                 "XDR_ALLOW_FIXED_SAMPLE_FALLBACK": "true",
@@ -89,6 +98,9 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.xdr_logs_path, "/openapi/logs")
         self.assertEqual(settings.xdr_connect_timeout_seconds, 1.5)
         self.assertEqual(settings.xdr_read_timeout_seconds, 9)
+        self.assertEqual(settings.xdr_alert_page_size, 20)
+        self.assertEqual(settings.xdr_alert_max_pages, 5)
+        self.assertEqual(settings.xdr_alert_start_timestamp, 1787880600000)
         self.assertTrue(settings.xdr_startup_check)
         self.assertFalse(settings.xdr_preflight_http_check)
         self.assertTrue(settings.xdr_allow_fixed_sample_fallback)

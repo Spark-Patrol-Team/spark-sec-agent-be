@@ -199,10 +199,16 @@ uv run --python /opt/homebrew/bin/python3.11 --with pytest --with httpx -m pytes
 
 结果：`139 passed, 1 skipped`。
 
+候选 Commit：
+
+```text
+1f544c7 feat:完成XDR OpenAPI 就绪准备
+```
+
+该提交位于本地分支 `feature/xdr-openapi-readiness`，用于收口 `xdr_openapi` 接入边界、AK/SK HMAC、真实 `xdr_log_query` handler、来源字段、最小集成测试和一键回退脚本。
+
 已知限制：
 
-- 本轮按仓库规则未执行 Git 命令，因此未读取当前 HEAD，也未确认唯一候选 Commit。
-- PR18 合入后的候选 Commit 需由负责人在允许执行 Git 的环境中确认，例如记录 `git rev-parse HEAD` 和 `git log -1 --oneline` 的输出。
 - 当前 `aksk` 已按示例实现 HMAC-SHA256 签名头；如真实平台要求不同 canonical string，需要在实机联调后按平台文档调整。
 - 当前真实告警路径默认 `/api/v1/alerts`，28 日联调时需按实机 OpenAPI 调整 `XDR_ALERTS_PATH`。
 - 当前真实日志路径默认 `/api/v1/logs`，28 日联调时需按实机 OpenAPI 调整 `XDR_LOGS_PATH`。

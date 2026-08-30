@@ -29,8 +29,14 @@ class FakeResponse:
 
 
 class FakeSession:
-    def __init__(self, response: FakeResponse | None = None, exc: Exception | None = None) -> None:
+    def __init__(
+        self,
+        response: FakeResponse | None = None,
+        exc: Exception | None = None,
+        responses: list[FakeResponse] | None = None,
+    ) -> None:
         self.response = response
+        self.responses = list(responses or [])
         self.exc = exc
         self.calls = []
 
@@ -38,6 +44,14 @@ class FakeSession:
         self.calls.append((url, kwargs))
         if self.exc:
             raise self.exc
+        return self.response
+
+    def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        if self.exc:
+            raise self.exc
+        if self.responses:
+            return self.responses.pop(0)
         return self.response
 
 
@@ -58,31 +72,32 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
             FakeResponse(
                 200,
                 {
-                    "data": [
-                        {
-                            "event_id": "REAL-XDR-WEBSHELL-001",
-                            "event_time": "2026-08-28T09:30:00+08:00",
-                            "source_device_type": "XDR",
-                            "source_device_name": "XDR",
-                            "event_type": "webshell",
-                            "rule_or_event_name": "WebShell蚁剑工具文件管理",
-                            "severity": "critical",
-                            "source_ip": "198.51.100.33",
-                            "destination_ip": "198.51.100.11",
-                            "affected_asset": "198.51.100.11",
-                            "evidence_source": "xdr_security_alert",
-                            "evidence_refs": ["alert_time", "alert_name", "destination_ip"],
-                            "sample_nature": "platform_derived",
-                            "status": "new",
-                            "risk_score_seed": 95,
-                            "recommended_action": "人工审批后隔离受影响主机。",
-                        }
-                    ]
+                    "code": "Success",
+                    "message": "成功",
+                    "data": {
+                        "total": 1,
+                        "page": 1,
+                        "pageSize": 50,
+                        "item": [
+                            {
+                                "uuId": "REAL-XDR-WEBSHELL-001",
+                                "firstTime": "2026-08-28T09:30:00+08:00",
+                                "name": "WebShell蚁剑工具文件管理",
+                                "severity": "高危",
+                                "source_ip": "198.51.100.33",
+                                "destination_ip": "198.51.100.11",
+                            }
+                        ],
+                    },
                 },
             )
         )
         adapter = XdrOpenApiAdapter(xdr_config(), session=session)
-        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="REAL-XDR-WEBSHELL-001"))
 
@@ -95,7 +110,7 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(ctx.triage.risk_score, 95)
         self.assertEqual(ctx.response.plan.target, "198.51.100.11")
         self.assertTrue(session.calls)
-        self.assertEqual(session.calls[0][1]["params"], {"event_id": "REAL-XDR-WEBSHELL-001"})
+        self.assertEqual(session.calls[0][1]["json"], {"page": 1, "pageSize": 50})
 
     def test_auth_failure_fails_without_fixed_sample_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(
@@ -103,7 +118,11 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
             session=FakeSession(FakeResponse(401, {"message": "unauthorized"})),
             fallback_adapter=FixedSampleAdapter(),
         )
-        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="REAL-XDR-001"))
 
@@ -117,7 +136,11 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
             session=FakeSession(exc=requests.Timeout("read timeout")),
             fallback_adapter=FixedSampleAdapter(),
         )
-        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="REAL-XDR-001"))
 
@@ -131,11 +154,15 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
 
     def test_empty_result_fails_without_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(
-            xdr_config(),
-            session=FakeSession(FakeResponse(200, {"data": []})),
+            xdr_config(alerts_path="/api/xdr/v1/alerts/list"),
+            session=FakeSession(FakeResponse(200, {"code": "Success", "message": "成功", "data": {"item": []}})),
             fallback_adapter=FixedSampleAdapter(),
         )
-        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="REAL-XDR-404"))
 
@@ -145,10 +172,19 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
     def test_field_mapping_failure_does_not_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(
             xdr_config(allow_fixed_sample_fallback=True),
-            session=FakeSession(FakeResponse(200, {"data": [{"event_id": "REAL-XDR-BAD"}]})),
+            session=FakeSession(
+                FakeResponse(
+                    200,
+                    {"code": "Success", "message": "成功", "data": {"item": [{"uuId": "REAL-XDR-BAD"}]}},
+                )
+            ),
             fallback_adapter=FixedSampleAdapter(),
         )
-        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="REAL-XDR-BAD"))
 
@@ -162,7 +198,7 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "XDR_TOKEN"):
             XdrOpenApiAdapter(xdr_config(token=None))
 
-    def test_aksk_auth_builds_hmac_headers(self) -> None:
+    def test_aksk_auth_builds_hmac_headers_with_post_body(self) -> None:
         session = FakeSession(FakeResponse(200, {"data": []}))
         adapter = XdrOpenApiAdapter(
             xdr_config(
@@ -177,14 +213,167 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         with patch("sec_agent.platforms.xdr_openapi.time.time", return_value=1000), patch(
             "sec_agent.platforms.xdr_openapi.secrets.token_hex", return_value="nonce"
         ):
-            headers = adapter._headers("GET", "/api/v1/alerts", {"event_id": "E 1", "limit": 1})
+            headers = adapter._headers("POST", "/api/xdr/v1/alerts/list", body={"page": 1, "pageSize": 10})
 
         self.assertEqual(headers["X-XDR-Access-Key"], "ak")
         self.assertEqual(headers["X-XDR-Timestamp"], "1000")
         self.assertEqual(headers["X-XDR-Nonce"], "nonce")
         self.assertEqual(headers["X-XDR-Signature-Method"], "HMAC-SHA256")
-        self.assertEqual(headers["X-XDR-Signature"], "dhL2YPIT/XSJ8XCeIlKf5qHUV9jNmGpbK288cpfvIpI=")
+        self.assertEqual(headers["X-XDR-Signature"], "9BaHtV+9RDrcGZ5aI4Am6cVvu3ozMrCPUq4EeWKwMHM=")
         self.assertNotIn("Authorization", headers)
+
+    def test_fetch_alerts_walks_pages_and_filters_by_uuid_locally(self) -> None:
+        session = FakeSession(
+            responses=[
+                FakeResponse(
+                    200,
+                    {
+                        "code": "Success",
+                        "message": "成功",
+                        "data": {
+                            "total": 11,
+                            "page": 1,
+                            "pageSize": 10,
+                            "item": [
+                                {
+                                    "uuId": f"REAL-XDR-SQLI-{index:03d}",
+                                    "firstTime": "2026-08-28T09:30:00+08:00",
+                                    "name": "通用SQL注入攻击",
+                                    "severity": "高危",
+                                    "source_ip": "198.51.100.33",
+                                    "destination_ip": "198.51.100.11",
+                                }
+                                for index in range(10)
+                            ],
+                        },
+                    },
+                ),
+                FakeResponse(
+                    200,
+                    {
+                        "code": "Success",
+                        "message": "成功",
+                        "data": {
+                            "total": 11,
+                            "page": 2,
+                            "pageSize": 10,
+                            "item": [
+                                {
+                                    "uuId": "REAL-XDR-SQLI-TARGET",
+                                    "firstTime": "2026-08-28T09:45:00+08:00",
+                                    "name": "通用SQL注入攻击",
+                                    "severity": "高危",
+                                    "source_ip": "198.51.100.44",
+                                    "destination_ip": "198.51.100.22",
+                                }
+                            ],
+                        },
+                    },
+                ),
+            ]
+        )
+        adapter = XdrOpenApiAdapter(
+            xdr_config(alerts_path="/api/xdr/v1/alerts/list", alert_page_size=10),
+            session=session,
+        )
+
+        alerts = adapter.fetch_alerts(xdr_event_id="REAL-XDR-SQLI-TARGET")
+
+        self.assertEqual([alert.alert_id for alert in alerts], ["REAL-XDR-SQLI-TARGET"])
+        self.assertEqual(alerts[0].alert_type, "sql_injection")
+        self.assertEqual(len(session.calls), 2)
+        self.assertEqual([call[1]["json"]["page"] for call in session.calls], [1, 2])
+
+    def test_fetch_alerts_uses_configured_page_size_and_start_timestamp(self) -> None:
+        session = FakeSession(
+            FakeResponse(
+                200,
+                {
+                    "code": "Success",
+                    "message": "成功",
+                    "data": {
+                        "total": 1,
+                        "page": 1,
+                        "pageSize": 20,
+                        "item": [
+                            {
+                                "uuId": "REAL-XDR-SQLI-TIME",
+                                "firstTime": "2026-08-28T09:45:00+08:00",
+                                "name": "通用SQL注入攻击",
+                                "severity": "高危",
+                                "source_ip": "198.51.100.44",
+                                "destination_ip": "198.51.100.22",
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+        adapter = XdrOpenApiAdapter(
+            xdr_config(alert_page_size=20, alert_start_timestamp=1787880600000),
+            session=session,
+        )
+
+        alerts = adapter.fetch_alerts()
+
+        self.assertEqual([alert.alert_id for alert in alerts], ["REAL-XDR-SQLI-TIME"])
+        self.assertEqual(
+            session.calls[0][1]["json"],
+            {"page": 1, "pageSize": 20, "startTimestamp": 1787880600000},
+        )
+
+    def test_xdr_mapping_accepts_camel_case_and_array_fields(self) -> None:
+        session = FakeSession(
+            FakeResponse(
+                200,
+                {
+                    "code": "Success",
+                    "message": "成功",
+                    "data": {
+                        "total": 1,
+                        "page": 1,
+                        "pageSize": 10,
+                        "item": [
+                            {
+                                "uuId": "REAL-XDR-SQLI-ARRAY",
+                                "firstTime": 1787880600000,
+                                "name": "通用SQL注入攻击",
+                                "severity": "高危",
+                                "srcIps": ["198.51.100.33"],
+                                "srcPorts": [54321],
+                                "dstIps": ["198.51.100.11"],
+                                "dstPorts": [443],
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+        adapter = XdrOpenApiAdapter(xdr_config(), session=session)
+
+        alerts = adapter.fetch_alerts(xdr_event_id="REAL-XDR-SQLI-ARRAY")
+
+        self.assertEqual(alerts[0].src_ip, "198.51.100.33")
+        self.assertEqual(alerts[0].src_port, 54321)
+        self.assertEqual(alerts[0].dst_ip, "198.51.100.11")
+        self.assertEqual(alerts[0].dst_port, 443)
+
+    def test_business_error_fails_without_fallback(self) -> None:
+        adapter = XdrOpenApiAdapter(
+            xdr_config(),
+            session=FakeSession(FakeResponse(200, {"code": "Failed", "message": "签名错误", "data": None})),
+            fallback_adapter=FixedSampleAdapter(),
+        )
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
+
+        ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="REAL-XDR-001"))
+
+        self.assertEqual(ctx.status, BusinessStatus.FAILED)
+        self.assertIn("platform_error", ctx.errors[0].message)
 
     def test_xdr_log_query_uses_openapi_handler_instead_of_builtin_sample(self) -> None:
         session = FakeSession(FakeResponse(200, {"data": {"items": [{"rule_name": "真实XDR日志"}]}}))
