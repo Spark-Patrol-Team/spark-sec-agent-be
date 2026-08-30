@@ -470,6 +470,53 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(alert_context["dst_ips"], ["198.51.100.200"])
         self.assertIn("alert-unit-test-stable-id:traceBackId:trace-unit-001", ctx.triage.supporting_evidence_refs)
 
+    def test_optional_xdr_log_auth_failure_does_not_block_real_alert_approval(self) -> None:
+        session = FakeSession(
+            responses=[
+                FakeResponse(
+                    200,
+                    {
+                        "code": "Success",
+                        "message": "成功",
+                        "data": {
+                            "total": 1,
+                            "page": 1,
+                            "pageSize": 50,
+                            "item": [
+                                {
+                                    "uuId": "alert-unit-test-log-optional",
+                                    "traceBackId": ["trace-unit-001"],
+                                    "name": "SQL server数据库查询sa账户密码攻击",
+                                    "severity": 70,
+                                    "srcIp": ["198.51.100.100"],
+                                    "dstIp": ["198.51.100.200"],
+                                    "firstTime": 1787155200,
+                                    "gptResultDescription": "真实攻击成功",
+                                }
+                            ],
+                        },
+                    },
+                ),
+                FakeResponse(403, {"code": "Forbidden", "message": "日志接口未授权"}),
+            ]
+        )
+        adapter = XdrOpenApiAdapter(
+            xdr_config(alert_start_timestamp=1787155200),
+            session=session,
+        )
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
+
+        ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="alert-unit-test-log-optional"))
+
+        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertFalse(ctx.investigation.needs_human)
+        self.assertEqual(ctx.investigation.steps[1].tool_result.status, ToolCallStatus.FAILED)
+        self.assertEqual(ctx.response.plan.target, "198.51.100.200")
+
     def test_business_error_fails_without_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(
             xdr_config(),
