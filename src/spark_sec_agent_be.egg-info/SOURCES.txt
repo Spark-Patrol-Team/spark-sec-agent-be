@@ -83,6 +83,7 @@ tests/test_mvp_tool.py
 tests/test_openapi_generation.py
 tests/test_packaging.py
 tests/test_raw_jsonl_ingest_and_correlation.py
+tests/test_run_flow.py
 tests/test_state_flow.py
 tests/test_stateful_mock_tool.py
 tests/test_tool_contract.py

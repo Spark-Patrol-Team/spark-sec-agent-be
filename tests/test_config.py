@@ -77,6 +77,7 @@ class ConfigTest(unittest.TestCase):
                 "XDR_BASE_URL": "https://xdr.example.test",
                 "XDR_AUTH_TYPE": "token",
                 "XDR_TOKEN": "unit-test-token",
+                "XDR_AUTH_CODE": "unit-test-auth-code",
                 "XDR_ALERTS_PATH": "/openapi/alerts",
                 "XDR_LOGS_PATH": "/openapi/logs",
                 "XDR_CONNECT_TIMEOUT_SECONDS": "1.5",
@@ -84,6 +85,7 @@ class ConfigTest(unittest.TestCase):
                 "XDR_ALERT_PAGE_SIZE": "20",
                 "XDR_ALERT_MAX_PAGES": "5",
                 "XDR_ALERT_START_TIMESTAMP": "1787880600000",
+                "XDR_VERIFY_SSL": "true",
                 "XDR_STARTUP_CHECK": "true",
                 "XDR_PREFLIGHT_HTTP_CHECK": "false",
                 "XDR_ALLOW_FIXED_SAMPLE_FALLBACK": "true",
@@ -94,6 +96,7 @@ class ConfigTest(unittest.TestCase):
 
         self.assertEqual(settings.platform_backend, "xdr_openapi")
         self.assertEqual(settings.xdr_base_url, "https://xdr.example.test")
+        self.assertEqual(settings.xdr_auth_code, "unit-test-auth-code")
         self.assertEqual(settings.xdr_alerts_path, "/openapi/alerts")
         self.assertEqual(settings.xdr_logs_path, "/openapi/logs")
         self.assertEqual(settings.xdr_connect_timeout_seconds, 1.5)
@@ -101,6 +104,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.xdr_alert_page_size, 20)
         self.assertEqual(settings.xdr_alert_max_pages, 5)
         self.assertEqual(settings.xdr_alert_start_timestamp, 1787880600000)
+        self.assertTrue(settings.xdr_verify_ssl)
         self.assertTrue(settings.xdr_startup_check)
         self.assertFalse(settings.xdr_preflight_http_check)
         self.assertTrue(settings.xdr_allow_fixed_sample_fallback)

@@ -30,10 +30,11 @@ class Settings(BaseModel):
     jsonl_sample_dir: Path = Path("tests/fixtures/fixed_alerts")
     jsonl_input_mode: Literal["normalized", "raw"] = "normalized"
     xdr_base_url: str | None = None
-    xdr_auth_type: Literal["token", "aksk"] = "token"
+    xdr_auth_type: Literal["token", "aksk", "auth_code"] = "token"
     xdr_token: str | None = None
     xdr_access_key: str | None = None
     xdr_secret_key: str | None = None
+    xdr_auth_code: str | None = None
     xdr_alerts_path: str = "/api/xdr/v1/alerts/list"
     xdr_logs_path: str = "/api/v1/logs"
     xdr_connect_timeout_seconds: float = 5
@@ -41,6 +42,7 @@ class Settings(BaseModel):
     xdr_alert_page_size: int = 50
     xdr_alert_max_pages: int = 20
     xdr_alert_start_timestamp: int | None = None
+    xdr_verify_ssl: bool = False
     xdr_startup_check: bool = True
     xdr_preflight_http_check: bool = False
     xdr_allow_fixed_sample_fallback: bool = False
@@ -74,6 +76,7 @@ def load_settings() -> Settings:
         xdr_token=os.getenv("XDR_TOKEN") or None,
         xdr_access_key=os.getenv("XDR_ACCESS_KEY") or None,
         xdr_secret_key=os.getenv("XDR_SECRET_KEY") or None,
+        xdr_auth_code=os.getenv("XDR_AUTH_CODE") or None,
         xdr_alerts_path=os.getenv("XDR_ALERTS_PATH", "/api/xdr/v1/alerts/list"),
         xdr_logs_path=os.getenv("XDR_LOGS_PATH", "/api/v1/logs"),
         xdr_connect_timeout_seconds=parse_float(os.getenv("XDR_CONNECT_TIMEOUT_SECONDS", "5")),
@@ -81,6 +84,7 @@ def load_settings() -> Settings:
         xdr_alert_page_size=int(os.getenv("XDR_ALERT_PAGE_SIZE", "50")),
         xdr_alert_max_pages=int(os.getenv("XDR_ALERT_MAX_PAGES", "20")),
         xdr_alert_start_timestamp=parse_optional_int(os.getenv("XDR_ALERT_START_TIMESTAMP")),
+        xdr_verify_ssl=parse_bool(os.getenv("XDR_VERIFY_SSL", "false")),
         xdr_startup_check=parse_bool(os.getenv("XDR_STARTUP_CHECK", "true")),
         xdr_preflight_http_check=parse_bool(os.getenv("XDR_PREFLIGHT_HTTP_CHECK", "false")),
         xdr_allow_fixed_sample_fallback=parse_bool(os.getenv("XDR_ALLOW_FIXED_SAMPLE_FALLBACK", "false")),

@@ -14,7 +14,7 @@ from sec_agent.domain.models import (
     StartRunRequest,
 )
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
-from sec_agent.platforms.xdr_openapi import XdrOpenApiAdapter, XdrOpenApiConfig
+from sec_agent.platforms.xdr_openapi import XdrOfficialSigner, XdrOpenApiAdapter, XdrOpenApiConfig
 from sec_agent.repositories.memory import InMemoryEventRepository
 from sec_agent.services.orchestrator import Orchestrator
 
@@ -48,6 +48,14 @@ class FakeSession:
 
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
+        if self.exc:
+            raise self.exc
+        if self.responses:
+            return self.responses.pop(0)
+        return self.response
+
+    def send(self, prepared_request, **kwargs):
+        self.calls.append((prepared_request.url, {"prepared": prepared_request, **kwargs}))
         if self.exc:
             raise self.exc
         if self.responses:
@@ -110,7 +118,9 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(ctx.triage.risk_score, 95)
         self.assertEqual(ctx.response.plan.target, "198.51.100.11")
         self.assertTrue(session.calls)
-        self.assertEqual(session.calls[0][1]["json"], {"page": 1, "pageSize": 50})
+        prepared = session.calls[0][1]["prepared"]
+        self.assertEqual(prepared.body, '{"page": 1, "pageSize": 50}')
+        self.assertEqual(prepared.headers["Authorization"], "Bearer unit-test-token")
 
     def test_auth_failure_fails_without_fixed_sample_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(
@@ -198,7 +208,7 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "XDR_TOKEN"):
             XdrOpenApiAdapter(xdr_config(token=None))
 
-    def test_aksk_auth_builds_hmac_headers_with_post_body(self) -> None:
+    def test_aksk_auth_builds_official_authorization_header_with_post_body(self) -> None:
         session = FakeSession(FakeResponse(200, {"data": []}))
         adapter = XdrOpenApiAdapter(
             xdr_config(
@@ -210,17 +220,48 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
             session=session,
         )
 
-        with patch("sec_agent.platforms.xdr_openapi.time.time", return_value=1000), patch(
-            "sec_agent.platforms.xdr_openapi.secrets.token_hex", return_value="nonce"
-        ):
-            headers = adapter._headers("POST", "/api/xdr/v1/alerts/list", body={"page": 1, "pageSize": 10})
+        headers = adapter._headers(
+            "POST",
+            "/api/xdr/v1/alerts/list",
+            body={"page": 1, "pageSize": 10},
+        )
 
-        self.assertEqual(headers["X-XDR-Access-Key"], "ak")
-        self.assertEqual(headers["X-XDR-Timestamp"], "1000")
-        self.assertEqual(headers["X-XDR-Nonce"], "nonce")
-        self.assertEqual(headers["X-XDR-Signature-Method"], "HMAC-SHA256")
-        self.assertEqual(headers["X-XDR-Signature"], "9BaHtV+9RDrcGZ5aI4Am6cVvu3ozMrCPUq4EeWKwMHM=")
-        self.assertNotIn("Authorization", headers)
+        self.assertIn("Authorization", headers)
+        self.assertIn("algorithm=HMAC-SHA256", headers["Authorization"])
+        self.assertIn("Access=ak", headers["Authorization"])
+        self.assertIn("SignedHeaders=content-type;sdk-content-type;sdk-host;sign-date", headers["Authorization"])
+        self.assertNotIn("X-XDR-Access-Key", headers)
+
+    def test_official_signer_matches_fixed_signature_fixture(self) -> None:
+        request = requests.Request(
+            "POST",
+            "https://xdr.example.test:1443/api/xdr/v1/alerts/list",
+            headers={
+                "content-type": "application/json",
+                "sign-date": "20260830T000000Z",
+            },
+            data='{"page": 1, "pageSize": 50, "startTimestamp": 1787155200}',
+        )
+
+        XdrOfficialSigner(access_key="ak", secret_key="sk").sign(request)
+
+        self.assertEqual(
+            request.headers["Authorization"],
+            "algorithm=HMAC-SHA256, Access=ak, SignedHeaders=content-type;sdk-content-type;sdk-host;sign-date, "
+            "Signature=ECEAEDF531466425D87A07870821760696CD78E626366E296A0E9DBFCDE60E5E",
+        )
+
+    def test_auth_code_requires_auth_code(self) -> None:
+        with self.assertRaisesRegex(ValueError, "XDR_AUTH_CODE"):
+            XdrOpenApiAdapter(
+                xdr_config(
+                    auth_type="auth_code",
+                    token=None,
+                    access_key=None,
+                    secret_key=None,
+                    auth_code=None,
+                )
+            )
 
     def test_fetch_alerts_walks_pages_and_filters_by_uuid_locally(self) -> None:
         session = FakeSession(
@@ -282,7 +323,7 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual([alert.alert_id for alert in alerts], ["REAL-XDR-SQLI-TARGET"])
         self.assertEqual(alerts[0].alert_type, "sql_injection")
         self.assertEqual(len(session.calls), 2)
-        self.assertEqual([call[1]["json"]["page"] for call in session.calls], [1, 2])
+        self.assertEqual([call[1]["prepared"].body for call in session.calls], ['{"page": 1, "pageSize": 10}', '{"page": 2, "pageSize": 10}'])
 
     def test_fetch_alerts_uses_configured_page_size_and_start_timestamp(self) -> None:
         session = FakeSession(
@@ -318,8 +359,8 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
 
         self.assertEqual([alert.alert_id for alert in alerts], ["REAL-XDR-SQLI-TIME"])
         self.assertEqual(
-            session.calls[0][1]["json"],
-            {"page": 1, "pageSize": 20, "startTimestamp": 1787880600000},
+            session.calls[0][1]["prepared"].body,
+            '{"page": 1, "pageSize": 20, "startTimestamp": 1787880600000}',
         )
 
     def test_xdr_mapping_accepts_camel_case_and_array_fields(self) -> None:
@@ -358,6 +399,77 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(alerts[0].dst_ip, "198.51.100.11")
         self.assertEqual(alerts[0].dst_port, 443)
 
+    def test_updated_real_xdr_shape_reaches_approval_and_keeps_raw_context(self) -> None:
+        session = FakeSession(
+            FakeResponse(
+                200,
+                {
+                    "code": "Success",
+                    "message": "成功",
+                    "data": {
+                        "total": 8,
+                        "page": 1,
+                        "pageSize": 50,
+                        "item": [
+                            {
+                                "uuId": "alert-unit-test-stable-id",
+                                "traceBackId": ["trace-unit-001", "trace-unit-002"],
+                                "name": "SQL server数据库查询sa账户密码攻击",
+                                "description": "脱敏后的数据库攻击告警描述",
+                                "severity": 70,
+                                "logCount": 2,
+                                "stage": 30,
+                                "riskTag": ["异常操作"],
+                                "threatClassDesc": "数据库攻击利用",
+                                "threatTypeDesc": "异常操作",
+                                "threatSubTypeDesc": "异常操作",
+                                "attckTechnique": ["TA0001.T1190"],
+                                "srcIp": ["198.51.100.100"],
+                                "srcPort": [54321],
+                                "dstIp": ["198.51.100.200"],
+                                "dstPort": [1433],
+                                "hostIp": "198.51.100.200",
+                                "url": [],
+                                "respStatus": 200,
+                                "devUidDesc": ["NDR"],
+                                "engineName": ["PVS引擎"],
+                                "devSourceName": ["XDR"],
+                                "gptResult": 110,
+                                "gptResultDescription": "真实攻击成功",
+                                "attackState": 2,
+                                "confidence": 20,
+                                "alertDealStatus": 1,
+                                "alertDealAction": "待处置",
+                                "whiteStatus": "未加白",
+                                "firstTime": 1787155200,
+                                "lastTime": 1787155260,
+                                "updateTime": 1787155265,
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+        adapter = XdrOpenApiAdapter(
+            xdr_config(alert_start_timestamp=1787155200),
+            session=session,
+        )
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
+
+        ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="alert-unit-test-stable-id"))
+
+        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.alert_refs, ["alert-unit-test-stable-id"])
+        self.assertEqual(ctx.triage.risk_score, 80)
+        self.assertEqual(ctx.response.plan.target, "198.51.100.200")
+        alert_context = ctx.investigation.steps[0].tool_request.params["entities"]
+        self.assertEqual(alert_context["dst_ips"], ["198.51.100.200"])
+        self.assertIn("alert-unit-test-stable-id:traceBackId:trace-unit-001", ctx.triage.supporting_evidence_refs)
+
     def test_business_error_fails_without_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(
             xdr_config(),
@@ -385,7 +497,7 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(result.raw_result_ref, f"xdr://openapi/logs/{result.call_id}")
         self.assertNotIn("builtin://xdr-log-query", result.raw_result_ref)
         self.assertEqual(result.output_preview["records"], [{"rule_name": "真实XDR日志"}])
-        self.assertEqual(session.calls[0][0], "https://xdr.example.test/openapi/logs")
+        self.assertEqual(session.calls[0][0], "https://xdr.example.test/openapi/logs?event_id=evt-xdr-tool")
 
     def test_xdr_log_query_can_use_injected_handler(self) -> None:
         def injected_handler(request: ToolRequest) -> ToolResult:

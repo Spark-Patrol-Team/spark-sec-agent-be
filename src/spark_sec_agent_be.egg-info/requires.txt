@@ -1,6 +1,7 @@
 fastapi==0.115.12
 openai<2.0.0,>=1.0.0
 pydantic==2.13.3
+pycryptodome<4.0.0,>=3.20.0
 pymysql<2.0.0,>=1.1.0
 requests<3.0.0,>=2.32.0
 sqlalchemy<3.0.0,>=2.0.0

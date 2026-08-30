@@ -42,6 +42,11 @@ class RawJsonlNormalizer:
         "source_ip",
         "destination_ip",
         "host_ip",
+        "traceBackId",
+        "gptResultDescription",
+        "attackState",
+        "confidence",
+        "alertDealAction",
     )
 
     def load_jsonl(self, path: str | Path) -> list[NormalizedAlertRecord]:
@@ -161,6 +166,15 @@ class RawJsonlNormalizer:
     def _xdr_severity(self, alert_name: str, alert_grade: str) -> tuple[str, int]:
         if alert_name == "WebShell蚁剑工具文件管理" and alert_grade == "高危":
             return "critical", 95
+        numeric_grade = self._numeric_severity(alert_grade)
+        if numeric_grade is not None:
+            if numeric_grade >= 90:
+                return "critical", 90
+            if numeric_grade >= 70:
+                return "high", 80
+            if numeric_grade >= 50:
+                return "medium", 65
+            return "low", 30
         severity = {
             "严重": "critical",
             "高危": "high",
@@ -172,6 +186,13 @@ class RawJsonlNormalizer:
             "low": "low",
         }.get(alert_grade.lower(), "medium")
         return severity, self._risk_seed(severity)
+
+    @staticmethod
+    def _numeric_severity(alert_grade: str) -> int | None:
+        try:
+            return int(alert_grade.strip())
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _sta_severity(rule_name: str) -> str:
