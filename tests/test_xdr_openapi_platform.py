@@ -251,6 +251,22 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
             "Signature=ECEAEDF531466425D87A07870821760696CD78E626366E296A0E9DBFCDE60E5E",
         )
 
+    def test_official_signer_accepts_non_ascii_post_body(self) -> None:
+        request = requests.Request(
+            "POST",
+            "https://xdr.example.test:1443/api/xdr/v1/alerts/list",
+            headers={
+                "content-type": "application/json",
+                "sign-date": "20260830T000000Z",
+            },
+            data='{"keyword": "真实告警"}',
+        )
+
+        XdrOfficialSigner(access_key="ak", secret_key="sk").sign(request)
+
+        self.assertIn("Authorization", request.headers)
+        self.assertIn("Signature=", request.headers["Authorization"])
+
     def test_auth_code_requires_auth_code(self) -> None:
         with self.assertRaisesRegex(ValueError, "XDR_AUTH_CODE"):
             XdrOpenApiAdapter(

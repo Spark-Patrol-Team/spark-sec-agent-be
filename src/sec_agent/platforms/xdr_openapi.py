@@ -899,7 +899,7 @@ class XdrOfficialSigner:
     def _payload_transform(self, payload: str) -> str:
         payload_bytes = payload.encode("utf-8")
         signed_bytes = sorted(struct.unpack("b", bytes([byte]))[0] for byte in payload_bytes)
-        normalized = bytearray(byte_value for byte_value in signed_bytes if byte_value != 32)
+        normalized = bytearray(byte_value % 256 for byte_value in signed_bytes if byte_value != 32)
         return self._sha256_hex_upper(normalized)
 
     @staticmethod
