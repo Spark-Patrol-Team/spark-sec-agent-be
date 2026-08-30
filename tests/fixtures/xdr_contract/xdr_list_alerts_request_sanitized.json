@@ -1,0 +1,36 @@
+{
+  "contract_version": "2026-08-27.xdr-input.v1",
+  "purpose": "structure_only_for_local_xdr_adapter_validation",
+  "transport": {
+    "method": "PROVIDER_DEFINED",
+    "endpoint": "PROVIDER_DEFINED_NOT_COMMITTED",
+    "authentication": "LOCAL_ENV_OR_SECRET_STORE_ONLY"
+  },
+  "query": {
+    "time_range": {
+      "start_time": "<ISO8601_WITH_TIMEZONE>",
+      "end_time": "<ISO8601_WITH_TIMEZONE>"
+    },
+    "filters": {
+      "event_id": "<RUNTIME_XDR_EVENT_ID_OPTIONAL>",
+      "alert_id": "<RUNTIME_XDR_ALERT_ID_OPTIONAL>",
+      "asset_id": "<RUNTIME_XDR_ASSET_ID_OPTIONAL>",
+      "source_ip": "<RUNTIME_SOURCE_IP_OPTIONAL>",
+      "destination_ip": "<RUNTIME_DESTINATION_IP_OPTIONAL>"
+    },
+    "pagination": {
+      "strategy": "PROVIDER_DEFINED_PAGE_OR_CURSOR",
+      "page_size": "<PROVIDER_MAX_BOUND_VALUE>",
+      "page_token": "<RUNTIME_CURSOR_OR_PAGE_NUMBER_OPTIONAL>"
+    },
+    "sort": {
+      "field": "<PROVIDER_EVENT_TIME_FIELD>",
+      "order": "asc"
+    }
+  },
+  "constraints": [
+    "Use one consistent event time window across retries and pages.",
+    "Do not persist real identifiers, IP addresses, endpoint URLs, headers, tokens, cookies, or raw responses in Git.",
+    "Do not send RFC5737 fixture addresses to a real XDR query as if they were runtime entities."
+  ]
+}

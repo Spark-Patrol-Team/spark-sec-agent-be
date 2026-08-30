@@ -1,0 +1,44 @@
+{
+  "contract_version": "2026-08-27.xdr-input.v1",
+  "purpose": "structure_only_for_local_xdr_adapter_validation",
+  "provider_response": {
+    "status": "PROVIDER_DEFINED_SUCCESS",
+    "request_id": "<REDACTED_RUNTIME_REQUEST_ID>",
+    "data": {
+      "records": [
+        {
+          "event_id": "<REDACTED_RUNTIME_XDR_EVENT_ID>",
+          "alert_id": "<REDACTED_RUNTIME_XDR_ALERT_ID>",
+          "alert_time": "<ISO8601_WITH_TIMEZONE>",
+          "alert_name": "<REDACTED_ALERT_NAME>",
+          "alert_grade": "<PROVIDER_SEVERITY_ENUM>",
+          "alert_classification": "<PROVIDER_CLASSIFICATION_OPTIONAL>",
+          "source_ip": "198.51.100.33",
+          "source_port": 44321,
+          "destination_ip": "198.51.100.11",
+          "destination_port": 443,
+          "host_ip": "198.51.100.33",
+          "asset_id": "<REDACTED_RUNTIME_ASSET_ID_OPTIONAL>",
+          "asset_name": "<REDACTED_ASSET_LABEL_OPTIONAL>",
+          "source_device_name": "<REDACTED_DEVICE_NAME_OPTIONAL>",
+          "data_source": "XDR",
+          "attack_status": "<PROVIDER_ATTACK_STATUS_OPTIONAL>",
+          "evidence_ids": ["<REDACTED_RUNTIME_EVIDENCE_ID>"]
+        }
+      ],
+      "pagination": {
+        "has_next": "<BOOLEAN_PROVIDER_DEFINED>",
+        "next_page_token": "<REDACTED_CURSOR_OR_NULL>",
+        "total_count": "<INTEGER_PROVIDER_DEFINED_OR_NULL>"
+      }
+    }
+  },
+  "adapter_expectations": {
+    "stable_identifier_preference": ["event_id", "alert_id"],
+    "affected_asset_rule": "destination_ip_first_host_ip_fallback_only",
+    "source_device_rule": "source_device_name_then_data_source_then_XDR",
+    "empty_records_rule": "success_with_zero_records_not_transport_failure",
+    "record_rejection_rule": "reject_record_when_stable_identifier_or_time_or_name_or_severity_is_unavailable"
+  },
+  "redaction_notice": "All identifier placeholders are structural only. RFC5737 addresses are documentation addresses, not real query entities."
+}

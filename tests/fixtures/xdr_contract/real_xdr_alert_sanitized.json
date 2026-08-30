@@ -1,0 +1,32 @@
+{
+  "source": "sangfor_xdr_readonly_contract",
+  "sensitive_values_removed": true,
+  "payload": {
+    "code": "Success",
+    "message": "成功",
+    "data": {
+      "item": [
+        {
+          "uuId": "placeholder-alert-001",
+          "firstTime": 1767000000,
+          "lastTime": 1767000065000,
+          "name": "WebShell蚁剑工具文件管理",
+          "severity": 95,
+          "srcIp": ["192.0.2.10"],
+          "srcPort": [443],
+          "dstIp": ["198.51.100.20"],
+          "dstPort": [8080],
+          "hostIp": "198.51.100.20",
+          "devSourceName": "XDR-PLACEHOLDER",
+          "traceBackId": "placeholder-trace-001",
+          "attackStage": "initial_access",
+          "platformConfidence": 0.91,
+          "gptJudgement": "placeholder-only"
+        }
+      ],
+      "page": 1,
+      "pageSize": 10,
+      "total": 1
+    }
+  }
+}

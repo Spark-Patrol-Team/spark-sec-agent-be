@@ -8,7 +8,7 @@ import secrets
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote, urljoin, urlsplit
 
@@ -214,18 +214,20 @@ class XdrOpenApiAdapter:
 
         try:
             payload = response.json()
+            self._validate_business_response(payload)
+            items = self._dedupe_items(self._extract_items(payload))
+            return [self._to_alert_record(item) for item in items]
+        except PlatformIngestError:
+            raise
         except ValueError as exc:
             raise PlatformIngestError(
                 kind="field_mapping",
-                message="XDR OpenAPI 返回内容不是合法 JSON",
+                message=f"XDR 字段转换失败: {exc}",
                 retryable=False,
                 allow_fallback=False,
                 platform_status=str(response.status_code),
             ) from exc
-
-        try:
-            return [self._to_alert_record(item) for item in self._extract_items(payload)]
-        except (RawAlertNormalizationError, KeyError, TypeError, ValueError, ValidationError) as exc:
+        except (RawAlertNormalizationError, KeyError, TypeError, ValidationError) as exc:
             raise PlatformIngestError(
                 kind="field_mapping",
                 message=f"XDR 字段转换失败: {exc}",
@@ -234,55 +236,221 @@ class XdrOpenApiAdapter:
                 platform_status=str(response.status_code),
             ) from exc
 
-    def _extract_items(self, payload: Any) -> list[Mapping[str, Any]]:
+    @staticmethod
+    def _validate_business_response(payload: Any) -> None:
+        if not isinstance(payload, Mapping):
+            return
+        code = payload.get("code")
+        if code is None:
+            return
+        normalized = str(code).strip().lower()
+        if normalized in {"success", "0", "200", "ok"}:
+            return
+        if normalized in {"unauthorized", "unauthenticated", "401", "403"}:
+            raise PlatformIngestError(
+                kind="auth",
+                message="XDR OpenAPI 业务层鉴权失败",
+                retryable=False,
+                allow_fallback=False,
+            )
+        raise PlatformIngestError(
+            kind="platform_error",
+            message=f"XDR OpenAPI 业务层返回失败: {payload.get('message', code)}",
+            retryable=False,
+            allow_fallback=False,
+        )
+
+    @classmethod
+    def _extract_items(cls, payload: Any) -> list[Mapping[str, Any]]:
         if isinstance(payload, list):
             items = payload
-        elif isinstance(payload, dict):
+        elif isinstance(payload, Mapping):
             data = payload.get("data", payload)
-            if isinstance(data, dict) and "items" in data:
-                items = data["items"]
+            if isinstance(data, Mapping):
+                items = data.get("item", data.get("items", data.get("records", [])))
             elif isinstance(data, list):
                 items = data
             else:
-                items = [data]
+                items = []
         else:
             raise ValueError("XDR 返回根节点必须为对象或数组")
 
-        if not all(isinstance(item, Mapping) for item in items):
+        if items is None:
+            items = []
+        if not isinstance(items, list) or not all(isinstance(item, Mapping) for item in items):
             raise ValueError("XDR 返回告警列表成员必须为对象")
         return list(items)
+
+    @classmethod
+    def _dedupe_items(cls, items: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+        """按提供方稳定 ID 合并页结果；真实 HTTP 翻页由接线负责人调用此规则。"""
+        seen: dict[str, Mapping[str, Any]] = {}
+        order: list[str] = []
+        for item in items:
+            key = cls._record_key(item)
+            if not key:
+                raise ValueError("真实 XDR 告警缺少稳定标识 uuId")
+            previous = seen.get(key)
+            if previous is None:
+                order.append(key)
+                seen[key] = item
+            elif cls._record_completeness(item) >= cls._record_completeness(previous):
+                seen[key] = item
+        return [seen[key] for key in order]
+
+    @staticmethod
+    def _record_key(raw: Mapping[str, Any]) -> str | None:
+        for key in ("uuId", "uuid", "event_id", "alert_id", "id"):
+            value = raw.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return None
+
+    @staticmethod
+    def _record_completeness(raw: Mapping[str, Any]) -> int:
+        return sum(value not in (None, "", [], {}) for value in raw.values())
 
     def _to_alert_record(self, raw: Mapping[str, Any]) -> AlertRecord:
         try:
             normalized = NormalizedAlertRecord.model_validate(raw)
         except ValidationError:
             normalized = self._normalizer.normalize(self._to_normalizer_raw(raw))
-        return self._from_normalized(normalized)
+        observed_refs = [
+            key
+            for key in (
+                "name",
+                "severity",
+                "firstTime",
+                "lastTime",
+                "srcIp",
+                "srcPort",
+                "dstIp",
+                "dstPort",
+                "hostIp",
+                "traceBackId",
+            )
+            if key in raw
+        ]
+        explicit_refs = raw.get("evidence_refs", [])
+        if isinstance(explicit_refs, list):
+            observed_refs.extend(str(ref) for ref in explicit_refs if ref not in (None, ""))
+        if observed_refs:
+            normalized = normalized.model_copy(update={"evidence_refs": list(dict.fromkeys(observed_refs))})
+        return self._from_normalized(normalized, raw)
 
     def _to_normalizer_raw(self, raw: Mapping[str, Any]) -> dict[str, Any]:
-        event_id = self._first_text(raw, "event_id", "alert_id", "id", "sample_id")
+        event_id = self._first_text(raw, "event_id", "alert_id", "id", "sample_id", "uuId", "uuid")
         event_time = self._first_text(raw, "event_time", "alert_time", "occurred_at", "time", "created_at")
+        if event_time is None:
+            event_time = self._epoch_to_iso(raw.get("lastTime") or raw.get("firstTime") or raw.get("updateTime"))
         alert_name = self._first_text(raw, "alert_name", "rule_name", "name", "title")
         if not event_id or not event_time or not alert_name:
             raise ValueError("缺少 event_id/alert_time/alert_name 等主链必需字段")
+        severity = self._severity_text(raw.get("severity", raw.get("alert_grade", raw.get("raw_severity", raw.get("level")))))
+        source_ip = self._first_value(raw, "source_ip", "src_ip", "src", "srcIp")
+        host_ip = self._first_text(raw, "host_ip", "asset_ip", "hostIp")
+        destination_ip = host_ip or self._first_value(raw, "destination_ip", "dst_ip", "dst", "dstIp")
+        status = self._status_text(raw.get("status", raw.get("attackStatus", raw.get("attack_status"))))
+        source_port = self._port_value(raw, "source_port", "src_port", "srcPort")
+        destination_port = self._port_value(raw, "destination_port", "dst_port", "dstPort")
         return {
             "sample_id": event_id,
             "sample_nature": "platform_derived",
             "sample_source": "XDR 安全告警分析",
             "alert_time": event_time,
             "alert_name": alert_name,
-            "alert_grade": self._first_text(raw, "alert_grade", "severity", "raw_severity", "level") or "中危",
-            "alert_classification": self._first_text(raw, "alert_classification", "category", "type"),
-            "source_ip": self._first_text(raw, "source_ip", "src_ip", "src"),
-            "source_port": raw.get("source_port", raw.get("src_port")),
-            "destination_ip": self._first_text(raw, "destination_ip", "dst_ip", "dst", "affected_asset"),
-            "destination_port": raw.get("destination_port", raw.get("dst_port")),
-            "host_ip": self._first_text(raw, "host_ip", "asset_ip"),
-            "data_source": self._first_text(raw, "data_source") or "XDR",
-            "source_device_name": self._first_text(raw, "source_device_name", "device_name") or "XDR",
+            "alert_grade": severity,
+            "alert_classification": self._first_text(raw, "alert_classification", "category", "type", "threatSubTypeDesc", "threatTypeDesc"),
+            "source_ip": source_ip,
+            "source_port": source_port,
+            "destination_ip": destination_ip,
+            "destination_port": destination_port,
+            "host_ip": host_ip,
+            "data_source": self._first_value(raw, "data_source", "devSourceName", "devUidDesc") or "XDR",
+            "source_device_name": self._first_value(raw, "source_device_name", "device_name", "devSourceName", "devUidDesc") or "XDR",
+            "status": status,
+            "evidence_source": self._first_text(raw, "evidence_source", "devSourceName", "data_source") or "xdr_security_alert",
+            "evidence_refs": [key for key in ("name", "severity", "firstTime", "lastTime", "srcIp", "srcPort", "dstIp", "dstPort", "hostIp", "traceBackId") if key in raw],
         }
 
-    def _from_normalized(self, record: NormalizedAlertRecord) -> AlertRecord:
+    @staticmethod
+    def _first_value(raw: Mapping[str, Any], *keys: str) -> Any:
+        for key in keys:
+            value = raw.get(key)
+            if isinstance(value, list):
+                for member in value:
+                    if member not in (None, ""):
+                        return member
+            elif value not in (None, ""):
+                return value
+        return None
+
+    @classmethod
+    def _first_text(cls, raw: Mapping[str, Any], *keys: str) -> str | None:
+        value = cls._first_value(raw, *keys)
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        text = str(value).strip()
+        return text or None
+
+    @staticmethod
+    def _port_value(raw: Mapping[str, Any], *keys: str) -> int | None:
+        value = XdrOpenApiAdapter._first_value(raw, *keys)
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            raise ValueError("端口不能为布尔值")
+        try:
+            port = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"非法端口: {value}") from exc
+        if not 0 <= port <= 65535:
+            raise ValueError(f"非法端口: {value}")
+        return port
+
+    @staticmethod
+    def _severity_text(value: Any) -> str:
+        if isinstance(value, bool):
+            raise ValueError("严重度不能为布尔值")
+        if isinstance(value, (int, float)):
+            return "严重" if value >= 90 else "高危" if value >= 70 else "中危" if value >= 40 else "低危"
+        text = str(value or "中危").strip()
+        if text.lower() in {"critical", "high", "medium", "low"}:
+            return {"critical": "严重", "high": "高危", "medium": "中危", "low": "低危"}[text.lower()]
+        if text in {"严重", "高危", "中危", "低危"}:
+            return text
+        raise ValueError(f"非法严重度: {value}")
+
+    @staticmethod
+    def _status_text(value: Any) -> str:
+        text = str(value or "new").strip().lower()
+        aliases = {"new": "new", "open": "new", "未处理": "new", "triaged": "triaged", "已研判": "triaged", "investigating": "investigating", "调查中": "investigating", "contained": "contained", "已遏制": "contained", "closed": "closed", "已关闭": "closed"}
+        if text in aliases:
+            return aliases[text]
+        raise ValueError(f"非法攻击状态: {value}")
+
+    @staticmethod
+    def _epoch_to_iso(value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, bool):
+            raise ValueError("时间戳不能为布尔值")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"非法时间戳: {value}") from exc
+        if numeric > 10_000_000_000:
+            numeric /= 1000
+        return datetime.fromtimestamp(numeric, tz=timezone.utc).astimezone(XdrOpenApiAdapter._shanghai()).isoformat()
+
+    @staticmethod
+    def _shanghai():
+        from zoneinfo import ZoneInfo
+        return ZoneInfo("Asia/Shanghai")
+
+    def _from_normalized(self, record: NormalizedAlertRecord, raw: Mapping[str, Any] | None = None) -> AlertRecord:
         scenario_fields = {
             "source_device_type": record.source_device_type,
             "source_device_name": record.source_device_name,
@@ -295,6 +463,15 @@ class XdrOpenApiAdapter:
             "investigation_hint": record.investigation_hint,
             "recommended_action": record.recommended_action,
         }
+        if raw:
+            for output_key, input_keys in {
+                "attack_stage": ("attackStage", "attack_stage"),
+                "platform_confidence": ("platformConfidence", "confidence"),
+                "gpt_judgement": ("gptJudgement", "gpt_judgement", "gpt"),
+            }.items():
+                value = self._first_value(raw, *input_keys)
+                if value not in (None, "", [], {}):
+                    scenario_fields[output_key] = value
         return AlertRecord(
             alert_id=record.event_id,
             source="xdr_openapi",
