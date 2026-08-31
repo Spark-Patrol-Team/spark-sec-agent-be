@@ -7,7 +7,7 @@
 | 模块 | 主链 |
 | 任务/测试批次 | 真实 XDR 告警输入接入后主链回归 |
 | 执行人 | 李雨妍|
-| 执行时间 | 2026-08-30 |
+| 执行时间 | 2026-08-30；2026-08-31 |
 | 基线分支与Commit | 当前工作区，包含真实 XDR 告警接入、签名实现和主链文档补充 |
 | 环境 | macOS；Python 3.11；pytest；FastAPI TestClient；真实 XDR OpenAPI 联调环境 |
 | 数据集/样例版本 | `tests/fixtures/fixed_alerts`；`fixed_sample` 内置样例；JSONL 样例；真实 XDR 告警 `alert-9fd0c034-ba09-4311-8360-cf1787206450` |
@@ -59,6 +59,12 @@ PYTHONPATH=src /opt/homebrew/bin/python3.11 -m pytest -q
 
 ```text
 uv run pytest tests/test_xdr_openapi_platform.py tests/test_config.py tests/test_api_http.py -q
+```
+
+2026-08-31 ：
+
+```text
+env INVESTIGATION_BACKEND=tool_mock uv run pytest tests/test_xdr_openapi_platform.py tests/test_config.py tests/test_api_http.py tests/test_openapi_generation.py -q
 ```
 
 已修改 Python 文件语法检查：
@@ -120,8 +126,8 @@ curl -s -X POST 'http://127.0.0.1:8000/runs' \
 | MAIN-006 | P1 | 文档/接口 | 生成 OpenAPI 并检查 diff | `docs/swagger/openapi.json` 与代码一致 | OpenAPI 接口数量 7，`git diff --exit-code` 无差异 | Pass | 无 | EVID-MAIN-006 | 无 |
 | MAIN-007 | P1 | 集成 | jsonl_sample 样例进入主链 | 启动后进入审批，审批后完成 | 已由 `tests/test_jsonl_platform.py` 和 `tests/test_raw_jsonl_ingest_and_correlation.py` 覆盖 | Pass | 无 | EVID-MAIN-007 | 无 |
 | MAIN-008 | P1 | 异常/状态 | 非法状态迁移 | 抛出 `InvalidStatusTransition` | 已由 `tests/test_state_flow.py` 覆盖 | Pass | 无 | EVID-MAIN-008 | 无 |
-| MAIN-009 | P0 | 真实平台/全链路输入 | `POST /runs`，请求 `{"source":"xdr","xdr_event_id":"alert-9fd0c034-ba09-4311-8360-cf1787206450"}` | 后端通过 XDR OpenAPI 拉取真实告警，命中目标告警并进入审批 | 返回 `APPROVAL_REQUIRED`；`requested_source=xdr`；`effective_source=xdr_openapi`；`fallback_source=null`；`errors=[]` | Pass | 脱敏 | EVID-MAIN-009 | 无 |
-| MAIN-010 | P0 | 自动化回归 | 执行 `uv run pytest tests/test_xdr_openapi_platform.py tests/test_config.py tests/test_api_http.py -q` | XDR 接入、配置读取和 HTTP 主链相关测试通过 | `33 passed in 0.85s` | Pass | 无 | EVID-MAIN-010 | 无 |
+| MAIN-009 | P0 | 真实平台/全链路输入 | `POST /runs`，请求 `{"source":"xdr","xdr_event_id":"alert-9fd0c034-ba09-4311-8360-cf1787206450"}` | 后端通过 XDR OpenAPI 拉取真实告警，命中目标告警并进入审批 | 2026-08-31 续跑返回 `APPROVAL_REQUIRED`；`requested_source=xdr`；`effective_source=xdr_openapi`；`fallback_source=null`；`errors=[]`；`event_id=evt-fd481d29-7de4-41ef-9dc9-0635b0fb9458`；`run_id=run-c6a6d619-2569-475d-a20e-e00096955706` | Pass | `trace-9f3362df-49c6-4722-9b07-50448e6b7a3e` | EVID-MAIN-009 | 无 |
+| MAIN-010 | P0 | 自动化回归 | 执行 `uv run pytest tests/test_xdr_openapi_platform.py tests/test_config.py tests/test_api_http.py -q`；2026-08-31 续跑加入 OpenAPI 一致性检查 | XDR 接入、配置读取、HTTP 主链和 OpenAPI 相关测试通过 | 2026-08-31 续跑 `34 passed in 0.52s` | Pass | 无 | EVID-MAIN-010 | 无 |
 | MAIN-011 | P1 | 语法检查 | 执行已修改 Python 文件 `py_compile` | 文件可被 Python 正常编译 | 通过，无输出 | Pass | 无 | EVID-MAIN-011 | 无 |
 
 ## 5. 结果汇总
@@ -144,7 +150,7 @@ curl -s -X POST 'http://127.0.0.1:8000/runs' \
 | 指标 | 计算口径 | 分子/原始计数 | 分母/原始计数 | 结果 | 数据或脚本证据 |
 |---|---|---:|---:|---:|---|
 | 主链测试通过率 | 本文列出的正式用例 Pass 数 / 正式用例总数 | 11 | 11 | 100% | EVID-MAIN-001 至 EVID-MAIN-011 |
-| 自动化测试通过情况 | pytest 通过数 / pytest 已执行测试数，不含 skipped | 33 | 33 | 100% | EVID-MAIN-010 |
+| 自动化测试通过情况 | pytest 通过数 / pytest 已执行测试数，不含 skipped | 34 | 34 | 100% | EVID-MAIN-010 |
 | CORS 预检通过情况 | 配置 origin 的预检请求成功数 / 本轮预检请求数 | 1 | 1 | 100% | EVID-MAIN-005 |
 
 ## 7. 证据索引
@@ -159,8 +165,8 @@ curl -s -X POST 'http://127.0.0.1:8000/runs' \
 | EVID-MAIN-006 | 本地命令输出：OpenAPI 生成和 diff 检查 | 不含敏感信息 | 接口文档与代码一致 |
 | EVID-MAIN-007 | `tests/test_jsonl_platform.py`；`tests/test_raw_jsonl_ingest_and_correlation.py` | 不含敏感信息 | JSONL 样例可进入主链 |
 | EVID-MAIN-008 | `tests/test_state_flow.py` | 不含敏感信息 | 状态机合法、非法和审批路径受测 |
-| EVID-MAIN-009 | 本地真实 XDR 联调脱敏输出：`POST /runs` + `xdr_event_id=alert-9fd0c034-ba09-4311-8360-cf1787206450` | 已脱敏，不含联动码、平台地址和原始响应 | 后端可从真实 XDR 拉取目标告警并进入 `APPROVAL_REQUIRED` |
-| EVID-MAIN-010 | 本地命令输出：`uv run pytest tests/test_xdr_openapi_platform.py tests/test_config.py tests/test_api_http.py -q` | 不含敏感信息 | XDR 接入、配置读取和 HTTP 主链相关局部回归通过 |
+| EVID-MAIN-009 | 本地真实 XDR 联调脱敏输出：`POST /runs` + `xdr_event_id=alert-9fd0c034-ba09-4311-8360-cf1787206450`；2026-08-31 续跑 `event_id=evt-fd481d29-7de4-41ef-9dc9-0635b0fb9458`、`run_id=run-c6a6d619-2569-475d-a20e-e00096955706`、`trace_id=trace-9f3362df-49c6-4722-9b07-50448e6b7a3e`；状态线 `RECEIVED -> CORRELATING -> TRIAGED -> INVESTIGATING -> DECISION_READY -> APPROVAL_REQUIRED`；错误列表为空 | 已脱敏，不含联动码、平台地址和原始响应 | 后端可从真实 XDR 拉取目标告警并进入 `APPROVAL_REQUIRED` |
+| EVID-MAIN-010 | 本地命令输出：`env INVESTIGATION_BACKEND=tool_mock uv run pytest tests/test_xdr_openapi_platform.py tests/test_config.py tests/test_api_http.py tests/test_openapi_generation.py -q`；结果 `34 passed in 0.52s` | 不含敏感信息 | XDR 接入、配置读取、HTTP 主链和 OpenAPI 相关局部回归通过 |
 | EVID-MAIN-011 | 本地命令输出：`uv run python -m py_compile ...` | 不含敏感信息 | 已修改 Python 文件语法检查通过 |
 
 ## 8. 失败项与已知限制
@@ -187,3 +193,4 @@ curl -s -X POST 'http://127.0.0.1:8000/runs' \
 |---|---|---|---|
 | 2026-08-26 | main / 5c05d61 | 新增主链测试记录文档，整理当前已执行回归、接口、CORS 和 OpenAPI 检查结果 | 阶段通过 |
 | 2026-08-30 | 当前工作区 | 补充 XDR OpenAPI 告警接入单测、官方签名单测、真实告警输入联调记录和日志查询非阻断回归 | 阶段通过 |
+| 2026-08-31 | 当前工作区 | 仅续跑真实 XDR `/runs` 主链输入，保存同一次运行的脱敏摘要、状态线和错误列表 | 阶段通过 |
