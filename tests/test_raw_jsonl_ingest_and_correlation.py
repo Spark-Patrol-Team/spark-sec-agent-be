@@ -103,7 +103,11 @@ class RawJsonlIngestAndCorrelationTest(unittest.TestCase):
 
     def test_raw_jsonl_webshell_reaches_approval_gate(self) -> None:
         adapter = JsonlSampleAdapter(FIXTURE_DIR, input_mode="raw")
-        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))
 

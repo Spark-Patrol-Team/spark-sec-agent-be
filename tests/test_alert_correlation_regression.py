@@ -89,7 +89,11 @@ class AlertCorrelationRegressionTest(unittest.TestCase):
             AlertCorrelationService().correlate([])
 
     def test_security_event_enters_triage_automatically(self) -> None:
-        orchestrator = Orchestrator(platform=self.raw_adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=self.raw_adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))
 

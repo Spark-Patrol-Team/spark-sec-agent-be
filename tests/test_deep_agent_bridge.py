@@ -28,6 +28,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
 
     def test_deep_agent_backend_returns_human_required_when_unavailable(self) -> None:
         service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent")
+        service._deep_agent_bridge = _UnavailableBridge()
 
         report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
 

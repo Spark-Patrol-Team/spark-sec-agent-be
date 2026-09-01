@@ -42,6 +42,11 @@ class RawJsonlNormalizer:
         "source_ip",
         "destination_ip",
         "host_ip",
+        "traceBackId",
+        "gptResultDescription",
+        "attackState",
+        "confidence",
+        "alertDealAction",
     )
 
     def load_jsonl(self, path: str | Path) -> list[NormalizedAlertRecord]:
@@ -125,6 +130,7 @@ class RawJsonlNormalizer:
         alert_name = self._required_text(raw, "alert_name")
         alert_grade = self._optional_text(raw, "alert_grade") or "中危"
         destination_ip = self._optional_text(raw, "destination_ip") or self._optional_text(raw, "host_ip")
+        event_type = self._xdr_event_type(raw, alert_name)
         severity, risk_score_seed = self._xdr_severity(alert_name, alert_grade)
         return NormalizedAlertRecord(
             event_id=event_id,
@@ -135,7 +141,7 @@ class RawJsonlNormalizer:
                 or self._optional_text(raw, "data_source")
                 or "XDR"
             ),
-            event_type=self._event_type(alert_name),
+            event_type=event_type,
             rule_or_event_name=alert_name,
             severity=severity,
             source_ip=self._optional_text(raw, "source_ip"),
@@ -143,15 +149,15 @@ class RawJsonlNormalizer:
             destination_ip=destination_ip,
             destination_port=self._optional_port(raw, "destination_port"),
             transport_protocol="tcp" if self._optional_port(raw, "source_port") is not None else None,
-            application_protocol=self._application_protocol(alert_name),
+            application_protocol=self._application_protocol_for_type(event_type),
             affected_asset=destination_ip,
             evidence_source=self._evidence_source(raw, default="xdr_security_alert"),
             evidence_refs=[field for field in self._XDR_EVIDENCE_FIELDS if field in raw],
             sample_nature=sample_nature,
             status="new",
             risk_score_seed=risk_score_seed,
-            investigation_hint=self._investigation_hint(self._event_type(alert_name)),
-            recommended_action=self._recommended_action(self._event_type(alert_name)),
+            investigation_hint=self._investigation_hint(event_type),
+            recommended_action=self._recommended_action(event_type),
         )
 
     @staticmethod
@@ -161,6 +167,15 @@ class RawJsonlNormalizer:
     def _xdr_severity(self, alert_name: str, alert_grade: str) -> tuple[str, int]:
         if alert_name == "WebShell蚁剑工具文件管理" and alert_grade == "高危":
             return "critical", 95
+        numeric_grade = self._numeric_severity(alert_grade)
+        if numeric_grade is not None:
+            if numeric_grade >= 90:
+                return "critical", 90
+            if numeric_grade >= 70:
+                return "high", 80
+            if numeric_grade >= 50:
+                return "medium", 65
+            return "low", 30
         severity = {
             "严重": "critical",
             "高危": "high",
@@ -173,6 +188,23 @@ class RawJsonlNormalizer:
         }.get(alert_grade.lower(), "medium")
         return severity, self._risk_seed(severity)
 
+    def _xdr_event_type(self, raw: Mapping[str, Any], alert_name: str) -> str:
+        return self._event_type(
+            self._optional_text(raw, "threat_sub_type_desc"),
+            self._optional_text(raw, "risk_tag"),
+            self._optional_text(raw, "threat_type_desc"),
+            self._optional_text(raw, "alert_classification"),
+            self._optional_text(raw, "threat_class_desc"),
+            alert_name,
+        )
+
+    @staticmethod
+    def _numeric_severity(alert_grade: str) -> int | None:
+        try:
+            return int(alert_grade.strip())
+        except (TypeError, ValueError):
+            return None
+
     @staticmethod
     def _sta_severity(rule_name: str) -> str:
         if "横向" in rule_name or "SMB" in rule_name.upper():
@@ -180,21 +212,27 @@ class RawJsonlNormalizer:
         return "high"
 
     @staticmethod
-    def _event_type(name: str) -> str:
-        normalized = name.lower()
-        if "sql" in normalized and "注入" in name:
-            return "sql_injection"
-        if "webshell" in normalized or "蚁剑" in name:
-            return "webshell"
-        if "横向" in name or "smb" in normalized:
-            return "lateral_movement"
-        if "未授权" in name:
-            return "unauthorized_access"
+    def _event_type(*names: str | None) -> str:
+        for name in names:
+            if not name:
+                continue
+            normalized = name.lower()
+            if "webshell" in normalized or "web shell" in normalized or "蚁剑" in name:
+                return "webshell"
+            if ("sql" in normalized and "注入" in name) or "sql注入" in normalized:
+                return "sql_injection"
+            if "横向" in name or "smb" in normalized:
+                return "lateral_movement"
+            if "未授权" in name:
+                return "unauthorized_access"
         return "other"
 
     @staticmethod
     def _application_protocol(name: str) -> str | None:
-        event_type = RawJsonlNormalizer._event_type(name)
+        return RawJsonlNormalizer._application_protocol_for_type(RawJsonlNormalizer._event_type(name))
+
+    @staticmethod
+    def _application_protocol_for_type(event_type: str) -> str | None:
         return {"sql_injection": "http", "webshell": "http", "lateral_movement": "smb"}.get(event_type)
 
     @staticmethod
