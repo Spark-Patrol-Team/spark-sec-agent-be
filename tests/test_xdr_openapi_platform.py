@@ -486,6 +486,46 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(alert_context["dst_ips"], ["198.51.100.200"])
         self.assertIn("alert-unit-test-stable-id:traceBackId:trace-unit-001", ctx.triage.supporting_evidence_refs)
 
+    def test_xdr_mapping_uses_official_type_and_last_time(self) -> None:
+        session = FakeSession(
+            FakeResponse(
+                200,
+                {
+                    "code": "Success",
+                    "message": "成功",
+                    "data": {
+                        "total": 1,
+                        "item": [
+                            {
+                                "uuId": "alert-unit-test-webshell-official",
+                                "name": "高危文件访问行为",
+                                "severity": 70,
+                                "riskTag": ["WebShell"],
+                                "threatClassDesc": "攻击利用",
+                                "threatTypeDesc": "Web攻击",
+                                "threatSubTypeDesc": "WebShell",
+                                "srcIp": ["198.51.100.100"],
+                                "dstIp": ["198.51.100.200"],
+                                "firstTime": "2026-08-28T09:30:00+08:00",
+                                "lastTime": "2026-08-28T09:45:00+08:00",
+                                "updateTime": "2026-08-28T09:50:00+08:00",
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+        adapter = XdrOpenApiAdapter(xdr_config(), session=session)
+
+        alerts = adapter.fetch_alerts(xdr_event_id="alert-unit-test-webshell-official")
+
+        self.assertEqual(len(alerts), 1)
+        alert = alerts[0]
+        self.assertEqual(alert.alert_type, "webshell")
+        self.assertEqual(alert.raw_severity, "high")
+        self.assertEqual(alert.scenario_fields["risk_score_seed"], 80)
+        self.assertEqual(alert.occurred_at.isoformat(), "2026-08-28T09:45:00+08:00")
+
     def test_optional_xdr_log_auth_failure_does_not_block_real_alert_approval(self) -> None:
         session = FakeSession(
             responses=[

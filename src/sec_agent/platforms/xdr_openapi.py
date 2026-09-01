@@ -334,7 +334,17 @@ class XdrOpenApiAdapter:
 
     def _to_normalizer_raw(self, raw: Mapping[str, Any]) -> dict[str, Any]:
         event_id = self._first_text(raw, "event_id", "alert_id", "uuId", "uuid", "id", "sample_id")
-        event_time = self._first_time_text(raw, "event_time", "alert_time", "occurred_at", "firstTime", "lastTime", "time", "created_at")
+        event_time = self._first_time_text(
+            raw,
+            "event_time",
+            "alert_time",
+            "occurred_at",
+            "lastTime",
+            "firstTime",
+            "updateTime",
+            "time",
+            "created_at",
+        )
         alert_name = self._first_text(raw, "alert_name", "rule_name", "name", "title")
         if not event_id or not event_time or not alert_name:
             raise ValueError("缺少 event_id/alert_time/alert_name 等主链必需字段")
@@ -354,6 +364,10 @@ class XdrOpenApiAdapter:
                 "category",
                 "type",
             ),
+            "threat_class_desc": self._first_text(raw, "threatClassDesc"),
+            "threat_type_desc": self._first_text(raw, "threatTypeDesc"),
+            "threat_sub_type_desc": self._first_text(raw, "threatSubTypeDesc"),
+            "risk_tag": self._first_text(raw, "riskTag"),
             "source_ip": self._first_text(raw, "source_ip", "sourceIp", "src_ip", "srcIp", "src", "sourceIps", "srcIps"),
             "source_port": self._first_value(raw, "source_port", "sourcePort", "src_port", "srcPort", "sourcePorts", "srcPorts"),
             "destination_ip": self._first_text(
