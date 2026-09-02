@@ -1,4 +1,21 @@
 services:
+  api:
+    build: .
+    container_name: spark-sec-agent-api
+    env_file:
+      - .env
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
   mysql:
     image: mysql:8.4
     container_name: spark-sec-agent-mysql
@@ -8,7 +25,7 @@ services:
       MYSQL_USER: sec_agent
       MYSQL_PASSWORD: sec_agent
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
@@ -22,4 +39,3 @@ services:
 
 volumes:
   mysql_data:
-

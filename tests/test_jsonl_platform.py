@@ -99,7 +99,11 @@ class JsonlPlatformTest(unittest.TestCase):
 
     def test_jsonl_webshell_runs_through_approval_flow(self) -> None:
         adapter = JsonlSampleAdapter(FIXTURE_DIR)
-        orchestrator = Orchestrator(platform=adapter, store=InMemoryEventRepository())
+        orchestrator = Orchestrator(
+            platform=adapter,
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
         ctx = orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))
 

@@ -6,6 +6,7 @@ Requires-Python: >=3.11
 Requires-Dist: fastapi==0.115.12
 Requires-Dist: openai<2.0.0,>=1.0.0
 Requires-Dist: pydantic==2.13.3
+Requires-Dist: pycryptodome<4.0.0,>=3.20.0
 Requires-Dist: pymysql<2.0.0,>=1.1.0
 Requires-Dist: requests<3.0.0,>=2.32.0
 Requires-Dist: sqlalchemy<3.0.0,>=2.0.0

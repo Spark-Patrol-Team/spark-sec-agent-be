@@ -71,8 +71,8 @@ class DeepInvestigationAgent:
                 )
             )
 
-        has_failed_tool = any(result.status != ToolCallStatus.SUCCESS for result in results)
-        needs_human = has_failed_tool or (
+        has_blocking_failed_tool = any(self._is_blocking_tool_failure(step) for step in steps)
+        needs_human = has_blocking_failed_tool or (
             len(steps) >= self._max_steps and bool(triage.evidence_gaps)
         )
         recommended_actions = []
@@ -158,6 +158,15 @@ class DeepInvestigationAgent:
         if request.tool_name == "xdr_log_query":
             return "查询 XDR 样例日志"
         return f"执行调查工具 {request.tool_name}"
+
+    def _is_blocking_tool_failure(self, step: InvestigationStep) -> bool:
+        if step.tool_result is None or step.tool_result.status == ToolCallStatus.SUCCESS:
+            return False
+        # XDR 日志查询是补充上下文工具；真实告警输入验收阶段未确认日志接口契约时，
+        # 不应因为该可选查询失败而阻断已命中的告警证据进入审批流。
+        if step.tool_request and step.tool_request.tool_name == "xdr_log_query":
+            return False
+        return True
 
     def _evidence_relations(self, event: SecurityEvent, has_actions: bool) -> list[str]:
         if not has_actions:

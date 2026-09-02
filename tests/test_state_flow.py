@@ -9,7 +9,11 @@ from sec_agent.services.orchestrator import Orchestrator
 
 class StateFlowTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.orchestrator = Orchestrator(platform=FixedSampleAdapter(), store=InMemoryEventRepository())
+        self.orchestrator = Orchestrator(
+            platform=FixedSampleAdapter(),
+            store=InMemoryEventRepository(),
+            investigation_backend="tool_mock",
+        )
 
     def test_fixed_sample_stops_at_approval_required(self) -> None:
         ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
