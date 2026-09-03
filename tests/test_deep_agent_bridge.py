@@ -1,6 +1,8 @@
+import os
 import sys
 import types
 import unittest
+from unittest import mock
 
 from sec_agent.domain.models import BusinessStatus, SecurityEvent, TriageResult, TruthVerdict, Priority
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
@@ -13,8 +15,12 @@ class DeepAgentBridgeTest(unittest.TestCase):
         old_modules = dict(sys.modules)
         self._install_fake_deep_agent()
         try:
-            service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent")
-            report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
+            # 隔离生产环境变量：DEEP_AGENT_TOOL_MODE=mcp/auto 会经桥接 _override_config
+            # 覆盖 fake config 的工具模式，导致 fake deep_agent 缺少 MCP 工具时桥接不可用、
+            # 返回人工接管；本用例固定走 mock 工具映射，与机器环境变量解耦。
+            with mock.patch.dict(os.environ, {"DEEP_AGENT_TOOL_MODE": ""}):
+                service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent")
+                report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
         finally:
             self._restore_modules(old_modules)
 

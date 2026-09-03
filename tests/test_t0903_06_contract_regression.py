@@ -154,10 +154,15 @@ class T090306DesensitizedRealConversionTest(unittest.TestCase):
         self.assertEqual(self.alert.scenario_fields["xdr_url"], ["http://example.local/path"])
 
     def test_full_main_chain_to_approval_required(self):
-        """脱敏真实结构 → 完整主链 APPROVAL_REQUIRED，无 fallback。"""
+        """脱敏真实结构 → 完整主链 APPROVAL_REQUIRED，无 fallback。
+
+        investigation_backend 固定 tool_mock：主链状态与 deep_agent/LLM 环境解耦，
+        避免开发机配置 LLM 凭据/DEEP_AGENT_TOOL_MODE 时走真实深度调查导致非确定性。
+        """
         session = make_session(wrap(OFFICIAL_ALERT))
         orch = Orchestrator(platform=XdrOpenApiAdapter(cfg(), session=session),
-                            store=InMemoryEventRepository())
+                            store=InMemoryEventRepository(),
+                            investigation_backend="tool_mock")
         ctx = orch.start(StartRunRequest(source="xdr", xdr_event_id="alert-REDACTED-UUID"))
         self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
         self.assertEqual(ctx.effective_source, "xdr_openapi")
@@ -187,8 +192,10 @@ class T090306FixedSampleRegressionTest(unittest.TestCase):
             self.assertEqual(al.source, "fixed_sample")
 
     def test_fixed_sample_main_chain_to_approval_required(self):
+        # investigation_backend 固定 tool_mock：与 deep_agent/LLM 环境解耦（见 test_state_flow.py 既有模式）
         orch = Orchestrator(platform=FixedSampleAdapter(), store=InMemoryEventRepository(),
-                            platform_backend="fixed_sample")
+                            platform_backend="fixed_sample",
+                            investigation_backend="tool_mock")
         ctx = orch.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
         self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
         self.assertEqual(ctx.effective_source, "fixed_sample")
