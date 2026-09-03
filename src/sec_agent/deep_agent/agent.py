@@ -165,14 +165,41 @@ class DeepInvestigationAgent:
         ]
 
     # ------------------------------------------------------------------
-    def _parse_report(self, content: str, event: SecurityEventInput, tool_records: list[dict]) -> InvestigationReport:
+    def _parse_report(
+        self,
+        content: str,
+        event: SecurityEventInput,
+        tool_records: list[dict],
+    ) -> InvestigationReport:
         try:
             data = self._extract_json(content)
         except Exception as e:  # noqa: BLE001
-            return self._fallback_report(event, tool_records, reason=f"报告解析失败：{e}")
+            return self._fallback_report(
+                event,
+                tool_records,
+                reason=f"报告解析失败：{e}",
+            )
 
-        # 用代码采集的真实工具调用记录覆盖，保证可审计
+        # 没有任何真实成功/部分成功工具记录时，
+        # 不允许 LLM 生成未经验证的调查步骤或证据。
+        successful_records = [
+            record
+            for record in tool_records
+            if record.get("status") in {"success", "partial"}
+        ]
+
+        if not successful_records:
+            return self._fallback_report(
+                event,
+                tool_records,
+                reason="关键调查工具不可用或未成功返回数据，禁止基于未验证信息生成调查结论",
+            )
+
+       
+
+        # 用代码侧真实采集记录覆盖 LLM 输出，保证可审计。
         data["tool_call_records"] = tool_records
+
         data["event_basic_info"] = data.get("event_basic_info") or {
             "event_id": event.event_id,
             "event_type": event.event_type,
@@ -181,9 +208,9 @@ class DeepInvestigationAgent:
             "source_ip": event.source_ip,
             "target_ip": event.target_ip,
         }
+
         data["trace_id"] = event.trace_id
         return InvestigationReport.from_dict(data)
-
     # ------------------------------------------------------------------
     @staticmethod
     def _extract_json(text: str) -> dict:
