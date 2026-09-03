@@ -1,0 +1,20 @@
+{
+  "contract_version": "2026-09-03.xdr-input.v2",
+  "purpose": "structure_only_for_local_xdr_adapter_validation",
+  "transport": {
+    "method": "POST",
+    "endpoint": "/api/xdr/v1/alerts/list",
+    "authentication": "XdrOfficialSigner (HMAC-SHA256) via auth_code|aksk|token, LOCAL_ENV_OR_SECRET_STORE_ONLY"
+  },
+  "body": {
+    "page": 1,
+    "pageSize": 50,
+    "startTimestamp": "<INTEGER_UNIX_SECONDS_OPTIONAL>"
+  },
+  "constraints": [
+    "Use one consistent event time window across retries and pages.",
+    "Do not persist real identifiers, IP addresses, endpoint URLs, headers, tokens, cookies, or raw responses in Git.",
+    "Do not send RFC5737 fixture addresses to a real XDR query as if they were runtime entities.",
+    "Authorization header: algorithm=HMAC-SHA256, Access=<ak>, SignedHeaders=<headers>, Signature=<hex_upper> — generated locally, never commit the ak/sk/auth_code."
+  ]
+}
