@@ -1,21 +1,23 @@
 {
-  "case_id": "TC-KNOWLEDGE-005",
-  "category": "证据不足",
-  "description": "XDR查询失败，无法获取补充数据",
-  "input_event": {
-    "event_id": "EVT-API-2026-005",
-    "event_type": "WebShell",
-    "severity": "HIGH",
-    "timestamp": "2026-08-20T11:30:00Z",
-    "source_ip": "10.10.10.25",
-    "target_ip": "192.168.1.100",
-    "initial_verdict": "疑似真实攻击",
-    "confidence": 0.60,
-    "evidence": [
-      "XDR告警查询返回超时错误",
-      "目标资产查询返回权限不足",
-      "日志查询返回数据为空",
-      "仅有原始WebShell文件名字符串"
-    ]
-  }
+  "event_id": "EVT-API-2026-005",
+  "event_type": "WebShell",
+  "severity": "HIGH",
+  "timestamp": "2026-08-20T11:30:00Z",
+  "source_ip": "10.10.10.25",
+  "target_ip": "192.168.1.100",
+  "alerts": [
+    "XDR告警查询返回超时错误",
+    "目标资产查询返回权限不足",
+    "日志查询返回数据为空",
+    "仅有原始WebShell文件名字符串"
+  ],
+  "evidence": [],
+  "initial_verdict": "疑似真实攻击",
+  "confidence": 0.60,
+  "triage": {
+    "verdict": "uncertain",
+    "confidence": 0.60
+  },
+  "trace_id": "trace-0903-005",
+  "run_id": "run-0903-005"
 }
