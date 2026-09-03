@@ -1,22 +1,24 @@
 {
-  "case_id": "TC-KNOWLEDGE-001",
-  "category": "正向变体",
-  "description": "IIS WebShell（UpdateChecker.aspx）",
-  "input_event": {
-    "event_id": "EVT-IIS-2025-001",
-    "event_type": "WebShell",
-    "severity": "HIGH",
-    "timestamp": "2025-07-20T06:30:00Z",
-    "source_ip": "185.165.29.101",
-    "target_ip": "192.168.5.25",
-    "initial_verdict": "疑似真实攻击",
-    "confidence": 0.76,
-    "evidence": [
-      "检测到IIS服务器上ASPX脚本异常访问",
-      "HTTP请求头为application/octet-stream",
-      "请求body为Base64编码的AES加密数据",
-      "目标文件路径: /scripts/UpdateChecker.aspx",
-      "文件修改时间与业务发布时间不符"
-    ]
-  }
+  "event_id": "EVT-IIS-2025-001",
+  "event_type": "WebShell",
+  "severity": "HIGH",
+  "timestamp": "2025-07-20T06:30:00Z",
+  "source_ip": "185.165.29.101",
+  "target_ip": "192.168.5.25",
+  "alerts": [
+    "检测到IIS服务器上ASPX脚本异常访问",
+    "HTTP请求头为application/octet-stream",
+    "请求body为Base64编码的AES加密数据",
+    "目标文件路径: /scripts/UpdateChecker.aspx",
+    "文件修改时间与业务发布时间不符"
+  ],
+  "evidence": [],
+  "initial_verdict": "疑似真实攻击",
+  "confidence": 0.76,
+  "triage": {
+    "verdict": "uncertain",
+    "confidence": 0.76
+  },
+  "trace_id": "trace-0903-001",
+  "run_id": "run-0903-001"
 }
