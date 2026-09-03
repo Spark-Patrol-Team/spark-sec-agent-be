@@ -1,22 +1,24 @@
 {
-  "case_id": "TC-KNOWLEDGE-002",
-  "category": "正向变体",
-  "description": "Godzilla WebShell（PassiveNeuron活动）",
-  "input_event": {
-    "event_id": "EVT-PN-2025-002",
-    "event_type": "WebShell",
-    "severity": "CRITICAL",
-    "timestamp": "2025-10-15T12:00:00Z",
-    "source_ip": "45.33.22.19",
-    "target_ip": "10.0.0.50",
-    "initial_verdict": "疑似真实攻击",
-    "confidence": 0.80,
-    "evidence": [
-      "检测到ASP.NET ViewState反序列化攻击",
-      "检测到WebShell文件: /1.aspx",
-      "WebShell具备AES/RSA加密通信特征",
-      "检测到内核驱动文件: Wingtb.sys",
-      "检测到进程隐藏行为"
-    ]
-  }
+  "event_id": "EVT-PN-2025-002",
+  "event_type": "WebShell",
+  "severity": "CRITICAL",
+  "timestamp": "2025-10-15T12:00:00Z",
+  "source_ip": "45.33.22.19",
+  "target_ip": "10.0.0.50",
+  "alerts": [
+    "检测到ASP.NET ViewState反序列化攻击",
+    "检测到WebShell文件: /1.aspx",
+    "WebShell具备AES/RSA加密通信特征",
+    "检测到内核驱动文件: Wingtb.sys",
+    "检测到进程隐藏行为"
+  ],
+  "evidence": [],
+  "initial_verdict": "疑似真实攻击",
+  "confidence": 0.80,
+  "triage": {
+    "verdict": "uncertain",
+    "confidence": 0.80
+  },
+  "trace_id": "trace-0903-002",
+  "run_id": "run-0903-002"
 }
