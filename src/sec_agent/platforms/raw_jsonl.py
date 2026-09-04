@@ -219,7 +219,15 @@ class RawJsonlNormalizer:
             normalized = name.lower()
             if "webshell" in normalized or "web shell" in normalized or "蚁剑" in name:
                 return "webshell"
-            if ("sql" in normalized and "注入" in name) or "sql注入" in normalized:
+            if "sql注入" in normalized or ("sql" in normalized and "注入" in name):
+                return "sql_injection"
+            # 名称回退：官方分类缺失或为「异常操作」时，sa 账户密码 / SQL 查询类告警仍应识别为 SQL 注入
+            if "sql" in normalized and (
+                "sa账户密码" in name.replace(" ", "")
+                or "sa 账户密码" in name
+                or "sql 查询" in normalized
+                or "sql查询" in normalized.replace(" ", "")
+            ):
                 return "sql_injection"
             if "横向" in name or "smb" in normalized:
                 return "lateral_movement"

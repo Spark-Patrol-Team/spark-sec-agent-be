@@ -326,5 +326,26 @@ class T090306DeduplicationTest(unittest.TestCase):
             AlertCorrelationService(window_minutes=15).correlate([a1, a2])
 
 
+class T090306EventTypeNameFallbackTest(unittest.TestCase):
+    """闫昱硕 2026-09-04 反馈：官方分类为「异常操作」时 name 回退应识别 SQL 注入。"""
+
+    def test_official_abnormal_operation_falls_back_to_sqli_by_name(self):
+        raw = dict(OFFICIAL_ALERT)
+        raw["threatSubTypeDesc"] = "异常操作"
+        raw["riskTag"] = ["异常操作"]
+        raw["threatTypeDesc"] = "异常操作"
+        session = make_session(wrap(raw))
+        alerts = XdrOpenApiAdapter(cfg(), session=session).fetch_alerts(xdr_event_id=raw["uuId"])
+        self.assertEqual(alerts[0].alert_type, "sql_injection")
+
+    def test_name_only_sa_password_attack_maps_to_sqli(self):
+        from sec_agent.platforms.raw_jsonl import RawJsonlNormalizer
+
+        result = RawJsonlNormalizer._event_type(
+            None, None, None, None, None, "SQL server数据库查询sa账户密码攻击"
+        )
+        self.assertEqual(result, "sql_injection")
+
+
 if __name__ == "__main__":
     unittest.main()
