@@ -4,7 +4,7 @@
 
 当前仓库使用 GitHub Actions 完成持续交付：
 
-- 推送到 `main` 时，先跑测试和 OpenAPI 一致性检查，再构建 Docker 镜像并推送到 GHCR，然后自动通过 SSH 部署到服务器。
+- 推送到 `main` 时，先按 `uv.lock` 安装依赖并跑测试和 OpenAPI 一致性检查，再构建 Docker 镜像并推送到 GHCR，然后自动通过 SSH 部署到服务器。
 - 推送 `v*` tag 时，只测试、构建镜像并推送到 GHCR，不自动部署。
 - 手动触发 `CD` workflow 且勾选 `deploy=true` 时，也会通过 SSH 登录服务器，上传生产 compose 文件，拉取指定镜像并重启 `api` 服务。
 - 生产部署只负责后端 API 容器，不在生产 compose 中内置 MySQL 默认密码；生产数据库、XDR 联动码、LLM Key 等敏感配置必须由服务器 `.env` 或密钥系统提供。
@@ -13,10 +13,10 @@
 
 | 触发方式 | 行为 |
 |---|---|
-| push 到 `main` | 测试、检查 OpenAPI、构建镜像、推送 `latest` 和 `sha-<短SHA>`，然后自动 SSH 部署 |
-| push `v*` tag | 测试、检查 OpenAPI、构建镜像、推送 tag 镜像和 `sha-<短SHA>`，不自动部署 |
-| 手动 workflow_dispatch，`deploy=false` | 测试、构建并推送镜像，不部署 |
-| 手动 workflow_dispatch，`deploy=true` | 测试、构建并推送镜像，然后 SSH 部署 |
+| push 到 `main` | `uv sync --locked --extra dev`、测试、检查 OpenAPI、构建镜像、推送 `latest` 和 `sha-<短SHA>`，然后自动 SSH 部署 |
+| push `v*` tag | `uv sync --locked --extra dev`、测试、检查 OpenAPI、构建镜像、推送 tag 镜像和 `sha-<短SHA>`，不自动部署 |
+| 手动 workflow_dispatch，`deploy=false` | `uv sync --locked --extra dev`、测试、构建并推送镜像，不部署 |
+| 手动 workflow_dispatch，`deploy=true` | `uv sync --locked --extra dev`、测试、构建并推送镜像，然后 SSH 部署 |
 
 ## GitHub Secrets
 
@@ -33,6 +33,19 @@
 | `GHCR_TOKEN` | 是 | 服务器拉取 GHCR 镜像使用的 token，需要 `read:packages` 权限 |
 
 `GITHUB_TOKEN` 由 GitHub Actions 自动提供，用于 workflow 内部推送镜像到 GHCR。
+
+## 依赖版本策略
+
+CI、CD 和 Docker 镜像构建统一使用 `uv` 与 `uv.lock`：
+
+```text
+CI/CD 测试依赖：uv sync --locked --extra dev
+CI/CD 测试命令：uv run --locked pytest -q
+CI/CD OpenAPI：uv run --locked python -m sec_agent.scripts.generate_openapi
+Docker 运行依赖：uv sync --locked --no-dev --no-editable --no-cache
+```
+
+Python 版本由 `.python-version` 固定为 `3.11`。如需升级 Python 或依赖版本，应先本地更新 `pyproject.toml` / `uv.lock`，确认测试通过后再合并。
 
 ## 服务器前置条件
 
