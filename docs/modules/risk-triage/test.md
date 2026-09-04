@@ -58,6 +58,23 @@ PYTHONPATH=src python -m pytest -q
 
 > 边界结论：`risk_score == 70` 判 `malicious`、`== 40` 判 `uncertain`（含等号）；`< 40` 判 `benign` 且不调查；`confidence` 为固定档位；未映射严重度 / 未知攻击类型计 0 分，会让分数塌缩，属需在真实数据中重点观察的缺失处理路径。
 
+## 合并后回归（2026-09-04）
+
+合并 PR #38（研判干净分支）后，`main@1dfe58b` 基线：
+
+```bash
+PYTHONPATH=src python -m pytest tests/test_triage.py -q   # 20 passed
+PYTHONPATH=src python -m pytest -q -rs                    # 162 passed, 1 skipped
+```
+
+跳过项为 `tests/test_investigation_agent.py:232`（未配置 `LLM_API_KEY` 的深度调查可选用例），与研判无关。说明：陈敏字段映射分支自报 `175 passed, 1 skipped`（含 58 项逐字段核对 + 25 条端到端契约测试），与研判干净分支基线口径不同，不冲突。
+
+真实观测边界（与字段契约对齐后确认）：
+
+| 事件 | verdict | confidence | risk_score | priority | should_investigate | event_type | 说明 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `evt-9b6df22d-…` | malicious | 0.85 | 80 | high | True | sql_injection（name 回退） | 规则分 60 = high(40)+sql(20)；`risk_score=80` 由 `risk_score_seed=80` 主导 |
+
 ## 分数边界
 
 - `>= 70`：`malicious / high / should_investigate=True`

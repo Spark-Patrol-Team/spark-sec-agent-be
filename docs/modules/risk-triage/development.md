@@ -28,10 +28,11 @@ ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
 
 ## 依赖字段约定
 
-- `AlertRecord.raw_severity`：标准化后的 `critical/high/medium/low`。
-- `AlertRecord.alert_type`：`webshell` / `sql_injection` / `lateral_movement` / `unauthorized_access` 等。
+- `AlertRecord.raw_severity`：上游 `severity:int` 分级映射（`≥90 critical`、`≥70 high`、`≥50 medium`、`<50 low`），中文等级回退；未映射落 `medium`。对应的 `risk_score_seed`（`critical/90`、`high/80`、`medium/65`、`low/30`）。
+- `AlertRecord.alert_type`：上游 `event_type` 6 层优先链（`threatSubTypeDesc → riskTag → threatTypeDesc → alert_classification → threatClassDesc → name`）；`name` 回退含 `sql`+「注入」或 `sa账户密码 / SQL 查询`→`sql_injection`，未知落 `other`。
 - `AlertRecord.evidence_refs`：写入 `supporting_evidence_refs`。
 - `AlertRecord.scenario_fields["risk_score_seed"]`：可选平台种子分（0~100 整数）。
+- （可选）`scenario_fields.xdr_*`：原始 XDR 字段留存（如 `xdr_gptResultDescription`、`xdr_attackState`、`xdr_confidence`、`xdr_stage`），仅供人工研判/调查参考，不参与当前确定性打分。
 - `SecurityEvent.alert_count_before`：关联前告警数，触发关联加成。
 
 ## 修改注意
