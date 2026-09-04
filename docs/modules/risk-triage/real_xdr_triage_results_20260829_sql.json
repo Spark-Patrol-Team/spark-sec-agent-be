@@ -1,0 +1,49 @@
+[
+  {
+    "sample_id": "alert-9fd0c034-ba09-4311-8360-cf1787206450",
+    "sample_nature": "platform_derived",
+    "source": "xdr_openapi",
+    "source_device_type": "XDR",
+    "source_device_name": "XDR",
+    "rule_name": "SQLServer_Sa_Password_Attack",
+    "name": "SQL server数据库查询sa账户密码攻击",
+    "severity": "high",
+    "alert_type": "sql_injection",
+    "risk_score_seed": 80,
+    "alert_count_before": 1,
+    "rule_score": 60,
+    "risk_score": 80,
+    "verdict": "malicious",
+    "confidence": 0.85,
+    "priority": "high",
+    "should_investigate": true,
+    "supporting_count": 7,
+    "supporting_evidence_refs": [
+      "alert-9fd0c034-ba09-4311-8360-cf1787206450:alert_time",
+      "alert-9fd0c034-ba09-4311-8360-cf1787206450:alert_name",
+      "alert-9fd0c034-ba09-4311-8360-cf1787206450:alert_grade",
+      "alert-9fd0c034-ba09-4311-8360-cf1787206450:alert_classification",
+      "alert-9fd0c034-ba09-4311-8360-cf1787206450:source_ip",
+      "alert-9fd0c034-ba09-4311-8360-cf1787206450:destination_ip",
+      "alert-9fd0c034-ba09-4311-8360-cf1787206450:host_ip"
+    ],
+    "opposing_evidence_refs": [],
+    "evidence_gaps": [],
+    "summary": "规则基线判断为高风险，需要进入深度调查补充证据并生成处置建议",
+    "platform_gpt_result_desc": "真实攻击成功",
+    "platform_attack_status": "待处置",
+    "attack_stage": "Lateral Movement",
+    "raw_fields": {
+      "uuId": "alert-9fd0c034-ba09-4311-8360-cf1787206450",
+      "name": "SQL server数据库查询sa账户密码攻击",
+      "severity": "高危",
+      "srcIp": "192.168.100.100",
+      "dstIp": "192.168.100.200",
+      "hostIp": "192.168.100.200",
+      "gpt_result_desc": "真实攻击成功",
+      "attackStatus": "待处置",
+      "ruleName": "SQLServer_Sa_Password_Attack",
+      "attackStage": "Lateral Movement"
+    }
+  }
+]
