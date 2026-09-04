@@ -1,136 +1,101 @@
 # 场景知识模块开发说明
 
-## 代码位置
-## 0. 文档信息
+## 1. 代码与资产位置
 
-当前未单独实现代码模块，后续根据知识增强方案确定。
-| 项目 | 内容 |
+| 内容 | 路径 |
 |---|---|
-| 模块 | `Scenario-Knowledge` |
-| 负责人 | 沈洪旭 |
-| 文档状态 | 当前有效，待技术复核 |
-| 实现状态 | PR #8 已提交知识材料；运行时接入待按目标主干确认 |
-| 能力性质 | 文档型知识资产 |
-| 关联任务 | `T0826-knowledge-mini` |
-| 对应 PR | [PR #8](https://github.com/Spark-Patrol-Team/spark-sec-agent-be/pull/8) |
-| 适用版本 | PR #8 当前分支；合并前须基于最新 `main` 复核 |
-| 最后更新时间 | 2026-08-28 |
+| 工具实现 | `src/sec_agent/deep_agent/tools/knowledge.py` |
+| 唯一知识正文 | `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` |
+| 工具注册 | `src/sec_agent/deep_agent/main.py::build_tools` |
+| 包数据声明 | `pyproject.toml` 的 `[tool.setuptools.package-data]` |
+| 工具单元测试 | `tests/test_knowledge_tool.py` |
+| 案例输入边界测试 | `tests/test_knowledge_case_inputs.py` |
+| 评测案例与来源说明 | `docs/modules/scenario-knowledge/knowledge-test-cases/` |
 
-## 接入方式
-## 1. 当前实现摘要
+不要在 `docs/` 下再复制一份 WebShell 知识正文。需要更新知识时，只修改唯一运行时文件，并同步补充测试。
 
-优先作为风险研判和深度调查 Agent 的辅助能力接入。
-### 1.1 已提交内容
+## 2. 实现结构
 
-## 待补充
-- `webshell-knowledge.md`：覆盖攻击原理、证据检查清单、处置建议、停止条件与人工接管规则。
-- `webshell-qa-samples.md`：包含 5 个问答样本、预期答案和参考资料索引。
-- `design.md`、`development.md`、`test.md`：记录设计边界、交付方式和测试证据状态。
+`load_knowledge_entries()` 使用 `importlib.resources` 读取包内 Markdown，并按标题构建 `KnowledgeEntry`。每个条目包含：
 
-- 知识来源。
-- 知识更新流程。
-- 与 FastGPT/OpenClaw 的关系。
-### 1.2 未由本 PR 实现或尚未复验
+- `name`：条目名；
+- `keywords`：可匹配查询词；
+- `content`：对应章节正文；
+- `evidence_refs`：知识来源引用。
 
-- PR #8 不包含生产运行时代码，不单独提供知识查询 API 或工具注册。
-- Agent 是否能够通过当前主干的真实事件入口自动检索并引用本知识材料，尚未留下可独立复现的证据。
-- 5 个问答样本尚未通过真实 Agent JSON 事件入口完整执行。
-- FastGPT、MCP、真实 XDR 数据和正式知识库平台尚未在本 PR 中验证。
-- 来源的权威性、链接可访问性和具体主张仍需负责人逐条复核。
+`match_keyword()` 的优先级为完全匹配、条目关键词被查询包含、查询被条目关键词包含。无有效得分时返回 `None`。
 
-## 2. 文件位置
+`KnowledgeQueryTool.call()` 的调用示例：
 
-```text
-docs/modules/scenario-knowledge/
-├── design.md
-├── development.md
-├── test.md
-├── webshell-knowledge.md
-└── webshell-qa-samples.md
+```python
+result = tool.call({"keyword": "WebShell处置建议"})
 ```
 
-## 3. 依赖与配置
+命中返回 `success` 和条目内容；未命中返回 `failed`。调用方必须处理失败状态，不得把未命中改写为确定性知识。
 
-本 PR 仅交付 Markdown 文档，没有新增运行时依赖、环境变量或服务配置。实际接入方式应以 PR 合并时目标 `main` 的 Agent 代码和工具契约为准。
+## 3. 接入方式
 
-## 4. 启动与调试
+`main.py::build_tools` 在 Mock 工具之后、MCP 工具之前注册知识工具。知识文件是本地资源，因此不依赖 MCP 可用性，在 `mock`、`mcp`、`auto` 三种工具模式下都存在。
 
-知识材料本身无需编译或启动。文档层可执行以下静态检查：
+工具名固定为 `knowledge_query`。不要改成包含点号的 `knowledge.query`，因为 OpenAI 兼容函数名要求匹配 `^[a-zA-Z0-9_-]+$`。
+
+可通过以下命令检查注册结果：
 
 ```powershell
-git diff --check
-rg -n "[<]模块名称[>]|[<]知识包[>]|[<]EVID-|[<]GitHub相对路径|YYYY[-]MM[-]DD|使用前删除本提[示]" docs/modules/scenario-knowledge
+$env:PYTHONPATH = "src"
+python -m sec_agent.deep_agent.main --list-tools
 ```
 
-上述命令只验证格式和模板残留，不能替代 Agent 功能测试。
+## 4. 本地验证
 
-## 5. 调用与接入方法
+在仓库根目录执行：
 
-### 5.1 当前交付边界
-
-- 本 PR 提供可供人工阅读、评审和后续导入的 Markdown 知识材料。
-- 本 PR 不定义新的运行时调用入口。
-- 若目标 `main` 已有知识查询或 Agent 加载机制，应由运行时负责人确认实际加载文件、查询参数、返回结构和日志位置。
-
-### 5.2 预期接入流程
-
-以下流程是待验证的接入目标，不是 PR #8 已实测结果：
-
-```text
-Agent 接收 WebShell 事件
-  -> 识别知识缺口
-  -> 调用主干已有的知识查询能力
-  -> 命中 webshell-knowledge.md 中的相关条目
-  -> 在调查报告中记录知识引用和证据关联
+```powershell
+$env:PYTHONPATH = "src"
+python -m unittest tests.test_knowledge_tool -v
+python -m unittest tests.test_knowledge_case_inputs -v
 ```
 
-### 5.3 联调应保留的证据
+若本机 LLM 配置可用，可运行两个正向案例和 case6 负向对照：
 
-- 基线 Commit 和实际执行命令。
-- 输入事件 JSON 或事件 ID。
-- 知识查询词、命中条目和返回状态。
-- Agent 最终报告中的引用位置。
-- 完整终端日志或截图，以及失败时的错误信息。
+```powershell
+$env:PYTHONPATH = "src"
+$env:TOOL_MODE = "mock"
+python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/knowledge-test-cases/case1.json -o reports/case1.json
+python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/knowledge-test-cases/case2.json -o reports/case2.json
+python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/knowledge-test-cases/case6.json -o reports/case6.json
+```
 
-## 6. 异常处理与安全控制
+`TOOL_MODE=mock` 只验证本地代码契约和 Agent 消费，不代表真实 MCP 或真实 XDR 已打通。`report*.json` 是本地运行产物，已被 `.gitignore` 排除；正式验收时应把报告及运行元数据交到团队指定的受控位置，而不是提交到仓库。
 
-- 查询无结果：返回明确的“知识未命中”状态，不得生成虚假引用。
-- 来源未复核：不得把对应知识主张标记为已验收。
-- 工具失败或超时：保留错误信息并触发降级或人工接管，具体策略以主干契约为准。
-- 高风险处置建议：只作为建议输出，不得由本知识模块直接执行真实动作。
-- 敏感数据：本 PR 只包含公开知识材料，不应提交真实凭据或未脱敏事件数据。
+## 5. 知识与案例维护
 
-## 7. 真实平台、Mock 与 fallback 边界
+修改知识正文或关键词时：
 
-| 能力 | 当前实际状态 | 触发条件 | 不得误写为 |
-|---|---|---|---|
-| Markdown 知识材料 | 已提交 | 人工阅读或后续导入 | 已完成运行时自动检索 |
-| 3 组关键词查询 | 仅有成员反馈，缺少可追溯日志 | 待基于目标主干复验 | 已独立验证通过 |
-| 5 个问答样本 | 样本已编写，未完整执行 | Agent 支持可复现的测试入口后 | 5/5 功能测试通过 |
-| 真实 XDR / FastGPT / MCP | 未在本 PR 验证 | 正式平台和权限就绪后 | 已接入真实平台 |
-| fallback | 本 PR 未实现 | 由 Agent 运行时定义 | 本模块已有降级代码 |
+1. 确认新增内容有可追溯来源，并区分一手来源、二手来源和 synthetic 构造。
+2. 只更新唯一运行时知识正文。
+3. 为新增条目、关键词、未命中行为和 `evidence_refs` 增加测试。
+4. 若影响案例，更新 `来源矩阵.md` 中“可支持/不可支持”的主张。
+5. 对正向、证据不足和纯负向案例分别复验，不能只看进程退出码。
 
-## 8. 已知限制与待办
+## 6. 异常与安全控制
 
-| 优先级 | 事项 | 是否影响主链 | 完成条件 |
-|---|---|---|---|
-| P0 | 确认目标主干实际加载哪套 WebShell 知识材料 | 是 | 运行时负责人给出代码路径和 Commit |
-| P0 | 基于真实 Agent 事件入口复验知识查询链路 | 是 | 保存输入、命令、日志和报告引用 |
-| P1 | 逐条核验来源、链接和知识主张 | 影响正式验收 | 形成来源核验记录并修订问题项 |
-| P1 | 执行 5 个问答样本或建立等价 JSON 事件用例 | 影响知识能力验收 | 每题有可追溯输入和实际输出 |
-| P2 | 验证真实平台知识库导入及检索效果 | 不阻塞文档合并 | 平台环境与权限就绪 |
+- 知识文件缺失或打包遗漏应在启动/构建测试中暴露，不能静默切换到文档副本。
+- 空查询和未知主题返回失败；调用方应记录知识缺口。
+- `evidence_refs` 只能作为知识来源，不能冒充事件证据。
+- Agent 报告不得超出输入、真实工具输出和来源矩阵所允许的事实范围。
+- case6 不含 WebShell 证据；若调用 WebShell 知识或新增 WebShell 结论，应判为失败。
 
-## 9. 版本兼容与迁移
+## 7. 已知限制
 
-- PR #8 历史分支与当前 `main` 可能存在较大差异，合并前应先确认文件冲突和运行时消费路径。
-- 若 `main` 已存在同名知识材料，不应直接维护两套内容；应明确唯一运行时来源，再决定覆盖、增量合并或仅保留 QA 资产。
-- 文档合并不等于运行时接入完成，功能状态以目标主干的可复现测试为准。
+- 当前是关键词检索，不支持向量检索、模糊语义匹配和跨场景知识编排。
+- 当前知识正文只覆盖 WebShell；其他场景需要独立知识资产和测试后再接入。
+- 单元测试不能代替对最终 LLM 报告的人工/规则复核。
+- 当前案例不是实际 XDR 原始报文，不能用来宣称真实平台联调完成。
 
-## 10. 变更记录
+## 8. 变更记录
 
-| 日期 | PR | 实现变化 | 相关验证 |
-|---|---|---|---|
-| 2026-08-23 | PR #8 | 创建最小 WebShell 知识材料和问答样本 v1 | 原始记录未提供可追溯日志 |
-| 2026-08-24 | PR #8 | 移动到规范目录并清理文件命名 | 文档检查待补 |
-| 2026-08-26 | PR #8 | 补充设计、开发和测试文档 | 原记录存在模板残留和结论超出证据 |
-| 2026-08-28 | PR #8 | 清理格式、删除占位内容并修正实现边界 | 静态检查；功能待复验 |
+| 日期 | 变更 |
+|---|---|
+| 2026-09-04 | PR #37 合入评测案例；PR #40 校正案例来源与边界 |
+| 2026-09-05 | PR #41 依据当前运行时实现重写开发说明，并明确维护与验收方法 |
