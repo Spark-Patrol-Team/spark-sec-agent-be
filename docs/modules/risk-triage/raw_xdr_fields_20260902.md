@@ -4,6 +4,7 @@
 > 运行：`run-776923de-7218-48aa-8c7a-a9fee2694a1f`
 > 追踪：`trace-c9a22655-e6af-47c4-83e5-9402842a559b`
 > 说明：后端为 `memory` 存储，重启后事件已消失；本清单由运行时的证据引用、事件实体与同 `uuId` 原始样例还原。
+> 命名约定（2026-09-04 陈敏确认）：`evidence_refs[].ref_id` 使用 XDR API **原始字段名**（无 `xdr_` 前缀，如 `…:gptResultDescription`）；`scenario_fields` 使用 `xdr_*` 前缀（如 `xdr_gptResultDescription`）。`attackState`（攻击状态 0/2）与 `stage`/`xdr_stage`（阶段数值，如 30）是不同字段，旧记录中的 `attackStage` 应更正为 `stage`/`xdr_stage`。
 
 ## 原始字段
 

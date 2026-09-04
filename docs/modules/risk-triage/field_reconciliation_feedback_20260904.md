@@ -46,5 +46,19 @@
 
 ## 三、对研判的影响（记录，不阻塞）
 
-- `event_type` 由 `other`（攻击分 0）变为 `sql_injection`（攻击分 30）后，规则分由 `40` 变为 `70`，但最终 `risk_score=80` 仍由 `risk_score_seed=80` 主导，`verdict / confidence / priority` 不变。研判结论稳定，仅「规则贡献 vs 种子贡献」的构成不同。
+- `event_type` 由 `other`（攻击分 0）变为 `sql_injection`（攻击分 20）后，规则分由 `40` 变为 `60`，但最终 `risk_score=80` 仍由 `risk_score_seed=80` 主导，`verdict / confidence / priority` 不变。研判结论稳定，仅「规则贡献 vs 种子贡献」的构成不同。
 - 「WebShell 蚁剑 severity 统一口径未决策」不影响本事件（本事件为 SQL，`severity=70 → high/80`），仅作为已知遗留项记录。
+
+## 四、陈敏复核结论（2026-09-04，已对齐）
+
+陈敏已按《T0903-06 下游摘要（一）研判字段/证据摘要》修订确认，三点反馈的处置如下：
+
+| 反馈项 | 处置 | 是否需研判侧继续改 |
+| --- | --- | --- |
+| `event_type=other` | 新 6 层链 + `name` 回退（`sa账户密码` / `SQL 查询`）→ `sql_injection`；官方分类为「异常操作」时也能兜底 | 无需改研判代码；研判观察记录按新口径说明 |
+| 证据字段命名 | **非 bug**，两层命名约定：`evidence_refs[].ref_id` 用 XDR API 原始名（无 `xdr_` 前缀）；`scenario_fields` 用 `xdr_*` 前缀；`attackState`(0/2) ≠ `stage`/`xdr_stage`(阶段数值) | 文档澄清即可 |
+| `source_device_name` 非 `"XDR"` | 符合契约：`devSourceName[]` 优先链，真实列表可混入 STA 来源告警；仅三字段全空才回退 `"XDR"` | 文档澄清即可（勿视 `"XDR"` 为唯一合法值） |
+
+**研判结论稳定性**：`event_type` 从 `other`（0）变为 `sql_injection`（20）后，规则分 40→60，但 `risk_score=80` 仍由 `risk_score_seed=80` 主导，`verdict / confidence / priority` 不变。
+
+> 备注：`ATTACK_TYPE_POINTS` 中 `sql_injection=20`，故规则分为 `40(high) + 20 = 60`，非 30/70。

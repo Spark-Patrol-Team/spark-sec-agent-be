@@ -4,6 +4,7 @@
 > 统一后端：`http://124.221.234.124`　|　输入来源：`xdr_openapi`
 > 真实链路：真实 XDR 告警经统一服务器进入统一主链，`effective_source=xdr_openapi`、`fallback_source=null`（未发生 `fixed_sample` 回退）。
 > 说明：本记录仅为**一条真实事件的一次研判观察与固定样例差异记录**，不构成统计校准、准确率验证或全场景阈值优化。
+> 复核修订（2026-09-04）：按陈敏确认的 9/3 字段契约，本真实告警（`name="SQL server数据库查询sa账户密码攻击"`）经新 6 层链 + `name` 回退应判为 **`sql_injection`（攻击分 20）**，规则分由 `40` 变为 `60`；但 `risk_score=80` 仍由 `risk_score_seed=80` 主导，`verdict / confidence / priority` 不变。本节记录的是 9/2 实际运行结果（`other`），与确认契约下的判定区别在于「攻击类型贡献」而非最终结论。
 
 ## 一、运行标识
 
