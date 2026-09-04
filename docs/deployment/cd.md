@@ -4,16 +4,17 @@
 
 当前仓库使用 GitHub Actions 完成持续交付：
 
-- 推送到 `main` 或 `v*` tag 时，先跑测试和 OpenAPI 一致性检查，再构建 Docker 镜像并推送到 GHCR。
-- 手动触发 `CD` workflow 且勾选 `deploy=true` 时，会通过 SSH 登录服务器，上传生产 compose 文件，拉取指定镜像并重启 `api` 服务。
+- 推送到 `main` 时，先跑测试和 OpenAPI 一致性检查，再构建 Docker 镜像并推送到 GHCR，然后自动通过 SSH 部署到服务器。
+- 推送 `v*` tag 时，只测试、构建镜像并推送到 GHCR，不自动部署。
+- 手动触发 `CD` workflow 且勾选 `deploy=true` 时，也会通过 SSH 登录服务器，上传生产 compose 文件，拉取指定镜像并重启 `api` 服务。
 - 生产部署只负责后端 API 容器，不在生产 compose 中内置 MySQL 默认密码；生产数据库、XDR 联动码、LLM Key 等敏感配置必须由服务器 `.env` 或密钥系统提供。
 
 ## 触发规则
 
 | 触发方式 | 行为 |
 |---|---|
-| push 到 `main` | 测试、检查 OpenAPI、构建镜像、推送 `latest` 和 `sha-<短SHA>` |
-| push `v*` tag | 测试、检查 OpenAPI、构建镜像、推送 tag 镜像和 `sha-<短SHA>` |
+| push 到 `main` | 测试、检查 OpenAPI、构建镜像、推送 `latest` 和 `sha-<短SHA>`，然后自动 SSH 部署 |
+| push `v*` tag | 测试、检查 OpenAPI、构建镜像、推送 tag 镜像和 `sha-<短SHA>`，不自动部署 |
 | 手动 workflow_dispatch，`deploy=false` | 测试、构建并推送镜像，不部署 |
 | 手动 workflow_dispatch，`deploy=true` | 测试、构建并推送镜像，然后 SSH 部署 |
 
