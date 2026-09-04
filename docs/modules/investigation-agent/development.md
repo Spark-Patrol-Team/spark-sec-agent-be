@@ -171,3 +171,4 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 2026-08-26 | 本次（方案 C 提交） | `max_tool_calls` 8→12（`AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限收尾提醒；`_fallback_report` 提炼已采证据与知识包引用 | `test_investigation_agent.py` 新增 5 用例（合计 47 passed / 1 skipped） |
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`；MCP 空结果识别：dbproxy `{"code":0,"data":[]}` → `partial`（查询成功但无数据） | `test_mcp_client.py` 新增（11 用例）；`test_knowledge_tool.py` 全通过 |
 | 2026-08-27 | 本次（打包修复） | 知识包迁入 `sec_agent.deep_agent` 包内 + `[tool.setuptools.package-data]` 随 wheel/sdist 分发，`knowledge.py` 改用 `importlib.resources` 读取；`-o` 时间戳改微秒级 + 存在检测唯一序号 | `test_packaging.py` 新增（4 用例）；`test_investigation_agent.py` 时间戳用例更新 |
+| 2026-09-04 | PR #31收口 | 非dbproxy空文本改为`partial`；`isError=true`、`{"error":...}`、输入校验/字段排除/HTTP 4xx或5xx前缀改为`failed`，避免错误文本作为成功证据 | `test_mcp_client.py` 18例 |

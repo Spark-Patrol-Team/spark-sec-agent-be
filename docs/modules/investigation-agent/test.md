@@ -103,8 +103,8 @@
 | 用例 | 验证点 |
 |------|--------|
 | `TestExtractText` 3 例 | `_extract_text` 兼容 content 列表 / structuredContent / 纯字符串 |
-| `TestDbproxyContract` 5 例 | dbproxy 契约：空数据→`partial`、非空→`success`、`code!=0`→`failed`、`code="0"` 字符串兼容 |
-| `TestNonDbproxyTool` 2 例 | 无 code/data 结构（如 secgpt 研判）按文本 `success`，不误判 |
+| `TestDbproxyContract` 6 例 | dbproxy 契约：空数据→`partial`、非空→`success`、`code!=0`→`failed`、`code="0"` 字符串及空error字段兼容 |
+| `TestNonDbproxyTool` 7 例 | 空文本→`partial`；`isError`、error JSON和已知错误前缀→`failed`；正常研判文本仍为`success` |
 | `TestMCPToolEndToEnd` 2 例 | `MCPTool.call` 端到端：空结果 `partial`、有数据 `success`，供 Agent 消费 |
 
 ### 5.4 bridge 集成（`tests/test_investigation_and_dispatcher_integration.py`）
@@ -301,3 +301,4 @@ WebShell 类事件典型调用序列，按证据缺口推进：
 | 2026-08-26 | 本次 T0826-03 提交 | 新增 `test_knowledge_tool.py`（19 用例）；本文件按模板重写并补本轮复验（真实加载 / 工具调用 / 结构化报告 / fallback 实际结果） |
 | 2026-08-26 | 本次（方案 C 提交） | 新增降级报告提炼与 AgentConfig 步数上限用例；执行命令预期更新为 47 passed / 1 skipped |
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一到沈洪旭权威版；新增 `test_mcp_client.py`（11 用例）验证 dbproxy 空结果 `partial` / 结构化错误 `failed` / 有数据 `success` 契约 |
+| 2026-09-04 | PR #31收口 | `test_mcp_client.py`扩至18例：补非dbproxy空文本、MCP `isError`、error JSON、已知错误文本及正常分析含错误词不误判 |
