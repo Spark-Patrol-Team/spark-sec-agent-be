@@ -15,9 +15,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
         old_modules = dict(sys.modules)
         self._install_fake_deep_agent()
         try:
-            # 隔离生产环境变量：DEEP_AGENT_TOOL_MODE=mcp/auto 会经桥接 _override_config
-            # 覆盖 fake config 的工具模式，导致 fake deep_agent 缺少 MCP 工具时桥接不可用、
-            # 返回人工接管；本用例固定走 mock 工具映射，与机器环境变量解耦。
+            # 固定 mock 工具模式，避免开发机环境变量把 fake deep_agent 切到真实 MCP 模式。
             with mock.patch.dict(os.environ, {"DEEP_AGENT_TOOL_MODE": ""}):
                 service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent")
                 report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
