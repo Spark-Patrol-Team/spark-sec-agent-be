@@ -1,0 +1,139 @@
+[
+  {
+    "sample_id": "FIX-XDR-WEBSHELL-001",
+    "sample_nature": "platform_derived",
+    "source_device_type": "XDR",
+    "source_device_name": "XDR",
+    "severity": "critical",
+    "alert_type": "webshell",
+    "risk_score_seed": 95,
+    "alert_count_before": 1,
+    "rule_score": 90,
+    "risk_score": 95,
+    "verdict": "malicious",
+    "confidence": 0.85,
+    "priority": "high",
+    "should_investigate": true,
+    "supporting_count": 7,
+    "supporting_evidence_refs": [
+      "FIX-XDR-WEBSHELL-001:alert_time",
+      "FIX-XDR-WEBSHELL-001:alert_name",
+      "FIX-XDR-WEBSHELL-001:alert_grade",
+      "FIX-XDR-WEBSHELL-001:alert_classification",
+      "FIX-XDR-WEBSHELL-001:source_ip",
+      "FIX-XDR-WEBSHELL-001:destination_ip",
+      "FIX-XDR-WEBSHELL-001:host_ip"
+    ],
+    "opposing_evidence_refs": [],
+    "evidence_gaps": [],
+    "summary": "规则基线判断为高风险，需要进入深度调查补充证据并生成处置建议",
+    "raw_fields": {
+      "source_ip": "198.51.100.33",
+      "destination_ip": "198.51.100.11",
+      "assets": [
+        "198.51.100.11"
+      ],
+      "evidence_refs": [
+        "FIX-XDR-WEBSHELL-001:alert_time",
+        "FIX-XDR-WEBSHELL-001:alert_name",
+        "FIX-XDR-WEBSHELL-001:alert_grade",
+        "FIX-XDR-WEBSHELL-001:alert_classification",
+        "FIX-XDR-WEBSHELL-001:source_ip",
+        "FIX-XDR-WEBSHELL-001:destination_ip",
+        "FIX-XDR-WEBSHELL-001:host_ip"
+      ]
+    }
+  },
+  {
+    "sample_id": "FIX-STA-SQLI-001",
+    "sample_nature": "platform_derived",
+    "source_device_type": "STA",
+    "source_device_name": "STA_001",
+    "severity": "high",
+    "alert_type": "sql_injection",
+    "risk_score_seed": 80,
+    "alert_count_before": 1,
+    "rule_score": 60,
+    "risk_score": 80,
+    "verdict": "malicious",
+    "confidence": 0.85,
+    "priority": "high",
+    "should_investigate": true,
+    "supporting_count": 7,
+    "supporting_evidence_refs": [
+      "FIX-STA-SQLI-001:record_time",
+      "FIX-STA-SQLI-001:rule_name",
+      "FIX-STA-SQLI-001:reporting_device",
+      "FIX-STA-SQLI-001:source_ip",
+      "FIX-STA-SQLI-001:source_port",
+      "FIX-STA-SQLI-001:destination_ip",
+      "FIX-STA-SQLI-001:destination_port"
+    ],
+    "opposing_evidence_refs": [],
+    "evidence_gaps": [],
+    "summary": "规则基线判断为高风险，需要进入深度调查补充证据并生成处置建议",
+    "raw_fields": {
+      "source_ip": "198.51.100.10",
+      "destination_ip": "198.51.100.20",
+      "assets": [
+        "198.51.100.20"
+      ],
+      "evidence_refs": [
+        "FIX-STA-SQLI-001:record_time",
+        "FIX-STA-SQLI-001:rule_name",
+        "FIX-STA-SQLI-001:reporting_device",
+        "FIX-STA-SQLI-001:source_ip",
+        "FIX-STA-SQLI-001:source_port",
+        "FIX-STA-SQLI-001:destination_ip",
+        "FIX-STA-SQLI-001:destination_port"
+      ]
+    }
+  },
+  {
+    "sample_id": "FIX-STA-LATERAL-001",
+    "sample_nature": "synthetic_regression",
+    "source_device_type": "STA",
+    "source_device_name": "STA_001",
+    "severity": "medium",
+    "alert_type": "lateral_movement",
+    "risk_score_seed": 65,
+    "alert_count_before": 1,
+    "rule_score": 40,
+    "risk_score": 65,
+    "verdict": "uncertain",
+    "confidence": 0.65,
+    "priority": "medium",
+    "should_investigate": true,
+    "supporting_count": 7,
+    "supporting_evidence_refs": [
+      "FIX-STA-LATERAL-001:record_time",
+      "FIX-STA-LATERAL-001:rule_name",
+      "FIX-STA-LATERAL-001:reporting_device",
+      "FIX-STA-LATERAL-001:source_ip",
+      "FIX-STA-LATERAL-001:source_port",
+      "FIX-STA-LATERAL-001:destination_ip",
+      "FIX-STA-LATERAL-001:destination_port"
+    ],
+    "opposing_evidence_refs": [],
+    "evidence_gaps": [
+      "需要补充平台侧日志或上下文"
+    ],
+    "summary": "规则基线判断证据不足，需要进入深度调查",
+    "raw_fields": {
+      "source_ip": "198.51.100.110",
+      "destination_ip": "198.51.100.120",
+      "assets": [
+        "198.51.100.120"
+      ],
+      "evidence_refs": [
+        "FIX-STA-LATERAL-001:record_time",
+        "FIX-STA-LATERAL-001:rule_name",
+        "FIX-STA-LATERAL-001:reporting_device",
+        "FIX-STA-LATERAL-001:source_ip",
+        "FIX-STA-LATERAL-001:source_port",
+        "FIX-STA-LATERAL-001:destination_ip",
+        "FIX-STA-LATERAL-001:destination_port"
+      ]
+    }
+  }
+]

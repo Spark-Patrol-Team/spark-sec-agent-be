@@ -1,0 +1,4 @@
+记录ID,日期,来源类型,原始样例ID,实际严重度,实际攻击类型,种子分,关联前告警数,规则分,期望verdict,期望priority,期望should_investigate,期望confidence,真实/人工结论,期望vs真实差异,需校准常量,备注
+R-001,2026-08-28,XDR告警,FIX-XDR-WEBSHELL-001,critical,webshell,95,1,90,malicious,high,True,0.85,malicious,一致,无,示例（基于固定样例，仅演示格式；非8/28真实数据）
+R-002,2026-08-28,STA日志,FIX-STA-SQLI-001,high,sql_injection,80,1,60,malicious,high,True,0.85,malicious,一致,无,示例（基于固定样例，仅演示格式；非8/28真实数据）
+R-003,2026-08-28,STA日志,FIX-STA-LATERAL-001,medium,lateral_movement,65,1,40,uncertain,medium,True,0.65,malicious,期望uncertain与真实malicious不一致,HIGH_RISK_THRESHOLD/VERDICT_CONFIDENCE,示例：触发校准（基于固定样例，仅演示格式）
