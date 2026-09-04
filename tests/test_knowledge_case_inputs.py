@@ -65,6 +65,25 @@ class TestKnowledgeCaseInputs(unittest.TestCase):
         self.assertNotIn("shell.php", searchable_text)
         self.assertNotEqual(event.event_type.lower(), "webshell")
 
+    def test_source_bounded_cases_do_not_reintroduce_unsupported_claims(self):
+        case1_payload, _ = self._load_case(1)
+        case2_payload, _ = self._load_case(2)
+        case1_text = json.dumps(case1_payload, ensure_ascii=False).lower()
+        case2_text = json.dumps(case2_payload, ensure_ascii=False).lower()
+
+        self.assertNotIn("aes", case1_text)
+        for unsupported in (
+            "godzilla",
+            "哥斯拉",
+            "machinekey",
+            "viewstate",
+            "wingtb",
+            "rootkit",
+        ):
+            with self.subTest(term=unsupported):
+                self.assertNotIn(unsupported, case2_text)
+        self.assertIn("尚无证据证明webshell部署成功", case2_text)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

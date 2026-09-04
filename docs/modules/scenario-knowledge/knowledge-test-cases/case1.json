@@ -8,7 +8,7 @@
   "alerts": [
     "检测到IIS服务器上ASPX脚本异常访问",
     "HTTP请求头为application/octet-stream",
-    "请求body为Base64编码的AES加密数据",
+    "请求body为Base64编码的加密数据，使用硬编码密钥",
     "目标文件路径: /scripts/UpdateChecker.aspx",
     "文件修改时间与业务发布时间不符"
   ],
