@@ -2,22 +2,22 @@
   "event_id": "EVT-PN-2025-002",
   "event_type": "WebShell",
   "severity": "CRITICAL",
-  "timestamp": "2025-10-15T12:00:00Z",
-  "source_ip": "45.33.22.19",
-  "target_ip": "10.0.0.50",
+  "timestamp": "2025-08-01T12:00:00Z",
+  "source_ip": "0.0.0.0",
+  "target_ip": "0.0.0.0",
   "alerts": [
-    "检测到ASP.NET ViewState反序列化攻击",
-    "检测到WebShell文件: /1.aspx",
-    "WebShell具备AES/RSA加密通信特征",
-    "检测到内核驱动文件: Wingtb.sys",
-    "检测到进程隐藏行为"
+    "Windows Server上的Microsoft SQL服务出现异常远程命令执行信号",
+    "检测到ASP.NET WebShell载荷的Base64编码落盘尝试",
+    "检测到PowerShell脚本解码并写入ASPX文件",
+    "安全产品阻止了WebShell部署，攻击者随后重复尝试",
+    "尚无证据证明WebShell部署成功"
   ],
   "evidence": [],
-  "initial_verdict": "疑似真实攻击",
-  "confidence": 0.80,
+  "initial_verdict": "疑似WebShell部署尝试",
+  "confidence": 0.70,
   "triage": {
     "verdict": "uncertain",
-    "confidence": 0.80
+    "confidence": 0.70
   },
   "trace_id": "trace-0903-002",
   "run_id": "run-0903-002"
