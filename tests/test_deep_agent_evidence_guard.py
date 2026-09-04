@@ -14,6 +14,9 @@ class _DummyTools:
     def schemas(self):
         return []
 
+    def alias_of(self, name: str) -> str:
+        return name
+
 
 class DeepAgentEvidenceGuardTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -184,6 +187,51 @@ class DeepAgentEvidenceGuardTest(unittest.TestCase):
         self.assertEqual(report.tool_call_records, [])
         self.assertNotIn("fabricated evidence", report.key_evidence)
 
+    def test_fabricated_step_is_filtered_when_real_tool_succeeded(self) -> None:
+        """有真实成功工具记录时，LLM 仍不得虚构未执行工具步骤。"""
+        tool_records = [
+            {
+                "tool": "synthetic_query",
+                "input": {},
+                "output": "verified synthetic result",
+                "status": "success",
+            }
+        ]
+
+        report = self.agent._parse_report(
+            self._llm_report(
+                investigation_steps=[
+                    {
+                        "step_id": 1,
+                        "goal": "真实步骤",
+                        "evidence_gap": "",
+                        "tool": "synthetic_query",
+                        "tool_input": {},
+                        "tool_output": "verified synthetic result",
+                        "new_evidence": "verified evidence",
+                        "conclusion_change": "置信度提高",
+                    },
+                    {
+                        "step_id": 2,
+                        "goal": "虚构步骤",
+                        "evidence_gap": "",
+                        "tool": "fabricated_tool",
+                        "tool_input": {},
+                        "tool_output": "fabricated result",
+                        "new_evidence": "fabricated evidence",
+                        "conclusion_change": "错误确认",
+                    },
+                ]
+            ),
+            self.event,
+            tool_records,
+        )
+
+        self.assertEqual(len(report.investigation_steps), 1)
+        self.assertEqual(
+            report.investigation_steps[0]["tool"],
+            "synthetic_query",
+        )
 
 if __name__ == "__main__":
     unittest.main()

@@ -194,6 +194,22 @@ class DeepInvestigationAgent:
                 tool_records,
                 reason="关键调查工具不可用或未成功返回数据，禁止基于未验证信息生成调查结论",
             )
+        # investigation_steps 只能引用代码侧真实执行过的工具，防止 LLM 虚构工具调用步骤。
+        # LLM 使用 ASCII 别名，tool_records 保存 resolve 后的真实工具名，
+        # 因此真实名和别名都加入允许集合。
+        executed_tools = set()
+        for record in tool_records:
+            name = record.get("tool")
+            if name:
+                executed_tools.add(name)
+                executed_tools.add(self.tools.alias_of(name))
+
+        data["investigation_steps"] = [
+            step
+            for step in (data.get("investigation_steps") or [])
+            if isinstance(step, dict)
+            and step.get("tool") in executed_tools
+        ]
 
        
 
@@ -251,7 +267,7 @@ class DeepInvestigationAgent:
         seen_ev, seen_src = set(key_evidence), set(evidence_source)
 
         for rec in tool_records:
-            if rec.get("status") != "success":
+            if rec.get("status") not in {"success", "partial"}:
                 continue
             tool = rec.get("tool", "")
             output = (rec.get("output") or "").strip()
