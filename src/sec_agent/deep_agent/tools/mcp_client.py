@@ -125,6 +125,33 @@ def _is_empty_data(data: Any) -> bool:
     return data is None or data == [] or data == {} or data == ""
 
 
+def _explicit_error_message(result: Any, text: str, payload: Optional[dict]) -> str:
+    """提取 MCP 明示错误，避免非 dbproxy 错误文本被当作成功证据。"""
+    if isinstance(result, dict) and result.get("isError") is True:
+        return text.strip() or "MCP tool returned isError=true"
+
+    if payload is not None and "error" in payload:
+        error = payload.get("error")
+        if error in (None, "", {}, []):
+            return ""
+        if isinstance(error, (dict, list)):
+            return json.dumps(error, ensure_ascii=False)
+        return str(error).strip()
+
+    normalized = text.strip().casefold()
+    known_error_prefixes = (
+        "input validation error",
+        "cannot do exclusion on field",
+        "http 4",
+        "http 5",
+        "error:",
+        "failed:",
+    )
+    if normalized.startswith(known_error_prefixes):
+        return text.strip()
+    return ""
+
+
 def _to_tool_result(result: Any) -> ToolResult:
     """把 MCP tools/call 返回统一为 ToolResult，识别 dbproxy 空结果与结构化错误。
 
@@ -132,10 +159,14 @@ def _to_tool_result(result: Any) -> ToolResult:
       - code != 0            -> failed（业务错误，msg 作为错误信息）；
       - code == 0 且 data 空 -> partial（查询成功但无数据）；
       - code == 0 且 data 非空 -> success（文本原样）。
-    其它工具返回不含 code/data 结构时，按文本原样作为 success summary。
+    其它工具若通过 ``isError=true``、``{"error":...}`` 或已知错误前缀明示失败，
+    则返回 failed；否则按文本原样作为 success summary。
     """
     text = _extract_text(result)
     payload = _try_parse_json(text)
+    explicit_error = _explicit_error_message(result, text, payload)
+    if explicit_error:
+        return ToolResult(status="failed", error=explicit_error, summary="MCP 调用失败")
     if payload is not None and "code" in payload and "data" in payload:
         code = payload.get("code")
         data = payload.get("data")
@@ -144,6 +175,11 @@ def _to_tool_result(result: Any) -> ToolResult:
             return ToolResult(status="failed", error=msg, summary=f"查询失败：{msg}")
         if _is_empty_data(data):
             return ToolResult(status="partial", summary="查询成功但无数据", data=[])
+    # XDR「网络安全数据查询」等非 dbproxy 契约工具：返回 text 为空（如
+    # vul_资产关联漏洞数据查询 命中不到数据时 content[0].text 为空串）应视为
+    # “成功但无数据”，而不是 success + 空摘要，避免 Agent 把“无数据”误当“出错”。
+    if not text or not text.strip():
+        return ToolResult(status="partial", summary="查询成功但无数据", data=[])
     return ToolResult(summary=text)
 
 
