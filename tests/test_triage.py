@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timezone
 
 from sec_agent.domain.models import AlertRecord, EvidenceRef, Priority, SecurityEvent, TruthVerdict
-from sec_agent.services.triage import RiskTriageService
+from sec_agent.services.triage import RiskTriageService, VERDICT_CONFIDENCE
 
 
 def make_alert(
@@ -113,6 +113,135 @@ class RiskTriageServiceTest(unittest.TestCase):
         second = self.service.triage(make_event([alert]), [alert])
 
         self.assertEqual(first.model_dump(), second.model_dump())
+
+    # ---- 边界测试（T0827-07）：缺失严重度 / 未知攻击类型 / 证据不足 / 阈值边界 / 需调查条件 ----
+
+    def test_unknown_severity_contributes_zero(self) -> None:
+        # 严重度字符串不在映射表（含空串、中文等级、大小写/空白），应计 0 分，仅剩攻击类型分。
+        for unknown_severity in ("未知", "", "高危", " HIGH "):
+            with self.subTest(severity=unknown_severity):
+                alert = make_alert("a1", unknown_severity, "webshell")
+                result = self.service.triage(make_event([alert]), [alert])
+                # 攻击类型 webshell=30，严重度被忽略，且无关联加成/种子分。
+                self.assertEqual(result.risk_score, 30)
+                self.assertEqual(result.verdict, TruthVerdict.BENIGN)
+                self.assertFalse(result.should_investigate)
+
+    def test_unknown_attack_type_contributes_zero(self) -> None:
+        # 攻击类型不在映射表（"other"/未知值），应计 0 分，仅剩严重度分。
+        for unknown_type in ("ransomware", "unknown_type", "other"):
+            with self.subTest(alert_type=unknown_type):
+                alert = make_alert("a1", "low", unknown_type)
+                result = self.service.triage(make_event([alert]), [alert])
+                # 严重度 low=10，攻击类型被忽略，无关联加成/种子分。
+                self.assertEqual(result.risk_score, 10)
+                self.assertEqual(result.verdict, TruthVerdict.BENIGN)
+                self.assertFalse(result.should_investigate)
+
+    def test_missing_severity_and_unknown_type_collapses_to_zero(self) -> None:
+        # 严重度与攻击类型均未映射：rule_score 归零，无种子分时为 benign 0。
+        alert = make_alert("a1", "未知", "ransomware", with_evidence=False)
+        result = self.service.triage(make_event([alert]), [alert])
+        self.assertEqual(result.risk_score, 0)
+        self.assertEqual(result.verdict, TruthVerdict.BENIGN)
+        self.assertFalse(result.should_investigate)
+        self.assertIn("缺少可定位的原始证据引用", result.evidence_gaps)
+
+    def test_threshold_exactly_70_is_malicious(self) -> None:
+        # 阈值上边界：risk_score == 70 必须判定为 malicious/high/进入调查。
+        alert = make_alert("a1", "high", "webshell")  # 40 + 30 = 70
+        result = self.service.triage(make_event([alert]), [alert])
+        self.assertEqual(result.risk_score, 70)
+        self.assertEqual(result.verdict, TruthVerdict.MALICIOUS)
+        self.assertEqual(result.priority, Priority.HIGH)
+        self.assertTrue(result.should_investigate)
+
+    def test_threshold_just_below_70_is_uncertain(self) -> None:
+        # 69（<70）落到 uncertain/medium，且仍进入调查。
+        alert = make_alert("a1", "low", "unknown_type", seed=69)
+        result = self.service.triage(make_event([alert]), [alert])
+        self.assertEqual(result.risk_score, 69)
+        self.assertEqual(result.verdict, TruthVerdict.UNCERTAIN)
+        self.assertEqual(result.priority, Priority.MEDIUM)
+        self.assertTrue(result.should_investigate)
+
+    def test_threshold_exactly_40_is_uncertain_investigates(self) -> None:
+        # 阈值下边界：risk_score == 40 判定为 uncertain/medium/进入调查。
+        alert = make_alert("a1", "medium", "lateral_movement")  # 20 + 20 = 40
+        result = self.service.triage(make_event([alert]), [alert])
+        self.assertEqual(result.risk_score, 40)
+        self.assertEqual(result.verdict, TruthVerdict.UNCERTAIN)
+        self.assertEqual(result.priority, Priority.MEDIUM)
+        self.assertTrue(result.should_investigate)
+
+    def test_threshold_just_below_40_is_benign(self) -> None:
+        # 39（<40）落到 benign/low/不调查。
+        alert = make_alert("a1", "low", "unknown_type", seed=39)
+        result = self.service.triage(make_event([alert]), [alert])
+        self.assertEqual(result.risk_score, 39)
+        self.assertEqual(result.verdict, TruthVerdict.BENIGN)
+        self.assertEqual(result.priority, Priority.LOW)
+        self.assertFalse(result.should_investigate)
+
+    def test_confidence_matches_verdict_tiers(self) -> None:
+        # 置信度为按结论的固定档位：confidence 只随 verdict 走，与分数/证据无关。
+        malicious = self.service.triage(
+            make_event([make_alert("a1", "high", "webshell")]), [make_alert("a1", "high", "webshell")]
+        )
+        uncertain = self.service.triage(
+            make_event([make_alert("a1", "medium", "lateral_movement")]), [make_alert("a1", "medium", "lateral_movement")]
+        )
+        benign = self.service.triage(
+            make_event([make_alert("a1", "low", "unknown_type")]), [make_alert("a1", "low", "unknown_type")]
+        )
+        for result in (malicious, uncertain, benign):
+            self.assertEqual(result.confidence, VERDICT_CONFIDENCE[result.verdict])
+        self.assertEqual(malicious.confidence, 0.85)
+        self.assertEqual(uncertain.confidence, 0.65)
+        self.assertEqual(benign.confidence, 0.70)
+
+    def test_non_benign_always_investigates(self) -> None:
+        # 需调查条件：应进入调查当且仅当 verdict 非 benign。
+        malicious = self.service.triage(
+            make_event([make_alert("a1", "high", "webshell")]), [make_alert("a1", "high", "webshell")]
+        )
+        uncertain = self.service.triage(
+            make_event([make_alert("a1", "medium", "lateral_movement")]), [make_alert("a1", "medium", "lateral_movement")]
+        )
+        benign = self.service.triage(
+            make_event([make_alert("a1", "low", "unknown_type")]), [make_alert("a1", "low", "unknown_type")]
+        )
+        self.assertTrue(malicious.should_investigate)
+        self.assertTrue(uncertain.should_investigate)
+        self.assertFalse(benign.should_investigate)
+
+    def test_uncertain_without_evidence_has_both_gaps(self) -> None:
+        # 证据不足且判定为 uncertain：应同时给出「证据缺口」与「需补充上下文」两条。
+        alert = make_alert("a1", "medium", "lateral_movement", with_evidence=False)
+        result = self.service.triage(make_event([alert]), [alert])
+        self.assertEqual(result.risk_score, 40)
+        self.assertEqual(result.verdict, TruthVerdict.UNCERTAIN)
+        self.assertIn("缺少可定位的原始证据引用", result.evidence_gaps)
+        self.assertIn("需要补充平台侧日志或上下文", result.evidence_gaps)
+
+    def test_evidence_present_has_no_gap(self) -> None:
+        # 有证据且非 uncertain：evidence_gaps 为空。
+        alert = make_alert("a1", "high", "webshell")
+        result = self.service.triage(make_event([alert]), [alert])
+        self.assertEqual(result.verdict, TruthVerdict.MALICIOUS)
+        self.assertEqual(result.evidence_gaps, [])
+
+    def test_correlation_bonus_crosses_high_threshold(self) -> None:
+        # 关联加成能把 60 分推过 70 阈值：2 条 high+sql_injection（40+20）+15=75。
+        alerts = [
+            make_alert("a1", "high", "sql_injection"),
+            make_alert("a2", "high", "sql_injection"),
+        ]
+        result = self.service.triage(make_event(alerts, alert_count_before=2), alerts)
+        self.assertEqual(result.risk_score, 75)
+        self.assertEqual(result.verdict, TruthVerdict.MALICIOUS)
+        self.assertEqual(result.priority, Priority.HIGH)
+        self.assertTrue(result.should_investigate)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
+import os
 import sys
 import types
 import unittest
+from unittest import mock
 
 from sec_agent.domain.models import BusinessStatus, SecurityEvent, TriageResult, TruthVerdict, Priority
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
@@ -13,8 +15,10 @@ class DeepAgentBridgeTest(unittest.TestCase):
         old_modules = dict(sys.modules)
         self._install_fake_deep_agent()
         try:
-            service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent")
-            report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
+            # 固定 mock 工具模式，避免开发机环境变量把 fake deep_agent 切到真实 MCP 模式。
+            with mock.patch.dict(os.environ, {"DEEP_AGENT_TOOL_MODE": ""}):
+                service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent")
+                report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
         finally:
             self._restore_modules(old_modules)
 

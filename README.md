@@ -2,7 +2,7 @@
 
 安全事件智能处置后端项目。系统目标是围绕一个安全事件建立统一处理主链：从告警接入、告警关联、风险研判、深度调查、处置决策、人工审批、执行处置到结果验证，形成可演示、可扩展、可替换平台能力的后端骨架。
 
-当前版本是 MVP 开发框架，不是完整生产系统。真实 XDR OpenAPI、MCP、FastGPT/OpenClaw、真实处置动作等能力还没有接入，代码中先保留统一接口边界，并提供固定样例用于演示主流程。
+当前版本是 MVP 开发框架，不是完整生产系统。真实 XDR 告警列表输入已可通过 `xdr_openapi` 接入主链；真实 MCP 调查、FastGPT/OpenClaw、真实处置动作等能力还没有完成闭环，代码中保留统一接口边界，并提供固定样例用于演示主流程。
 
 ## 系统当前做什么
 
@@ -69,3 +69,4 @@ src/sec_agent/
 
 - [系统开发与运行说明](docs/deliverables/system-development-and-operation-guide.md)
 - [仓库提交规则](docs/deliverables/仓库提交规则.md)
+- [CD 部署说明](docs/deployment/cd.md)

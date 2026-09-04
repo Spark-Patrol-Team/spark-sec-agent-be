@@ -1,0 +1,59 @@
+{
+  "contract_version": "2026-09-03.xdr-input.v2",
+  "purpose": "structure_only_for_local_xdr_adapter_validation",
+  "provider_response": {
+    "code": "Success",
+    "message": "成功",
+    "data": {
+      "total": 1,
+      "page": 1,
+      "pageSize": 50,
+      "item": [
+        {
+          "uuId": "<REDACTED_RUNTIME_XDR_EVENT_ID>",
+          "name": "<REDACTED_ALERT_NAME>",
+          "severity": 70,
+          "firstTime": "<INTEGER_UNIX_SECONDS>",
+          "lastTime": "<INTEGER_UNIX_SECONDS>",
+          "updateTime": "<INTEGER_UNIX_SECONDS>",
+          "srcIp": ["198.51.100.33"],
+          "srcPort": [44321],
+          "dstIp": ["198.51.100.11"],
+          "dstPort": [443],
+          "hostIp": "198.51.100.33",
+          "riskTag": ["<REDACTED_RISK_TAG_OPTIONAL>"],
+          "threatClassDesc": "<REDACTED_THREAT_CLASSIFICATION_OPTIONAL>",
+          "threatTypeDesc": "<REDACTED_THREAT_TYPE_OPTIONAL>",
+          "threatSubTypeDesc": "<REDACTED_THREAT_SUB_TYPE_OPTIONAL>",
+          "devSourceName": ["<REDACTED_DEVICE_NAME_OPTIONAL>"],
+          "engineName": ["<REDACTED_ENGINE_OPTIONAL>"],
+          "traceBackId": ["<REDACTED_RUNTIME_TRACEBACK_ID>"],
+          "gptResultDescription": "<REDACTED_GPT_DESCRIPTION_OPTIONAL>",
+          "attackState": 2,
+          "confidence": 20,
+          "alertDealAction": "待处置",
+          "whiteStatus": "未加白",
+          "attckTechnique": ["<REDACTED_ATTACK_TECHNIQUE_OPTIONAL>"],
+          "alertRuleId": "<REDACTED_RULE_ID_OPTIONAL>",
+          "logCount": 21,
+          "stage": 30,
+          "url": ["<REDACTED_URL_OPTIONAL>"],
+          "description": "<REDACTED_ALERT_DESCRIPTION_OPTIONAL>"
+        }
+      ]
+    }
+  },
+  "adapter_expectations": {
+    "stable_identifier_preference": ["uuId", "event_id", "alert_id"],
+    "time_priority_preference": ["lastTime", "firstTime", "updateTime"],
+    "event_type_priority_preference": ["threatSubTypeDesc", "riskTag", "threatTypeDesc", "alert_classification", "threatClassDesc", "name"],
+    "severity_numeric_preference": true,
+    "affected_asset_rule": "dstIp_first_hostIp_fallback_only",
+    "source_device_rule": "devSourceName_first_engineName_then_devUidDesc_then_data_source_then_XDR",
+    "empty_records_rule": "success_with_zero_records_not_transport_failure_but_empty_result_error",
+    "record_rejection_rule": "reject_record_when_uuId_or_lastTime_or_name_is_unavailable",
+    "raw_field_filter_rule": "filter_values_in_None_empty_string_empty_array_empty_object",
+    "traceback_evidence_rule": "generate_ EvidenceRef_kind_xdr_traceback_per_traceBackId_entry"
+  },
+  "redaction_notice": "All identifier placeholders are structural only. RFC5737 addresses are documentation addresses, not real query entities."
+}
