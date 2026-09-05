@@ -3,7 +3,7 @@ services:
     image: ${APP_IMAGE:?APP_IMAGE is required}
     container_name: spark-sec-agent-api
     env_file:
-      - .env
+      - ../.env
     environment:
       API_HOST: 0.0.0.0
       API_PORT: 8080

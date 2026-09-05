@@ -329,13 +329,95 @@ class EventListItem(BaseModel):
     run_id: str
     trace_id: str
     status: BusinessStatus
+    status_label: str | None = None
     source: str
     sample_id: str | None = None
     xdr_event_id: str | None = None
     requested_source: str | None = None
     effective_source: str | None = None
     fallback_source: str | None = None
+    alert_count: int = 0
+    risk_score: int | None = None
+    priority: Priority | None = None
+    verdict: TruthVerdict | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     summary: str | None = None
+
+
+class EventSourceView(BaseModel):
+    requested: str | None = None
+    effective: str | None = None
+    fallback: str | None = None
+    sample_id: str | None = None
+    xdr_event_id: str | None = None
+
+
+class EventOverviewView(BaseModel):
+    title: str
+    summary: str | None = None
+    alert_count: int = 0
+    risk_score: int | None = None
+    priority: Priority | None = None
+    verdict: TruthVerdict | None = None
+    confidence: float | None = None
+    needs_human: bool = False
+    affected_assets: list[str] = Field(default_factory=list)
+    source_ips: list[str] = Field(default_factory=list)
+    destination_ips: list[str] = Field(default_factory=list)
+
+
+class EventTimelineView(BaseModel):
+    at: datetime
+    status: BusinessStatus
+    status_label: str
+    message: str
+    elapsed_ms: int | None = None
+
+
+class EventErrorView(BaseModel):
+    at: datetime
+    stage: str
+    message: str
+    recoverable: bool
+
+
+class EventInvestigationView(BaseModel):
+    conclusion: TruthVerdict | None = None
+    final_confidence: float | None = None
+    summary: str | None = None
+    affected_objects: list[str] = Field(default_factory=list)
+    unresolved_questions: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
+    key_evidence_refs: list[str] = Field(default_factory=list)
+    tool_result_count: int = 0
+
+
+class EventResponseView(BaseModel):
+    action: str | None = None
+    target: str | None = None
+    risk_level: ToolRiskLevel | None = None
+    approval_required: bool | None = None
+    execution_status: ToolCallStatus | None = None
+    verification_status: VerificationStatus | None = None
+    final_status: BusinessStatus | None = None
+
+
+class EventDetailView(BaseModel):
+    schema_version: str
+    event_id: str
+    run_id: str
+    trace_id: str
+    status: BusinessStatus
+    status_label: str
+    source: EventSourceView
+    overview: EventOverviewView
+    timeline: list[EventTimelineView] = Field(default_factory=list)
+    errors: list[EventErrorView] = Field(default_factory=list)
+    investigation: EventInvestigationView | None = None
+    response: EventResponseView | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class EventStatusUpdate(BaseModel):

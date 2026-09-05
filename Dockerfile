@@ -11,8 +11,10 @@ WORKDIR /app
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY pyproject.toml uv.lock ./
 COPY README.md ./
-COPY src ./src
 
+RUN uv sync --locked --no-dev --no-install-project --no-cache
+
+COPY src ./src
 RUN uv sync --locked --no-dev --no-editable --no-cache
 
 EXPOSE 8080

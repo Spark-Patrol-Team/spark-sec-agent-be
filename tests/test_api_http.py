@@ -84,11 +84,41 @@ class ApiHttpTest(unittest.TestCase):
         list_response = self.client.get("/events")
         self.assertEqual(list_response.status_code, 200)
         self.assertEqual(len(list_response.json()), 1)
-        self.assertEqual(list_response.json()[0]["event_id"], event_id)
-        self.assertEqual(list_response.json()[0]["requested_source"], "fixed_sample")
-        self.assertEqual(list_response.json()[0]["effective_source"], "fixed_sample")
-        self.assertEqual(list_response.json()[0]["sample_id"], "webshell-001")
-        self.assertIsNone(list_response.json()[0]["xdr_event_id"])
+        list_item = list_response.json()[0]
+        self.assertEqual(list_item["event_id"], event_id)
+        self.assertEqual(list_item["requested_source"], "fixed_sample")
+        self.assertEqual(list_item["effective_source"], "fixed_sample")
+        self.assertEqual(list_item["sample_id"], "webshell-001")
+        self.assertIsNone(list_item["xdr_event_id"])
+        self.assertEqual(list_item["status_label"], "已完成")
+        self.assertEqual(list_item["alert_count"], 2)
+        self.assertEqual(list_item["risk_score"], 85)
+        self.assertEqual(list_item["priority"], "high")
+        self.assertEqual(list_item["verdict"], "malicious")
+        self.assertIsNotNone(list_item["created_at"])
+        self.assertIsNotNone(list_item["updated_at"])
+
+        view_response = self.client.get(f"/events/{event_id}/view")
+        self.assertEqual(view_response.status_code, 200)
+        view = view_response.json()
+        self.assertEqual(view["event_id"], event_id)
+        self.assertEqual(view["status_label"], "已完成")
+        self.assertEqual(view["source"]["sample_id"], "webshell-001")
+        self.assertEqual(view["source"]["effective"], "fixed_sample")
+        self.assertEqual(view["overview"]["title"], "WebShell安全事件")
+        self.assertEqual(view["overview"]["alert_count"], 2)
+        self.assertEqual(view["overview"]["risk_score"], 85)
+        self.assertEqual(view["overview"]["verdict"], "malicious")
+        self.assertEqual(view["overview"]["priority"], "high")
+        self.assertGreaterEqual(len(view["overview"]["affected_assets"]), 1)
+        self.assertEqual(view["response"]["execution_status"], "success")
+        self.assertEqual(view["response"]["final_status"], "COMPLETED")
+        self.assertEqual(view["investigation"]["tool_result_count"], 2)
+        self.assertNotIn("tool_results", view["investigation"])
+        self.assertEqual(
+            [item["status_label"] for item in view["timeline"]],
+            ["已接收", "关联中", "已研判", "调查中", "待决策", "待审批", "执行中", "验证中", "已完成"],
+        )
 
         update_response = self.client.patch(
             f"/events/{event_id}",
@@ -113,6 +143,7 @@ class ApiHttpTest(unittest.TestCase):
 
     def test_missing_event_returns_404(self) -> None:
         detail_response = self.client.get("/events/missing-event")
+        view_response = self.client.get("/events/missing-event/view")
         timeline_response = self.client.get("/events/missing-event/timeline")
         update_response = self.client.patch(
             "/events/missing-event",
@@ -130,6 +161,7 @@ class ApiHttpTest(unittest.TestCase):
         )
 
         self.assertEqual(detail_response.status_code, 404)
+        self.assertEqual(view_response.status_code, 404)
         self.assertEqual(timeline_response.status_code, 404)
         self.assertEqual(update_response.status_code, 404)
         self.assertEqual(delete_response.status_code, 404)

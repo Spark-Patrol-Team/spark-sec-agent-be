@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from sec_agent.api.deps import get_orchestrator
+from sec_agent.api.presenters import to_event_detail_view, to_event_list_item
 from sec_agent.domain.models import (
     ApprovalDecision,
     EventContext,
+    EventDetailView,
     EventListItem,
     EventStatusUpdate,
     StartRunRequest,
@@ -33,24 +35,7 @@ def start_run(request: StartRunRequest, orchestrator: Orchestrator = Depends(get
     summary="查询安全事件列表",
 )
 def list_events(orchestrator: Orchestrator = Depends(get_orchestrator)) -> list[EventListItem]:
-    items: list[EventListItem] = []
-    for ctx in orchestrator.list_events():
-        items.append(
-            EventListItem(
-                event_id=ctx.event_id,
-                run_id=ctx.run_id,
-                trace_id=ctx.trace_id,
-                status=ctx.status,
-                source=ctx.source,
-                sample_id=ctx.request.sample_id if ctx.request else None,
-                xdr_event_id=ctx.request.xdr_event_id if ctx.request else None,
-                requested_source=ctx.requested_source,
-                effective_source=ctx.effective_source,
-                fallback_source=ctx.fallback_source,
-                summary=ctx.event_summary.summary if ctx.event_summary else None,
-            )
-        )
-    return items
+    return [to_event_list_item(ctx) for ctx in orchestrator.list_events()]
 
 
 @router.get(
@@ -64,6 +49,19 @@ def get_event(event_id: str, orchestrator: Orchestrator = Depends(get_orchestrat
     if ctx is None:
         raise HTTPException(status_code=404, detail="event not found")
     return ctx
+
+
+@router.get(
+    "/events/{event_id}/view",
+    response_model=EventDetailView,
+    operation_id="get_event_view",
+    summary="查询前端展示用安全事件详情",
+)
+def get_event_view(event_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)) -> EventDetailView:
+    ctx = orchestrator.get_event(event_id)
+    if ctx is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    return to_event_detail_view(ctx)
 
 
 @router.get(

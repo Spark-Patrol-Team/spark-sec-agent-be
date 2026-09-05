@@ -218,6 +218,48 @@
         }
       }
     },
+    "/events/{event_id}/view": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "查询前端展示用安全事件详情",
+        "operationId": "get_event_view",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetailView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/events/{event_id}/timeline": {
       "get": {
         "tags": [
@@ -564,6 +606,209 @@
         ],
         "title": "EventContext"
       },
+      "EventDetailView": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version"
+          },
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BusinessStatus"
+          },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          },
+          "source": {
+            "$ref": "#/components/schemas/EventSourceView"
+          },
+          "overview": {
+            "$ref": "#/components/schemas/EventOverviewView"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/EventTimelineView"
+            },
+            "type": "array",
+            "title": "Timeline"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/EventErrorView"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "investigation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventInvestigationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventResponseView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "event_id",
+          "run_id",
+          "trace_id",
+          "status",
+          "status_label",
+          "source",
+          "overview"
+        ],
+        "title": "EventDetailView"
+      },
+      "EventErrorView": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "recoverable": {
+            "type": "boolean",
+            "title": "Recoverable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "stage",
+          "message",
+          "recoverable"
+        ],
+        "title": "EventErrorView"
+      },
+      "EventInvestigationView": {
+        "properties": {
+          "conclusion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TruthVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "final_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Confidence"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "affected_objects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Objects"
+          },
+          "unresolved_questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unresolved Questions"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommended Actions"
+          },
+          "key_evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Key Evidence Refs"
+          },
+          "tool_result_count": {
+            "type": "integer",
+            "title": "Tool Result Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "EventInvestigationView"
+      },
       "EventListItem": {
         "properties": {
           "event_id": {
@@ -580,6 +825,17 @@
           },
           "status": {
             "$ref": "#/components/schemas/BusinessStatus"
+          },
+          "status_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Label"
           },
           "source": {
             "type": "string",
@@ -640,6 +896,66 @@
             ],
             "title": "Fallback Source"
           },
+          "alert_count": {
+            "type": "integer",
+            "title": "Alert Count",
+            "default": 0
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Priority"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TruthVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
           "summary": {
             "anyOf": [
               {
@@ -661,6 +977,243 @@
           "source"
         ],
         "title": "EventListItem"
+      },
+      "EventOverviewView": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "alert_count": {
+            "type": "integer",
+            "title": "Alert Count",
+            "default": 0
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Priority"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TruthVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "needs_human": {
+            "type": "boolean",
+            "title": "Needs Human",
+            "default": false
+          },
+          "affected_assets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Assets"
+          },
+          "source_ips": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Ips"
+          },
+          "destination_ips": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Destination Ips"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "EventOverviewView"
+      },
+      "EventResponseView": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolRiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approval_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Required"
+          },
+          "execution_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCallStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "final_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BusinessStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "EventResponseView"
+      },
+      "EventSourceView": {
+        "properties": {
+          "requested": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested"
+          },
+          "effective": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective"
+          },
+          "fallback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback"
+          },
+          "sample_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Id"
+          },
+          "xdr_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xdr Event Id"
+          }
+        },
+        "type": "object",
+        "title": "EventSourceView"
       },
       "EventStatusUpdate": {
         "properties": {
@@ -684,6 +1237,45 @@
           "status"
         ],
         "title": "EventStatusUpdate"
+      },
+      "EventTimelineView": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BusinessStatus"
+          },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "status",
+          "status_label",
+          "message"
+        ],
+        "title": "EventTimelineView"
       },
       "ExecutionMode": {
         "type": "string",
