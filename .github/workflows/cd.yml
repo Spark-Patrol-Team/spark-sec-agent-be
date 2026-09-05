@@ -170,8 +170,8 @@ jobs:
         shell: bash
         run: |
           port="${CD_SSH_PORT:-22}"
-          ssh -i ~/.ssh/cd_key -p "$port" "$CD_SSH_USER@$CD_SSH_HOST" "mkdir -p '$CD_DEPLOY_PATH'"
-          scp -i ~/.ssh/cd_key -P "$port" deploy/docker-compose.prod.yml "$CD_SSH_USER@$CD_SSH_HOST:$CD_DEPLOY_PATH/docker-compose.yml"
+          ssh -i ~/.ssh/cd_key -p "$port" "$CD_SSH_USER@$CD_SSH_HOST" "mkdir -p '$CD_DEPLOY_PATH/deploy'"
+          scp -i ~/.ssh/cd_key -P "$port" deploy/docker-compose.prod.yml "$CD_SSH_USER@$CD_SSH_HOST:$CD_DEPLOY_PATH/deploy/docker-compose.prod.yml"
 
       - name: Pull image and restart service
         shell: bash
@@ -180,4 +180,4 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/cd_key -p "$port" "$CD_SSH_USER@$CD_SSH_HOST" \
             "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
           ssh -i ~/.ssh/cd_key -p "$port" "$CD_SSH_USER@$CD_SSH_HOST" \
-            "cd '$CD_DEPLOY_PATH' && test -f .env && APP_IMAGE='$IMAGE_REF' docker compose pull api && APP_IMAGE='$IMAGE_REF' docker compose up -d api && APP_IMAGE='$IMAGE_REF' docker compose ps api && docker image prune -f"
+            "cd '$CD_DEPLOY_PATH' && test -f .env && APP_IMAGE='$IMAGE_REF' docker compose -p spark-sec-agent-be --env-file .env -f deploy/docker-compose.prod.yml pull api mysql && APP_IMAGE='$IMAGE_REF' docker compose -p spark-sec-agent-be --env-file .env -f deploy/docker-compose.prod.yml up -d api && APP_IMAGE='$IMAGE_REF' docker compose -p spark-sec-agent-be --env-file .env -f deploy/docker-compose.prod.yml ps api && docker image prune -f"
