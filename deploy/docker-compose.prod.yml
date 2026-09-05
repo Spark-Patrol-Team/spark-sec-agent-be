@@ -7,8 +7,13 @@ services:
     environment:
       API_HOST: 0.0.0.0
       API_PORT: 8080
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${HOST_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test:
@@ -20,3 +25,34 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  mysql:
+    image: mysql:8.4
+    container_name: spark-sec-agent-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sec_agent}
+      MYSQL_USER: ${MYSQL_USER:-sec_agent}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-sec_agent}
+    ports:
+      - "127.0.0.1:3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -h
+        - 127.0.0.1
+        - -u${MYSQL_USER:-sec_agent}
+        - -p${MYSQL_PASSWORD:-sec_agent}
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql_data:

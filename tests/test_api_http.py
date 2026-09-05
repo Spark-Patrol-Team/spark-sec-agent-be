@@ -87,18 +87,38 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(list_response.json()[0]["event_id"], event_id)
         self.assertEqual(list_response.json()[0]["requested_source"], "fixed_sample")
         self.assertEqual(list_response.json()[0]["effective_source"], "fixed_sample")
+        self.assertEqual(list_response.json()[0]["sample_id"], "webshell-001")
+        self.assertIsNone(list_response.json()[0]["xdr_event_id"])
+
+        update_response = self.client.patch(
+            f"/events/{event_id}",
+            json={"status": "HUMAN_REQUIRED", "message": "API 测试手动改状态"},
+        )
+        self.assertEqual(update_response.status_code, 200)
+        updated = update_response.json()
+        self.assertEqual(updated["status"], "HUMAN_REQUIRED")
+        self.assertEqual(updated["timeline"][-1]["message"], "API 测试手动改状态")
+
+        delete_response = self.client.delete(f"/events/{event_id}")
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertEqual(self.client.get(f"/events/{event_id}").status_code, 404)
 
         metrics_response = self.client.get("/metrics")
         self.assertEqual(metrics_response.status_code, 200)
         metrics = metrics_response.json()
-        self.assertEqual(metrics["total_events"], 1)
-        self.assertEqual(metrics["completed_events"], 1)
+        self.assertEqual(metrics["total_events"], 0)
+        self.assertEqual(metrics["completed_events"], 0)
         self.assertEqual(metrics["human_required_events"], 0)
         self.assertEqual(metrics["failed_events"], 0)
 
     def test_missing_event_returns_404(self) -> None:
         detail_response = self.client.get("/events/missing-event")
         timeline_response = self.client.get("/events/missing-event/timeline")
+        update_response = self.client.patch(
+            "/events/missing-event",
+            json={"status": "FAILED", "message": "不存在事件"},
+        )
+        delete_response = self.client.delete("/events/missing-event")
         approval_response = self.client.post(
             "/events/missing-event/approval",
             json={
@@ -111,6 +131,8 @@ class ApiHttpTest(unittest.TestCase):
 
         self.assertEqual(detail_response.status_code, 404)
         self.assertEqual(timeline_response.status_code, 404)
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(delete_response.status_code, 404)
         self.assertEqual(approval_response.status_code, 404)
 
     def test_cors_preflight_allows_configured_origin(self) -> None:

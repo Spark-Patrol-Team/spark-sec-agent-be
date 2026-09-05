@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from sec_agent.api.deps import get_orchestrator
-from sec_agent.domain.models import ApprovalDecision, EventContext, EventListItem, StartRunRequest, TimelineEntry
+from sec_agent.domain.models import (
+    ApprovalDecision,
+    EventContext,
+    EventListItem,
+    EventStatusUpdate,
+    StartRunRequest,
+    TimelineEntry,
+)
 from sec_agent.services.orchestrator import Orchestrator
 
 router = APIRouter(tags=["events"])
@@ -35,6 +42,8 @@ def list_events(orchestrator: Orchestrator = Depends(get_orchestrator)) -> list[
                 trace_id=ctx.trace_id,
                 status=ctx.status,
                 source=ctx.source,
+                sample_id=ctx.request.sample_id if ctx.request else None,
+                xdr_event_id=ctx.request.xdr_event_id if ctx.request else None,
                 requested_source=ctx.requested_source,
                 effective_source=ctx.effective_source,
                 fallback_source=ctx.fallback_source,
@@ -68,6 +77,35 @@ def get_timeline(event_id: str, orchestrator: Orchestrator = Depends(get_orchest
     if ctx is None:
         raise HTTPException(status_code=404, detail="event not found")
     return ctx.timeline
+
+
+@router.patch(
+    "/events/{event_id}",
+    response_model=EventContext,
+    operation_id="update_event_status",
+    summary="更新安全事件状态",
+)
+def update_event_status(
+    event_id: str,
+    update: EventStatusUpdate,
+    orchestrator: Orchestrator = Depends(get_orchestrator),
+) -> EventContext:
+    try:
+        return orchestrator.update_event_status(event_id, update)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="event not found") from None
+
+
+@router.delete(
+    "/events/{event_id}",
+    status_code=204,
+    operation_id="delete_event",
+    summary="删除安全事件",
+)
+def delete_event(event_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)) -> Response:
+    if not orchestrator.delete_event(event_id):
+        raise HTTPException(status_code=404, detail="event not found")
+    return Response(status_code=204)
 
 
 @router.post(

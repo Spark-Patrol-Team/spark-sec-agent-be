@@ -298,6 +298,7 @@ class EventContext(BaseModel):
     event_id: str
     status: BusinessStatus
     source: str
+    request: StartRunRequest | None = None
     requested_source: str | None = None
     effective_source: str | None = None
     fallback_source: str | None = None
@@ -329,7 +330,14 @@ class EventListItem(BaseModel):
     trace_id: str
     status: BusinessStatus
     source: str
+    sample_id: str | None = None
+    xdr_event_id: str | None = None
     requested_source: str | None = None
     effective_source: str | None = None
     fallback_source: str | None = None
     summary: str | None = None
+
+
+class EventStatusUpdate(BaseModel):
+    status: BusinessStatus
+    message: str | None = None

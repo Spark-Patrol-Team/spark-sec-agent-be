@@ -8,6 +8,7 @@ from sec_agent.domain.models import (
     BusinessStatus,
     ErrorRecord,
     EventContext,
+    EventStatusUpdate,
     ResponseResult,
     StartRunRequest,
     TimelineEntry,
@@ -57,6 +58,7 @@ class Orchestrator:
                 event_id=f"evt-{uuid4()}",
                 status=BusinessStatus.FAILED,
                 source=request.source,
+                request=request,
                 requested_source=request.source,
                 timeline=[TimelineEntry(status=BusinessStatus.FAILED, message="告警接入失败")],
                 errors=[ErrorRecord(stage="ingest", message=str(exc), recoverable=True)],
@@ -84,6 +86,7 @@ class Orchestrator:
             event_id=event_id,
             status=BusinessStatus.RECEIVED,
             source=request.source,
+            request=request,
             requested_source=request.source,
             effective_source=self._effective_source(alerts),
             fallback_source=fallback_source,
@@ -150,6 +153,20 @@ class Orchestrator:
 
     def get_event(self, event_id: str) -> EventContext | None:
         return self._store.get(event_id)
+
+    def update_event_status(self, event_id: str, update: EventStatusUpdate) -> EventContext:
+        ctx = self._must_get(event_id)
+        ctx.status = update.status
+        ctx.timeline.append(
+            TimelineEntry(
+                status=update.status,
+                message=update.message or "手动更新事件状态",
+            )
+        )
+        return self._store.save(ctx)
+
+    def delete_event(self, event_id: str) -> bool:
+        return self._store.delete(event_id)
 
     def _execute_and_verify(
         self,

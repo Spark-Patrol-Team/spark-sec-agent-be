@@ -133,6 +133,89 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "events"
+        ],
+        "summary": "更新安全事件状态",
+        "operationId": "update_event_status",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventContext"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "events"
+        ],
+        "summary": "删除安全事件",
+        "operationId": "delete_event",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/events/{event_id}/timeline": {
@@ -366,6 +449,16 @@
             "type": "string",
             "title": "Source"
           },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StartRunRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "requested_source": {
             "anyOf": [
               {
@@ -492,6 +585,28 @@
             "type": "string",
             "title": "Source"
           },
+          "sample_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Id"
+          },
+          "xdr_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xdr Event Id"
+          },
           "requested_source": {
             "anyOf": [
               {
@@ -546,6 +661,29 @@
           "source"
         ],
         "title": "EventListItem"
+      },
+      "EventStatusUpdate": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/BusinessStatus"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "EventStatusUpdate"
       },
       "ExecutionMode": {
         "type": "string",

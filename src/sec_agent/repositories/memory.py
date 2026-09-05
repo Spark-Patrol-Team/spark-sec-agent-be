@@ -18,6 +18,9 @@ class InMemoryEventRepository:
     def list(self) -> list[EventContext]:
         return list(self._events.values())
 
+    def delete(self, event_id: str) -> bool:
+        return self._events.pop(event_id, None) is not None
+
     def claim_idempotency_key(self, key: str) -> bool:
         if key in self._idempotency_keys:
             return False

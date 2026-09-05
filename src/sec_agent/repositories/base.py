@@ -15,6 +15,9 @@ class EventRepository(Protocol):
     def list(self) -> list[EventContext]:
         raise NotImplementedError
 
+    def delete(self, event_id: str) -> bool:
+        raise NotImplementedError
+
     def claim_idempotency_key(self, key: str) -> bool:
         raise NotImplementedError
 
