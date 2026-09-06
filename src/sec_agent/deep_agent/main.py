@@ -43,9 +43,11 @@ def build_tools(config) -> ToolRegistry:
         for t in build_mock_tools():
             registry.register(t)
 
-    # 知识包检索工具（knowledge.query）：本地资源，所有工具模式下都注册
-    for t in build_knowledge_tools():
-        registry.register(t)
+    # 知识包检索工具（knowledge.query）：
+    # guarded = 注册知识工具；off = 完全不注册知识工具（A/B 对照用）。
+    if config.tools.knowledge_mode == "guarded":
+        for t in build_knowledge_tools():
+            registry.register(t)
 
     # 真实 MCP 工具
     if config.tools.mode in ("mcp", "auto"):

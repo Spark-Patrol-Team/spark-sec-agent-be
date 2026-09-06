@@ -141,6 +141,11 @@ class LLMConfig:
 class ToolConfig:
     """工具模式：mock / mcp / auto（auto = Mock 兜底 + 连上的真实 MCP 并存）。"""
     mode: str = os.getenv("TOOL_MODE", "auto")
+    # 知识工具门禁开关：guarded = 注册知识工具（默认）；off = 完全不注册知识工具。
+    # 两模式除知识能力外，输入/模型/工具/步数限制保持一致，用于 A/B 对照。
+    knowledge_mode: str = field(
+        default_factory=lambda: os.getenv("KNOWLEDGE_MODE", "guarded").strip().lower()
+    )
     # 深信服 MCP 服务地址：从 MCP_URLS 环境变量或 mcp_servers.local.json 读取（真实地址不入库）
     mcp_urls: dict = field(default_factory=_load_mcp_urls)
     mcp_api_key: str = os.getenv("MCP_API_KEY", "")   # 漏洞信息查询等需要的 apikey（可选）

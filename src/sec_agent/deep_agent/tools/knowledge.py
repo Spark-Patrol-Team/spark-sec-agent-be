@@ -170,6 +170,36 @@ def match_keyword(entries: list[KnowledgeEntry], keyword: str) -> KnowledgeEntry
     return best_entry if best_score > 0 else None
 
 
+# --------------------------------------------------------------------------- #
+# 三档折叠（杨嘉琪冻结知识工具上下文接口）
+# --------------------------------------------------------------------------- #
+# 门禁 6 档信号强度折叠为三档 scope，供 knowledge_query 决定是否放行 WebShell 知识：
+#   OUT       = 域外，拒绝返回知识内容，稳定错误码 knowledge_scope_mismatch；
+#   WEAK      = 弱信号，返回知识但标注「仅供参考、不构成攻击确认」；
+#   CONFIRMED = 强确认，正常返回知识内容。
+_SCOPE_OUT = "OUT"
+_SCOPE_WEAK = "WEAK"
+_SCOPE_CONFIRMED = "CONFIRMED"
+
+_SCOPE_WEAK_STRENGTHS = {"IN_SCOPE_WEAK", "MIXED", "BENIGN_LIKE", "INDETERMINATE"}
+
+
+def fold_scope(overall_strength: str) -> str:
+    """把门禁 6 档 overall_strength 折叠为三档 scope。
+
+    空值/未知值表示「未注入门禁上下文」，按 CONFIRMED 放行（向后兼容：
+    知识工具单测直接按 keyword 检索，不经 agent 门禁注入）。
+    """
+    strength = (overall_strength or "").strip()
+    if strength == "OUT_OF_SCOPE":
+        return _SCOPE_OUT
+    if strength == "IN_SCOPE_CONFIRMED":
+        return _SCOPE_CONFIRMED
+    if strength in _SCOPE_WEAK_STRENGTHS:
+        return _SCOPE_WEAK
+    return _SCOPE_CONFIRMED
+
+
 class KnowledgeQueryTool(Tool):
     """`knowledge.query` 检索工具：按关键词返回知识包条目 + evidence_refs。"""
 
@@ -196,13 +226,29 @@ class KnowledgeQueryTool(Tool):
 
     def call(self, params: dict) -> ToolResult:
         keyword = str(params.get("keyword", ""))
+        # 受控 event_context（由 agent 代码注入真实事件门禁结果，非 LLM 生成）。
+        # 仅依据 overall_strength 折叠三档；OUT 场景拒绝返回 WebShell 知识。
+        event_context = params.get("event_context") or {}
+        scope = fold_scope(str(event_context.get("overall_strength", "")))
+        if scope == _SCOPE_OUT:
+            return ToolResult(
+                status="failed",
+                error="knowledge_scope_mismatch",
+                summary="事件不在 WebShell 范围内（out_of_scope），知识工具拒绝返回 WebShell 内容",
+            )
+
         entry = match_keyword(self._entries, keyword)
         if entry is None:
             return ToolResult(status="failed", summary=f"知识库无匹配条目：{keyword}", error="知识库无匹配")
+
+        # 弱信号：返回知识但明确标注仅供参考、不构成攻击确认，避免误判为确认性结论。
+        prefix = ""
+        if scope == _SCOPE_WEAK:
+            prefix = "【弱信号提示】当前事件证据不足以确认 WebShell 攻击，以下知识仅供参考、不构成攻击确认。\n"
         return ToolResult(
             status="success",
-            summary=f"[知识包·{entry.name}]\n{entry.content}\n证据引用 evidence_refs：{entry.evidence_refs}",
-            data={"entry": entry.name, "evidence_refs": entry.evidence_refs},
+            summary=prefix + f"[知识包·{entry.name}]\n{entry.content}\n证据引用 evidence_refs：{entry.evidence_refs}",
+            data={"entry": entry.name, "evidence_refs": entry.evidence_refs, "scope": scope},
         )
 
 

@@ -100,6 +100,10 @@ class DeepInvestigationAgent:
         tool_call_count = 0
         wrapup_reminded = False
 
+        # 门禁绑定：基于真实事件审计出受控 event_context（每次 investigate 绑定一次，
+        # 与其它调用隔离）。LLM 无法通过工具参数覆盖，杜绝自报事件类型绕过门禁。
+        event_context = self._build_event_context(event)
+
         while tool_call_count < max_calls:
             # 接近上限：注入收尾提醒，避免 LLM 耗尽步数后降级
             remaining = max_calls - tool_call_count
@@ -120,6 +124,9 @@ class DeepInvestigationAgent:
                 # LLM 使用的是 ASCII 内部别名，解析回真实工具名执行并留痕
                 real_name = self.tools.resolve(tc["function"]["name"])
                 args = self._safe_json_loads(tc["function"]["arguments"])
+                # knowledge_query 的 event_context 由代码注入真实事件上下文，覆盖 LLM 传入值
+                if real_name == "knowledge_query":
+                    args["event_context"] = event_context
                 result = self.tools.call(real_name, args)
                 record = {
                     "tool": real_name,
@@ -142,6 +149,30 @@ class DeepInvestigationAgent:
 
         # 达到最大工具调用次数仍未得到报告
         return self._fallback_report(event, tool_records, reason="达到最大工具调用次数，证据仍不足")
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_event_context(event: SecurityEventInput) -> Optional[dict]:
+        """基于真实事件构建受控门禁上下文（代码注入，非 LLM 生成）。
+
+        经 WebShellGatekeeper.audit 确定性审计后，把重点字段（overall_strength /
+        upgraded_score / investigation_checklist / false_positive_conditions /
+        evidence_gaps）作为 knowledge_query 的 event_context。gatekeeper 不可用
+        （如 deep_agent 独立打包、无 services 包）时返回 None，knowledge_query 退化为
+        无门禁放行（保持兼容，不阻塞调查）。
+        """
+        try:
+            from sec_agent.services.gatekeeper import WebShellGatekeeper
+            result = WebShellGatekeeper().audit(event)
+        except Exception:  # noqa: BLE001
+            return None
+        return {
+            "overall_strength": result.overall_strength.value,
+            "upgraded_score": result.upgraded_score,
+            "investigation_checklist": result.investigation_checklist,
+            "false_positive_conditions": result.false_positive_conditions,
+            "evidence_gaps": result.evidence_gaps,
+        }
 
     # ------------------------------------------------------------------
     def _build_messages(self, event: SecurityEventInput) -> list[dict]:
