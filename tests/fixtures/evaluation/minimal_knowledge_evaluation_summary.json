@@ -4,7 +4,7 @@
   "generated_at": "2026-09-06T00:00:00+08:00",
   "suite": {
     "name": "scenario-knowledge-minimal",
-    "case_source": "tests/fixtures/gatekeeper_cases/case1-10.json",
+    "case_source": "tests/fixtures/gatekeeper_cases/",
     "knowledge_base": "src/sec_agent/deep_agent/knowledge/webshell-knowledge.md",
     "case_count": 3
   },

@@ -4,7 +4,7 @@
 
 ## 1. 一致性基线
 
-- 输入合同：陈敏 `PR#43` head `500f65c` 的 `tests/fixtures/gatekeeper_cases/case1-10.json`。
+- 输入合同：陈敏 `PR#43` head `500f65c` 的 `tests/fixtures/gatekeeper_cases/case1.json ~ case10.json`。
 - 门禁实现：`src/sec_agent/services/gatekeeper.py`（`WebShellGatekeeper`）。
 - 期望强度断言：`tests/test_gatekeeper_case1_10.py::TestTask6HandoverAssertions::test_yanyushuo_signal_strength_and_verdict`。
 - 判据：本目录 `case1.expected.json` ~ `case10.expected.json`。

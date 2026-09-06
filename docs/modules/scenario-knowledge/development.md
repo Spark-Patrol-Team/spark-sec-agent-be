@@ -10,7 +10,7 @@
 | 包数据声明 | `pyproject.toml` 的 `[tool.setuptools.package-data]` |
 | 工具单元测试 | `tests/test_knowledge_tool.py` |
 | 门禁与判据测试 | `tests/test_gatekeeper_case1_10.py`、`tests/test_signal_extraction.py`、`tests/test_yanyushuo_expected_judgments.py` |
-| 评测案例输入 | `tests/fixtures/gatekeeper_cases/case1-10.json`（权威信号合同） |
+| 评测案例输入 | `tests/fixtures/gatekeeper_cases/case1.json ~ case10.json`（权威信号合同） |
 | 评测判据与来源边界 | `docs/modules/scenario-knowledge/judgments/` |
 
 不要在 `docs/` 下再复制一份 WebShell 知识正文。需要更新知识时，只修改唯一运行时文件，并同步补充测试。

@@ -15,7 +15,7 @@
 | LLM 可见工具名 | `knowledge_query` |
 | 工具注册 | `src/sec_agent/deep_agent/main.py::build_tools`，在 `mock`、`mcp`、`auto` 模式下均注册 |
 | 随包分发 | `pyproject.toml` 将 `knowledge/*.md` 声明为 package data |
-| 评测输入 | `tests/fixtures/gatekeeper_cases/case1-10.json`（陈敏 PR#43 的权威事件信号合同） |
+| 评测输入 | `tests/fixtures/gatekeeper_cases/case1.json ~ case10.json`（陈敏 PR#43 的权威事件信号合同） |
 | 评测汇总 Schema | `tests/fixtures/evaluation/knowledge_evaluation_summary.schema.json` |
 
 文档目录不保存第二份运行时知识正文。PR #8 是历史知识资产来源之一，其有价值内容已按当前结构吸收，不直接形成并行入口。

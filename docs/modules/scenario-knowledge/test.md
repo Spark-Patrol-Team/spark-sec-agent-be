@@ -5,7 +5,7 @@
 本模块的验收分为四层：
 
 1. **知识工具契约**：正文加载、章节解析、关键词命中/未命中、来源引用和工具注册。
-2. **案例输入与门禁边界**：`tests/fixtures/gatekeeper_cases/case1-10.json` 能被 `SecurityEventInput` 加载，标识唯一，且来源受限字段与负向输入不被污染。
+2. **案例输入与门禁边界**：`tests/fixtures/gatekeeper_cases/case1.json ~ case10.json` 能被 `SecurityEventInput` 加载，标识唯一，且来源受限字段与负向输入不被污染。
 3. **评测汇总契约**：逐案例结果必须按冻结 Schema 记录案例 ID、知识模式、适用性、命中知识 ID、工具状态、证据引用、禁止结论命中、人工接管、步骤数、耗时和人工 Review 栏。
 4. **Agent 报告行为**：知识是否被适当消费，是否把通用知识扩写成事件事实，负向案例是否被错误套用 WebShell 知识。
 
@@ -13,7 +13,7 @@
 
 ## 2. 测试数据边界
 
-`tests/fixtures/gatekeeper_cases/case1-10.json`（陈敏 PR#43）全部是公开材料改编或人工构造的 synthetic 输入：
+`tests/fixtures/gatekeeper_cases/case1.json ~ case10.json`（陈敏 PR#43）全部是公开材料改编或人工构造的 synthetic 输入：
 
 - case1—3：WebShell 正向变体；
 - case4—5：证据不足/模拟工具失败；
