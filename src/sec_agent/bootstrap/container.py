@@ -9,6 +9,8 @@ from sec_agent.platforms.jsonl_sample import JsonlSampleAdapter
 from sec_agent.platforms.xdr_openapi import XdrOpenApiAdapter, XdrOpenApiConfig
 from sec_agent.repositories.base import EventRepository
 from sec_agent.repositories.memory import InMemoryEventRepository
+from sec_agent.services.deep_agent_bridge import DeepAgentBridge
+from sec_agent.services.investigation import InvestigationBridge
 from sec_agent.services.orchestrator import Orchestrator
 
 
@@ -17,6 +19,7 @@ class AppContainer:
     settings: Settings
     platform: PlatformAdapter
     repository: EventRepository
+    investigation_bridge: InvestigationBridge
     orchestrator: Orchestrator
 
 
@@ -24,16 +27,19 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     resolved_settings = settings or load_settings()
     platform = _build_platform(resolved_settings)
     repository = _build_repository(resolved_settings)
+    investigation_bridge = _build_investigation_bridge()
     orchestrator = Orchestrator(
         platform=platform,
         store=repository,
         investigation_backend=resolved_settings.investigation_backend,
         platform_backend=resolved_settings.platform_backend,
+        investigation_bridge=investigation_bridge,
     )
     return AppContainer(
         settings=resolved_settings,
         platform=platform,
         repository=repository,
+        investigation_bridge=investigation_bridge,
         orchestrator=orchestrator,
     )
 
@@ -77,3 +83,7 @@ def _build_repository(settings: Settings) -> EventRepository:
 
         return MySQLEventRepository(settings.mysql_dsn, auto_create_schema=settings.mysql_auto_create_schema)
     raise ValueError(f"未知存储后端: {settings.storage_backend}")
+
+
+def _build_investigation_bridge() -> InvestigationBridge:
+    return DeepAgentBridge()

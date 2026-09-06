@@ -4,10 +4,20 @@ import types
 import unittest
 from unittest import mock
 
-from sec_agent.domain.models import BusinessStatus, SecurityEvent, TriageResult, TruthVerdict, Priority
+from sec_agent.domain.models import (
+    BusinessStatus,
+    InvestigationReport,
+    Priority,
+    SecurityEvent,
+    StartRunRequest,
+    TriageResult,
+    TruthVerdict,
+)
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
+from sec_agent.repositories.memory import InMemoryEventRepository
 from sec_agent.services.deep_agent_bridge import DeepAgentBridgeUnavailable
 from sec_agent.services.investigation import DeepInvestigationAgent
+from sec_agent.services.orchestrator import Orchestrator
 
 
 class DeepAgentBridgeTest(unittest.TestCase):
@@ -31,8 +41,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertEqual(report.steps[0].goal, "查询资产和关联告警")
 
     def test_deep_agent_backend_returns_human_required_when_unavailable(self) -> None:
-        service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent")
-        service._deep_agent_bridge = _UnavailableBridge()
+        service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent", bridge=_UnavailableBridge())
 
         report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
 
@@ -41,8 +50,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertIn("deep_agent", report.summary)
 
     def test_auto_backend_records_fallback_and_runs_internal_tool_chain(self) -> None:
-        service = DeepInvestigationAgent(platform=FixedSampleAdapter(), backend="auto")
-        service._deep_agent_bridge = _UnavailableBridge()
+        service = DeepInvestigationAgent(platform=FixedSampleAdapter(), backend="auto", bridge=_UnavailableBridge())
 
         report = service.investigate("trace-test", self._event(), self._triage(), run_id="run-test")
 
@@ -54,6 +62,23 @@ class DeepAgentBridgeTest(unittest.TestCase):
             ["evidence_lookup", "xdr_log_query"],
         )
         self.assertEqual(len(report.tool_results), 2)
+
+    def test_orchestrator_uses_injected_bridge_for_main_chain_investigation(self) -> None:
+        bridge = _SuccessfulBridge()
+        orchestrator = Orchestrator(
+            platform=FixedSampleAdapter(),
+            store=InMemoryEventRepository(),
+            investigation_backend="deep_agent",
+            investigation_bridge=bridge,
+        )
+
+        ctx = orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
+
+        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(bridge.calls, 1)
+        self.assertIsNotNone(ctx.investigation)
+        self.assertEqual(ctx.investigation.summary, "注入 Bridge 已完成调查")
+        self.assertEqual(ctx.investigation.tool_results, ["bridge-tool-call"])
 
     def _install_fake_deep_agent(self) -> None:
         package = types.ModuleType("deep_agent")
@@ -179,6 +204,28 @@ class _NoopPlatform:
 class _UnavailableBridge:
     def investigate(self, trace_id, run_id, event, triage):
         raise DeepAgentBridgeUnavailable("单元测试模拟 deep_agent 缺失")
+
+
+class _SuccessfulBridge:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def investigate(self, trace_id, run_id, event, triage):
+        self.calls += 1
+        return InvestigationReport(
+            conclusion=triage.verdict,
+            final_confidence=0.93,
+            timeline=["注入 Bridge 调查完成"],
+            tool_results=["bridge-tool-call"],
+            key_evidence_refs=list(triage.supporting_evidence_refs),
+            evidence_relations=["注入 Bridge 输出的证据关系"],
+            affected_objects=event.entities.get("assets", []) or event.entities.get("dst_ips", []),
+            unresolved_questions=[],
+            recommended_actions=["隔离目标主机"],
+            needs_human=False,
+            steps=[],
+            summary="注入 Bridge 已完成调查",
+        )
 
 
 if __name__ == "__main__":

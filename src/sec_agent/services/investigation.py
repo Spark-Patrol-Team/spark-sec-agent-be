@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from sec_agent.domain.models import (
     ApprovalStatus,
     BusinessStatus,
@@ -16,14 +18,31 @@ from sec_agent.platforms.base import PlatformAdapter
 from sec_agent.services.deep_agent_bridge import DeepAgentBridge, DeepAgentBridgeUnavailable
 
 
+class InvestigationBridge(Protocol):
+    def investigate(
+        self,
+        trace_id: str,
+        run_id: str,
+        event: SecurityEvent,
+        triage: TriageResult,
+    ) -> InvestigationReport:
+        ...
+
+
 class DeepInvestigationAgent:
-    def __init__(self, platform: PlatformAdapter, max_steps: int = 3, backend: str = "auto") -> None:
+    def __init__(
+        self,
+        platform: PlatformAdapter,
+        max_steps: int = 3,
+        backend: str = "auto",
+        bridge: InvestigationBridge | None = None,
+    ) -> None:
         self._platform = platform
         self._max_steps = max_steps
         if backend not in {"auto", "deep_agent", "tool_mock"}:
             raise ValueError(f"不支持的深度调查后端: {backend}")
         self._backend = backend
-        self._deep_agent_bridge = DeepAgentBridge()
+        self._deep_agent_bridge = bridge or DeepAgentBridge()
 
     def investigate(
         self,

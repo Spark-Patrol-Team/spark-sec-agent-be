@@ -6,13 +6,13 @@
 |---|---|
 | 模块 | 主链 |
 | 负责人 | 李雨妍 |
-| 文档状态 | 已补充真实 XDR 告警接入说明 |
-| 实现状态 | 主链已实现；真实 XDR 告警拉取已完成一次实机验证；真实 MCP 调查和真实处置未闭环 |
+| 文档状态 | 已补充真实 XDR 告警接入与 Bridge 装配实现 |
+| 实现状态 | 主链已实现；真实 XDR 告警拉取已完成一次实机验证；Bridge 到主链的显式装配已落地；真实 MCP 调查和真实处置未闭环 |
 | 能力性质 | 自研代码；平台接入包含 fixed_sample / jsonl_sample / xdr_openapi；处置执行和验证仍包含 Mock 能力 |
 | 关联任务/需求 | 搭建最小主流程空壳、状态流转、模块接入主链、后端主链技术集成 |
 | 关联正式交付章节 | docs/deliverables/system-development-and-operation-guide.md；docs/deliverables/安全智能体系统设计说明书V2.md |
 | 对应PR或Commit | 当前工作区；建议提交名 `fix: align XDR OpenAPI auth and alert ingestion` |
-| 最后更新时间 | 2026-08-30 |
+| 最后更新时间 | 2026-09-06 |
 | 最后复验时间 | 2026-08-30 |
 
 ## 1. 目标与非目标
@@ -24,6 +24,7 @@
 - 通过 `StateMachine` 约束业务状态流转，避免业务模块绕过编排层直接修改状态。
 - 通过 `ToolRequest` / `ToolResult` 统一工具调用契约，使 fixed/jsonl 平台适配器和 MVP Mock 工具可以被主链调度。
 - 对外提供 HTTP 接口，支持启动主流程、查询事件、查询时间线、提交审批和查看基础指标。
+- 完成 Bridge 与主链真实接入的显式装配，为后续真实 Agent 接入提供稳定边界。
 
 ### 1.2 非目标
 
@@ -32,6 +33,7 @@
 - 本阶段不实现真实高风险处置动作，执行阶段当前使用 `stateful_response_mock` 类型能力。
 - 本阶段不实现长流程异步队列、断点续跑和分布式任务调度。
 - 本阶段不保证 deep agent 在未配置 LLM 和真实 MCP 工具服务时真实闭环运行。
+- 本阶段只落地 Bridge 显式装配，不新增 FastGPT / 远程 Agent 的代码实现。
 
 ## 2. 职责与边界
 
@@ -74,6 +76,9 @@
 4. 进入 `TRIAGED`，由 `RiskTriageService` 输出恶意性、风险分、优先级和是否调查。
 5. 如无需调查，直接进入 `COMPLETED`；如需要调查，进入 `INVESTIGATING`。
 6. `DeepInvestigationAgent` 根据配置选择 `tool_mock`、`deep_agent` 或 `auto` 后端，输出结构化调查报告。
+   - `tool_mock`：不调用外部 Agent，使用主链内部工具调查子链。
+   - `deep_agent`：通过 `DeepAgentBridge` 调用 `sec_agent.deep_agent`，Bridge 负责领域模型互转和工具注册。
+   - `auto`：优先尝试 `DeepAgentBridge`；Bridge 不可用或异常时，回退内部工具调查子链。
 7. 如调查需要人工，进入 `HUMAN_REQUIRED`；否则由 `ResponseDecisionService` 生成处置方案。
 8. 进入 `DECISION_READY`。如方案需要审批，进入 `APPROVAL_REQUIRED`；否则直接执行。
 9. 审批通过后进入 `EXECUTING`，由 `ResponseExecutionService` 调用平台工具执行处置。
@@ -94,6 +99,58 @@
 | `COMPLETED` | 终态，不允许继续迁移 |
 | `HUMAN_REQUIRED` | 终态，不允许继续迁移 |
 | `FAILED` | 终态，不允许继续迁移 |
+
+### 4.1 Bridge 与主链真实接入装配实现
+
+目标装配链路：
+
+```text
+POST /runs
+  -> Orchestrator.start()
+  -> AlertIngestService
+  -> AlertCorrelationService
+  -> RiskTriageService
+  -> DeepInvestigationAgent
+       backend=tool_mock  -> 内部工具调查子链
+       backend=deep_agent -> DeepAgentBridge -> sec_agent.deep_agent
+       backend=auto       -> 优先 DeepAgentBridge，失败后回退内部工具调查子链
+  -> ResponseDecisionService
+  -> APPROVAL_REQUIRED / HUMAN_REQUIRED / COMPLETED / FAILED
+```
+
+实际装配位置：
+
+```text
+build_container()
+  -> _build_investigation_bridge()
+  -> Orchestrator(..., investigation_bridge=bridge)
+  -> DeepInvestigationAgent(..., bridge=bridge)
+```
+
+Bridge 设计边界：
+
+| 层级 | 职责 | 不做什么 |
+|---|---|---|
+| `AppContainer` / `build_container()` | 统一创建平台适配器、仓储、Bridge 和 `Orchestrator` | 不执行业务状态推进 |
+| `Orchestrator` | 只负责状态推进和模块调用顺序 | 不直接依赖具体 Agent 实现 |
+| `DeepInvestigationAgent` | 根据 `INVESTIGATION_BACKEND` 选择调查后端，并消费注入的 Bridge | 不解析真实平台原始告警，不自己决定外部 Agent 类型 |
+| `DeepAgentBridge` | 将 `SecurityEvent + TriageResult` 转成 Agent 输入，并将 Agent 报告转回主链 `InvestigationReport` | 不推进主链状态，不执行处置 |
+| `sec_agent.deep_agent` | 执行 LLM / 工具 / 知识包调查闭环 | 不直接写 `EventContext` |
+
+后续真实 Agent 接入的最小契约：
+
+```text
+输入：trace_id, run_id, SecurityEvent, TriageResult
+输出：InvestigationReport
+```
+
+后续新增 FastGPT / 远程 Agent / 新 MCP Agent 时，应保持这个边界：
+
+1. 新 Agent 只在 Bridge 层做输入输出适配。
+2. 主链仍只消费 `InvestigationReport`。
+3. 不在 `Orchestrator` 中写具体 Agent 的调用细节。
+4. Agent 不可用时，`deep_agent` 后端返回人工接管报告，`auto` 后端允许回退内部工具调查子链。
+5. 测试应通过构造函数注入替代 Bridge，不直接修改服务私有字段。
 
 ## 5. 上下游关系与契约
 
@@ -129,6 +186,8 @@
 | 使用 `EventContext` 作为主链上下文 | 便于 API、仓储、测试和前端统一读取处理结果 | 未拆成多个临时对象，避免主链结果分散 |
 | 使用 `StateMachine` 限制状态迁移 | 防止非法回退、跳跃和终态继续推进 | 未直接在服务中修改字符串状态，避免缺少约束 |
 | 使用 `ToolRequest` / `ToolResult` 统一工具契约 | 便于 fixed/jsonl、Mock 工具和后续真实平台工具共用调度接口 | 未让不同工具返回任意 dict，避免下游解析混乱 |
+| Bridge 只输出主链 `InvestigationReport` | 让后续真实 Agent 接入不影响状态机、审批和处置决策 | 未让外部 Agent 直接返回任意 JSON 给 `Orchestrator`，避免主链耦合具体实现 |
+| `Orchestrator` 不直接调用真实 Agent | 主链只负责编排，Agent 细节放在 Bridge 层 | 未在主链硬编码 FastGPT、MCP 或某个 LLM Agent，避免后续替换成本过高 |
 | XDR 告警按列表分页拉取后本地匹配 | 目前只确认 `uuId` 是返回结果唯一标识，未证明上游支持按 `uuId` 请求过滤 | 未把 `uuId` 直接拼到上游请求体，避免依赖未确认接口行为 |
 | XDR 日志查询失败不阻断已命中告警审批 | 日志接口路径和权限尚未完成实机确认，但告警本身已包含足够字段进入主链 | 未将补充日志查询作为强依赖，避免真实告警接入被未确认日志接口阻塞 |
 | 保留 `memory` 和 `mysql` 两类仓储 | 本地开发可快速运行，后续可切 MySQL 持久化 | 未强制所有环境依赖 MySQL，降低本地调试门槛 |
@@ -147,6 +206,7 @@
 | 限制或未实现项 | 对主链影响 | 后续条件/负责人 |
 |---|---|---|
 | 真实 XDR 告警列表已接入，但只完成单接口验收 | 可支持真实告警输入主链；仍不等于 XDR 全量 OpenAPI 闭环 | 继续补齐更多查询条件、错误码、字段样本和稳定性测试 |
+| Bridge 显式装配已落地，但后续 Agent 仍需按契约接入 | 不阻塞现有主链；影响后续真实 Agent 扩展效率 | 后续新增 Agent Bridge 时按 `InvestigationReport` 契约接入并补测试 |
 | 真实深信服 MCP 工具未完成主链实机闭环 | 不阻塞真实告警输入；阻塞真实调查工具闭环 | 补齐 MCP 工具地址、鉴权、工具 schema 和集成测试 |
 | 真实高风险处置动作未接入 | 不阻塞主链演示；阻塞生产处置能力 | 接入真实处置 API，并明确审批、回滚和审计 |
 | 主链当前以同步方式执行 | 不阻塞本地和 CI；高并发或长任务场景待优化 | 引入异步任务、队列、状态持久化和重试策略 |
@@ -159,3 +219,5 @@
 |---|---|---|---|
 | 2026-08-26 | 当前工作区新增 | 新增主链模块设计文档，按现有 Orchestrator 和状态机补充内容 | 否 |
 | 2026-08-30 | 当前工作区更新 | 补充真实 XDR 告警列表接入、官方签名、本地 `uuId` 匹配、日志查询非阻断和真实能力边界 | 是 |
+| 2026-09-06 | 当前工作区更新 | 在主链设计文档内补充 Bridge 与主链真实接入装配设计，明确后续 Agent 接入边界 | 否，文档设计冻结 |
+| 2026-09-06 | 当前工作区更新 | 落地 Bridge 显式注入装配：容器创建 Bridge，`Orchestrator` 传入调查服务，测试不再修改私有字段 | 是 |
