@@ -266,6 +266,7 @@ class TestTask4CaseSignalAnnotations:
         }, f"{case['case_id']} 含反序列化+内核驱动，应为确认级"
         strong = [s for s in result.signals if s.strength == SignalStrength.IN_SCOPE_CONFIRMED]
         assert strong
+        assert any("Case 2 数据质量问题" in issue for issue in result.input_quality_issues), "Case 2 必须标注数据质量矛盾"
 
     def test_case3_beima_weak_to_mixed(self) -> None:
         _, _, _, result = self._run(3)
@@ -331,6 +332,7 @@ class TestTask4CaseSignalAnnotations:
             }
         ]
         assert not ws_evidence, f"{case['case_id']} 证据不得产生 WebShell 范围内信号"
+        assert any("Case 10 数据质量问题" in issue for issue in result.input_quality_issues), "Case 10 必须标注 event_type 误标问题"
 
 
 class TestTask5WebshellSeverityUpgrade:
