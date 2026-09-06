@@ -14,7 +14,7 @@
 | case | 输入是否含判据所需的强信号 | 判据是否引用知识补事实 | 弱信号是否误设 in_scope | 域外负向是否保持 | 人工接管是否与证据缺口相符 | 一致结论 |
 |---|---|---|---|---|---|---|
 | case1 | 弱信号（异常访问/octet-stream/Base64/AES） | 否，仅用知识作调查方向 | 是 weak_signal ✅ | 不适用 | 否（可继续自动调查） | ✅ 一致 |
-| case2 | 输入含强信号（反序列化/内核驱动/进程隐藏） | 否，但需复述输入事实 | 是 in_scope ✅ | 不适用 | 是（高风险+需人工核实） | ⚠️ 判据与判据内部一致，但**case2 输入与来源矩阵冲突**（见来源 Review 3.1） |
+| case2 | 输入含强信号（反序列化/内核驱动/进程隐藏） | 否，但需复述输入事实 | 是 in_scope ✅ | 不适用 | 是（高风险+需人工核实） | ⚠️ 判据与判据内部一致，但**case2 输入与来源 Review 冲突**（见来源 Review 3.1） |
 | case3 | 含 RSA 强关键词，整体偏弱 | 否 | 弱信号，保守收口 ✅ | 不适用 | 是（政府目标+来源弱） | ⚠️ 门禁可能因 RSA 判 CONFIRMED，判据按来源边界收口 weak_signal（属判据修正，非输入错误） |
 | case4 | 仅文件名弱信号 | 否 | weak_signal ✅ | 不适用 | 是（上下文缺失） | ✅ 一致 |
 | case5 | 弱信号（工具失败） | 否 | weak_signal ✅ | 不适用 | 是（关键工具失败） | ✅ 一致 |
@@ -28,9 +28,9 @@
 
 | # | 问题 | 归属修正 | 建议处置 |
 |---|---|---|---|
-| 1 | case2 输入（Godzilla/ViewState/Wingtb.sys/进程隐藏）与 `来源矩阵.md` 冲突，且与沈洪旭 case2（部署尝试未成功）互斥 | 陈敏（输入字段/信号） | 确认 case2 回归“部署尝试未成功”，或补直接来源；来源补齐前判据按 conservative 口径，不作家族/持久化定论 |
+| 1 | case2 输入（Godzilla/ViewState/Wingtb.sys/进程隐藏）与来源 Review 冲突，且与沈洪旭 case2（部署尝试未成功）互斥 | 陈敏（输入字段/信号） | 确认 case2 回归“部署尝试未成功”，或补直接来源；来源补齐前判据按 conservative 口径，不作家族/持久化定论 |
 | 2 | case10 输入 `event_type=WebShell`，与全部 SSH 暴力证据矛盾 | 陈敏（输入字段） | 更正为 `SSH`/`Brute_Force` 或 `other`；判据已按证据侧域外收口并记录该口径矛盾 |
-| 3 | 沈洪旭 case1-6 用 `alerts` 存放信号，陈敏 case1-10 用 `evidence` 存放信号 | 陈敏/沈洪旭（字段统一） | 冻结统一字段（建议以 `evidence` 为准）；否则评测两套 fixture 口径漂移 |
+| 3 | 沈洪旭 case1-6（旧版，已删除）用 `alerts` 存放信号，陈敏 case1-10 用 `evidence` 存放信号 | 陈敏（字段统一） | 旧版已废弃，现统一以陈敏 case1-10 的 `evidence` 为准；后续若再新增案例，保持同一字段口径 |
 | 4 | 门禁 `_extract_triage_signal` 因 `triage` 是模型字段恒产生 `forbidden_triage_read`，`initial_verdict` 的 verdict 信号实际未生效 | 陈敏（门禁实现） | 确认是否以 `used_dict` 判断 triage，而不是 `all_names` |
 | 5 | case3 门禁因 `RSA解密函数` 强关键词判 `IN_SCOPE_CONFIRMED`，但来源为二手页 | 闫昱硕（判据）/沈洪旭（补来源） | 判据按 weak_signal 收口；需补 Cyderes 原始来源才能保留“已确认”口径 |
 

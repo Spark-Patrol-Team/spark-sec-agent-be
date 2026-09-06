@@ -9,8 +9,9 @@
 | 工具注册 | `src/sec_agent/deep_agent/main.py::build_tools` |
 | 包数据声明 | `pyproject.toml` 的 `[tool.setuptools.package-data]` |
 | 工具单元测试 | `tests/test_knowledge_tool.py` |
-| 案例输入边界测试 | `tests/test_knowledge_case_inputs.py` |
-| 评测案例与来源说明 | `docs/modules/scenario-knowledge/knowledge-test-cases/` |
+| 门禁与判据测试 | `tests/test_gatekeeper_case1_10.py`、`tests/test_signal_extraction.py`、`tests/test_yanyushuo_expected_judgments.py` |
+| 评测案例输入 | `tests/fixtures/gatekeeper_cases/case1-10.json`（权威信号合同） |
+| 评测判据与来源边界 | `docs/modules/scenario-knowledge/judgments/` |
 
 不要在 `docs/` 下再复制一份 WebShell 知识正文。需要更新知识时，只修改唯一运行时文件，并同步补充测试。
 
@@ -53,17 +54,17 @@ python -m sec_agent.deep_agent.main --list-tools
 ```powershell
 $env:PYTHONPATH = "src"
 python -m unittest tests.test_knowledge_tool -v
-python -m unittest tests.test_knowledge_case_inputs -v
 ```
 
-若本机 LLM 配置可用，可运行两个正向案例和 case6 负向对照：
+若本机 LLM 配置可用，可运行正向案例和负向对照（事件输入位于 `gatekeeper_cases/caseN.json` 的 `input_event` 字段，运行前先取出该字段）：
 
 ```powershell
 $env:PYTHONPATH = "src"
 $env:TOOL_MODE = "mock"
-python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/knowledge-test-cases/case1.json -o reports/case1.json
-python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/knowledge-test-cases/case2.json -o reports/case2.json
-python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/knowledge-test-cases/case6.json -o reports/case6.json
+python -c "import json,pathlib; d=json.loads(pathlib.Path('tests/fixtures/gatekeeper_cases/case1.json').read_text(encoding='utf-8')); pathlib.Path('reports/_case1_event.json').write_text(json.dumps(d['input_event'], ensure_ascii=False), encoding='utf-8')"
+python -m sec_agent.deep_agent.main --event reports/_case1_event.json -o reports/case1.json
+python -c "import json,pathlib; d=json.loads(pathlib.Path('tests/fixtures/gatekeeper_cases/case6.json').read_text(encoding='utf-8')); pathlib.Path('reports/_case6_event.json').write_text(json.dumps(d['input_event'], ensure_ascii=False), encoding='utf-8')"
+python -m sec_agent.deep_agent.main --event reports/_case6_event.json -o reports/case6.json
 ```
 
 `TOOL_MODE=mock` 只验证本地代码契约和 Agent 消费，不代表真实 MCP 或真实 XDR 已打通。`report*.json` 是本地运行产物，已被 `.gitignore` 排除；正式验收时应把报告及运行元数据交到团队指定的受控位置，而不是提交到仓库。
@@ -75,7 +76,7 @@ python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/know
 1. 确认新增内容有可追溯来源，并区分一手来源、二手来源和 synthetic 构造。
 2. 只更新唯一运行时知识正文。
 3. 为新增条目、关键词、未命中行为和 `evidence_refs` 增加测试。
-4. 若影响案例，更新 `来源矩阵.md` 中“可支持/不可支持”的主张。
+4. 若影响案例，更新 `judgments/来源主张边界review.md` 中“可支持/不可支持”的主张。
 5. 对正向、证据不足和纯负向案例分别复验，不能只看进程退出码。
 
 ## 6. 异常与安全控制
@@ -84,7 +85,7 @@ python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/know
 - 空查询和未知主题返回失败；调用方应记录知识缺口。
 - `evidence_refs` 只能作为知识来源，不能冒充事件证据。
 - Agent 报告不得超出输入、真实工具输出和来源矩阵所允许的事实范围。
-- case6 不含 WebShell 证据；若调用 WebShell 知识或新增 WebShell 结论，应判为失败。
+- case6/case10 是域外/负向对照；若调用 WebShell 专属知识或新增 WebShell 结论，应判为失败。
 
 ## 7. 已知限制
 
@@ -99,3 +100,4 @@ python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/know
 |---|---|
 | 2026-09-04 | PR #37 合入评测案例；PR #40 校正案例来源与边界 |
 | 2026-09-05 | PR #41 依据当前运行时实现重写开发说明，并明确维护与验收方法 |
+| 2026-09-06 | 闫昱硕收口三档证据规则与 10 份正式判据；废弃 `knowledge-test-cases/` 旧版 case1-6，案例输入迁至 `tests/fixtures/gatekeeper_cases/case1-10.json` |

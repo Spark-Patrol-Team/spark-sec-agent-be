@@ -17,7 +17,7 @@
 
 > 关键结论：知识包唯一的“级别低”条目是 `K-WEBSHELL-TOOLS-TRAFFIC`（厂商经验/启发式），它**只能**把工具特征标记为“可疑”，不能作为确认或家族归属证据。这一点直接决定了 case2（Godzilla）与 case3（Beima）的结论上限。
 
-## 2. 案例级来源—主张核验（基于 `knowledge-test-cases/来源矩阵.md` 与陈敏 case1-10 输入）
+## 2. 案例级来源—主张核验（基于公开来源与陈敏 case1-10 输入；旧 `knowledge-test-cases` 的来源矩阵已在本文件收口，不再单独维护）
 
 | case / 主张 | 来源来源 URL | 来源级别 | 来源直接支持什么 | 是否支撑判据中的关键主张 | 不支持/待确认 | 结论 |
 |---|---|---|---|---|---|---|
@@ -32,15 +32,15 @@
 
 ### 3.1 case2 输入与来源矩阵冲突（最严重）
 
-- 沈洪旭/R主线的 case2（`knowledge-test-cases/case2.json`）：PassiveNeuron 部署**尝试**，安全产品阻止，**尚无部署成功证据**，`evidence` 为空、信号放在 `alerts`。
+- 沈洪旭/R主线的 case2（旧版 `knowledge-test-cases/case2.json`，已废弃）：PassiveNeuron 部署**尝试**，安全产品阻止，**尚无部署成功证据**，`evidence` 为空、信号放在 `alerts`。
 - 陈敏 PR#43 的 case2（`tests/fixtures/gatekeeper_cases/case2.json`）：Godzilla **已确认**，含 `ViewState反序列化`、`Wingtb.sys`、`进程隐藏`、`AES/RSA加密通信`，`initial_verdict=疑似真实攻击`，信号放在 `evidence`。
-- `来源矩阵.md` 明确：来源**不支持 Godzilla、MachineKey、ViewState、Wingtb.sys**，且原文是“部署尝试被阻止”。
+- 来源矩阵（已并入本文件第 2 节）明确：来源**不支持 Godzilla、MachineKey、ViewState、Wingtb.sys**，且原文是“部署尝试被阻止”。
 
 **结论**：两条 case2 是**同一 case_id/event_id 下的两套互斥事实**。判据只能以“输入事实”为准复述，但不得把不被来源支持的家族/持久化写成确认事实。**建议**：交由陈敏确认 case2 是否回归“部署尝试未成功”，或补充直接来源后再保留“已确认”口径；在来源补齐前，判据按 weak_signal（保守）收口并标注冲突。
 
 ### 3.2 证据字段位置冲突（alerts vs evidence）
 
-- 沈洪旭 case1-6：信号放在 `alerts`，`evidence=[]`。
+- 沈洪旭 case1-6（旧版，已废弃）：信号放在 `alerts`，`evidence=[]`。
 - 陈敏 case1-10：信号放在 `evidence`，部分 case 无 `alerts`。
 
 `gatekeeper.py` 同时读取 `alerts` 与 `evidence`，因此两种字段都能被门禁识别；但判据/评测若只检查其中一个字段，会产生口径漂移。**建议**：冻结统一字段（建议以 `evidence` 为准，`alerts` 作为原始告警），或要求两套 fixture 字段一致。

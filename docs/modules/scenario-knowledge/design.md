@@ -15,7 +15,7 @@
 | LLM 可见工具名 | `knowledge_query` |
 | 工具注册 | `src/sec_agent/deep_agent/main.py::build_tools`，在 `mock`、`mcp`、`auto` 模式下均注册 |
 | 随包分发 | `pyproject.toml` 将 `knowledge/*.md` 声明为 package data |
-| 评测输入 | `docs/modules/scenario-knowledge/knowledge-test-cases/` 下 6 个 synthetic 案例 |
+| 评测输入 | `tests/fixtures/gatekeeper_cases/case1-10.json`（陈敏 PR#43 的权威事件信号合同） |
 | 评测汇总 Schema | `tests/fixtures/evaluation/knowledge_evaluation_summary.schema.json` |
 
 文档目录不保存第二份运行时知识正文。PR #8 是历史知识资产来源之一，其有价值内容已按当前结构吸收，不直接形成并行入口。
@@ -53,9 +53,9 @@
 - 知识命中只说明“找到了相关通用知识”，不说明事件中的对应行为已经发生。
 - `evidence_refs` 是知识条目的来源引用，不是本次事件的观测证据。
 - 证据不足或工具失败时，Agent 应降低结论强度并列出缺口，必要时建议人工接管。
-- 6 个案例均为公开材料改编或人工构造的 synthetic 输入，不是 XDR 原始响应，也不是运行 A/运行 B。
+- 本批 case1-10 均为公开材料改编或人工构造的 synthetic 输入，不是 XDR 原始响应，也不是运行 A/运行 B。
 - case6 是纯非 WebShell 负向对照；当前 WebShell 专属知识不应被用于补写 WebShell 植入、持久化或最终载荷。
-- 案例来源能支持和不能支持的具体主张以 `knowledge-test-cases/来源矩阵.md` 为准。
+- 案例来源能支持和不能支持的具体主张以 `judgments/来源主张边界review.md` 为准。
 
 ## 6. 关键设计决策
 
@@ -87,6 +87,7 @@
 | 2026-09-04 | PR #40 校正来源矩阵、案例判据和自动化输入边界测试 |
 | 2026-09-05 | PR #41 按当前 `main` 的真实实现重写设计说明，删除旧 PR #8 状态残留 |
 | 2026-09-06 | 冻结评测汇总 Schema 和最小 fixture，补充人工 Review 栏 |
+| 2026-09-06 | 闫昱硕收口三档证据规则与 10 份正式判据；废弃 `knowledge-test-cases/` 旧版 case1-6，案例输入迁至 `tests/fixtures/gatekeeper_cases/case1-10.json` |
 
 ## 10. case1-10 正式信号强度总表与期望集合
 

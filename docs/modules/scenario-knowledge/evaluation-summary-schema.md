@@ -107,5 +107,5 @@ uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
 如需连同知识工具和案例输入一起验证：
 
 ```text
-uv run pytest tests/test_knowledge_evaluation_summary_schema.py tests/test_knowledge_case_inputs.py tests/test_knowledge_tool.py -q
+uv run pytest tests/test_knowledge_evaluation_summary_schema.py tests/test_gatekeeper_case1_10.py tests/test_signal_extraction.py tests/test_yanyushuo_expected_judgments.py tests/test_knowledge_tool.py -q
 ```

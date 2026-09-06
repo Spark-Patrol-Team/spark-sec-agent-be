@@ -42,7 +42,7 @@
     "建议人工核实内核驱动文件与进程隐藏行为是否指向持久化。"
   ],
   "forbidden_conclusions": [
-    "确认该事件为 Godzilla（哥斯拉）家族，来源矩阵明确不支持 Godzilla/ViewState/Wingtb.sys，AES/RSA 特征仅为启发式线索。",
+    "确认该事件为 Godzilla（哥斯拉）家族，来源 Review 明确不支持 Godzilla/ViewState/Wingtb.sys，AES/RSA 特征仅为启发式线索。",
     "确认攻击者归属为 PassiveNeuron 等 APT 组织。",
     "确认 Wingtb.sys 为已加载的内核级 Rootkit 持久化，输入仅检测到该文件，未证明加载或驻留。",
     "确认输入中不存在的初始入侵路径或完整攻击链。",
