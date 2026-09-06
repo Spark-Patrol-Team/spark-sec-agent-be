@@ -4,7 +4,7 @@ import os
 import pytest
 from pathlib import Path
 
-CASES_DIR = Path("src/sec_agent/deep_agent/knowledge/cases")
+CASES_DIR = Path(__file__).resolve().parent / "fixtures" / "gatekeeper_cases"
 
 def load_all_cases():
     cases = []
