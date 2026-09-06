@@ -24,10 +24,18 @@ class TestKnowledgeEntries(unittest.TestCase):
         for expected in ["攻击原理", "攻击特征速查表", "主流管理工具与流量特征", "证据检查清单", "处置建议模板"]:
             self.assertIn(expected, names)
 
-    def test_attack_principle_content_not_empty(self):
-        entries = {e.name: e for e in load_knowledge_entries()}
-        self.assertTrue(entries["攻击原理"].content)
-        self.assertTrue(entries["处置建议模板"].content)
+    def test_structured_cards_content_not_empty(self):
+        from sec_agent.deep_agent.tools.knowledge import (
+            _default_knowledge_text,
+            parse_knowledge_cards,
+        )
+
+        cards = parse_knowledge_cards(_default_knowledge_text())
+
+        self.assertEqual(len(cards), 15)
+        self.assertTrue(cards[0].topic)
+        self.assertTrue(cards[0].required_evidence)
+        self.assertTrue(cards[0].source_urls)
 
 
 class TestKeywordMatch(unittest.TestCase):
@@ -63,19 +71,27 @@ class TestKnowledgeQueryTool(unittest.TestCase):
         self.assertEqual(schema["function"]["name"], "knowledge_query")
         self.assertRegex(schema["function"]["name"], r"^[a-zA-Z0-9_-]+$")
 
-    def test_hit_returns_evidence_refs(self):
+    def test_hit_returns_structured_card(self):
         result = self.tool.call({"keyword": "WebShell处置建议"})
-        self.assertEqual(result.status, "success")
-        self.assertEqual(result.data["entry"], "处置建议模板")
-        self.assertTrue(result.data["evidence_refs"])
-        self.assertIn("CISA", result.data["evidence_refs"][0])
-        # summary 里同时带 evidence_refs，供 LLM 直接读
-        self.assertIn("evidence_refs", result.summary)
 
-    def test_attack_principle_evidence_ref(self):
-        result = self.tool.call({"keyword": "WebShell攻击原理"})
         self.assertEqual(result.status, "success")
-        self.assertTrue(any("T1505.003" in ref for ref in result.data["evidence_refs"]))
+        self.assertEqual(result.data["knowledge_id"], "WSK-015")
+        self.assertTrue(result.data["required_evidence"])
+        self.assertTrue(result.data["prohibited_inference"])
+        self.assertTrue(result.data["source_citations"]["urls"])
+        self.assertTrue(result.data["source_citations"]["levels"])
+
+    def test_attack_principle_source_citation(self):
+        result = self.tool.call({"keyword": "WebShell攻击原理"})
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.data["knowledge_id"], "WSK-001")
+        self.assertTrue(
+            any(
+                "attack.mitre.org" in ref
+                for ref in result.data["source_citations"]["urls"]
+            )
+        )
 
     def test_miss_returns_failed(self):
         result = self.tool.call({"keyword": "不存在的关键词"})
