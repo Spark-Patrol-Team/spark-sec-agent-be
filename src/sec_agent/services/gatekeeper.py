@@ -28,8 +28,8 @@ class SignalStrength(str, Enum):
 
 class SignalSource(str, Enum):
     EVENT_TYPE = "event_type"
-    ALERTS = "alerts"
-    EVIDENCE = "evidence"
+    ALERTS = "alerts"  # 来自原始事件的告警列表字段（如沈洪旭 Case 1-6）
+    EVIDENCE = "evidence"  # 来自原始事件的证据字段（如陈敏 Case 1-10），非 Agent 输出
     TRIAGE = "triage"
 
 
