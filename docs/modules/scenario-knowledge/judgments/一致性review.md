@@ -28,11 +28,11 @@
 
 | # | 问题 | 归属修正 | 建议处置 |
 |---|---|---|---|
-| 1 | case2 输入（Godzilla/ViewState/Wingtb.sys/进程隐藏）与来源 Review 冲突，且与沈洪旭 case2（部署尝试未成功）互斥 | 陈敏（输入字段/信号） | 确认 case2 回归“部署尝试未成功”，或补直接来源；来源补齐前判据按 conservative 口径，不作家族/持久化定论 |
-| 2 | case10 输入 `event_type=WebShell`，与全部 SSH 暴力证据矛盾 | 陈敏（输入字段） | 更正为 `SSH`/`Brute_Force` 或 `other`；判据已按证据侧域外收口并记录该口径矛盾 |
-| 3 | 沈洪旭 case1-6（旧版，已删除）用 `alerts` 存放信号，陈敏 case1-10 用 `evidence` 存放信号 | 陈敏（字段统一） | 旧版已废弃，现统一以陈敏 case1-10 的 `evidence` 为准；后续若再新增案例，保持同一字段口径 |
-| 4 | 门禁 `_extract_triage_signal` 因 `triage` 是模型字段恒产生 `forbidden_triage_read`，`initial_verdict` 的 verdict 信号实际未生效 | 陈敏（门禁实现） | 确认是否以 `used_dict` 判断 triage，而不是 `all_names` |
-| 5 | case3 门禁因 `RSA解密函数` 强关键词判 `IN_SCOPE_CONFIRMED`，但来源为二手页 | 闫昱硕（判据）/沈洪旭（补来源） | 判据按 weak_signal 收口；需补 Cyderes 原始来源才能保留“已确认”口径 |
+| 1 | case2 输入（Godzilla/ViewState/Wingtb.sys/进程隐藏）与来源 Review 冲突，且与沈洪旭 case2（部署尝试未成功）互斥 | 陈敏（输入字段/信号） | **⏳ 仍未处理**：陈敏本次只改门禁代码，case 输入未变。确认 case2 回归“部署尝试未成功”，或补直接来源；来源补齐前判据按 conservative 口径，不作家族/持久化定论 |
+| 2 | case10 输入 `event_type=WebShell`，与全部 SSH 暴力证据矛盾 | 陈敏（输入字段） | **⏳ 仍未处理**：case10 输入未变。更正为 `SSH`/`Brute_Force` 或 `other`；判据已按证据侧域外收口并记录该口径矛盾 |
+| 3 | alerts/evidence 字段位置冲突 | 陈敏（门禁代码） | **✅ 已修复**：gatekeeper 已统一从 `alerts` 与 `evidence` 抽取信号；旧版 case1-6 已删除，现统一以 `tests/fixtures/gatekeeper_cases/case1-10.json` 为准 |
+| 4 | 门禁 `_extract_triage_signal` 使 `initial_verdict` 的 verdict 信号未生效 | 陈敏（门禁代码） | **✅ 已修复**：verdict 信号现正常生成（`forbidden_triage_read` 仍作无害标记保留）；判据口径不变 |
+| 5 | case3 门禁因 `RSA解密函数` 强关键词判 `IN_SCOPE_CONFIRMED` | 陈敏（门禁代码） | **✅ 已修复**：`RSA解密函数` 已降为弱信号，门禁判 `IN_SCOPE_WEAK`，与判据一致；来源边界仍限定 Beima 家族不得确认 |
 
 > 处理规则：输入字段/信号错误由陈敏修正；证据强度/结论上限错误由闫昱硕（本判据）修正；知识卡内容越界由沈洪旭按 Review 意见修改；不复制另一套判据。
 

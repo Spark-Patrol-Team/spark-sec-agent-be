@@ -8,7 +8,8 @@
 |---|---|---|
 | `证据强弱与结论上限规则.md` | 交付物 #1 | 三档门禁上限 + 陈敏 6 级信号映射 + 规则表 |
 | `case1.expected.json` ~ `case10.expected.json` | 交付物 #2 | 10 份正式判据（单独保存，不写入 `caseN.json`） |
-| `来源主张边界review.md` | 交付物 #3 | 知识卡来源—主张核验与冲突清单 |
+| `来源主张边界review.md` | 交付物 #3 | 知识卡来源—主张核验与冲突清单（案例级） |
+| `WSK来源主张边界review.md` | 交付物 #3 | 15 张 WSK 知识卡来源—主张边界 Review（9.6 交闫昱硕） |
 | `指标口径与原始计数.md` | 交付物 #4 | 分母、原始计数、禁止宣称项 |
 | `一致性review.md` | 交付物 #5/#6 | 与陈敏信号合同的一致性 Review + 已知限制 + A/B 待办 |
 
@@ -43,6 +44,6 @@ uv run pytest tests/test_yanyushuo_expected_judgments.py tests/test_gatekeeper_c
 
 ## 状态
 
-- ✅ 交付物 #1~#4 已完成；
-- ✅ 交付物 #5（一致性 Review）已完成；
+- ✅ 交付物 #1~#4 已完成；交付物 #3 已扩展为 15 张 WSK 卡边界 Review；
+- ✅ 交付物 #5（一致性 Review）已完成；已记录陈敏 `feat/case-quality-check-and-tests` 对 triage / case3 RSA / benign / alerts+evidence 统一抽取的修复，以及仍待处理的 case2/case10 输入口径问题；
 - ⏳ 交付物 #6（≥6 案 A/B 研判影响结论）**待杨景凡交付后补登记**，见 `一致性review.md` 第 5 节。

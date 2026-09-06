@@ -23,7 +23,7 @@
 |---|---|---|---|---|---|---|
 | case1：混淆 ASPX WebShell 可用加密 HTTP 通信并提供命令/文件等能力 | fortinet.com（FortiGuard Labs） | 官方厂商研究 | UpdateChecker.aspx 使用 HTTP POST、`application/octet-stream`、Base64 编码加密数据、JSON 命令与命令/文件管理能力 | ✅ 支撑“存在加密通信弱信号”，但**不支撑 AES 算法确认** | 原文未指明算法为 AES；不支持 JSON 的 IP/时间/置信度；不得确认冰蝎 Behinder | 判据允许“弱信号 + 保留不确定性”，禁止“确认冰蝎 / 确认攻击成立” ✅ |
 | case2：PassiveNeuron 活动中攻击者经 Microsoft SQL 获远程执行后尝试部署 ASPX WebShell | securelist.com（Kaspersky GReAT） | 官方厂商研究 | Windows Server 场景 SQL 远程执行、Base64/hex 载荷、PowerShell/VBS 解码写入、安全产品阻止多次部署尝试；**不证明部署成功** | ⚠️ **冲突**：陈敏 case2 输入改为“Godzilla 已确认”（含 ViewState 反序列化、Wingtb.sys、进程隐藏、AES/RSA、initial_verdict=疑似真实攻击） | 来源不支持 Godzilla、MachineKey、ViewState、Wingtb.sys，也不支持“部署成功”；与沈洪旭 case2“部署尝试未成功”亦不一致 | **必须 Review**：判据允许复述输入事实，但禁止“Godzilla 家族 / 内核 Rootkit 持久化 / 部署成功”；建议陈敏修正 case2 输入使其与来源一致 |
-| case3：Beima PHP WebShell 使用加密命令并面向 WordPress/cPanel | mallory.ai（二手聚合） | 二手聚合页面 | 仅作为寻找 Cyderes 原始研究的线索与案例灵感 | ⚠️ 部分支撑：只支撑“存在 PHP WebShell/加密命令/JSON 通信”类信号 | RSA 细节、感染数量、时间戳篡改、归属未核实 | 判据收口为 weak_signal，禁止“Beima 家族 / 已攻陷”；RSA 强关键词导致的 CONFIRMED 视为判据缺陷 |
+| case3：Beima PHP WebShell 使用加密命令并面向 WordPress/cPanel | mallory.ai（二手聚合） | 二手聚合页面 | 仅作为寻找 Cyderes 原始研究的线索与案例灵感 | ⚠️ 部分支撑：只支撑“存在 PHP WebShell/加密命令/JSON 通信”类信号 | RSA 细节、感染数量、时间戳篡改、归属未核实 | 判据收口为 weak_signal，禁止“Beima 家族 / 已攻陷”；陈敏已把 RSA 降为弱信号，门禁现判 weak（不再误判确认） |
 | case4：单条 WebShell 文件告警但缺上下文 | 无特定外链 | 通用 synthetic | 用于验证证据不足 | ✅ 支撑“证据不足”判据 | 非真实事件；不支持任何攻击者/来源/处置效果事实 | 判据：weak_signal + 人工接管 ✅ |
 | case5：模拟超时/权限不足/空数据 | 无特定外链 | 通用 synthetic | 验证失败条件下不编造工具返回并建议人工接管 | ✅ 支撑 | JSON 告警文字不是一次真实 XDR 调用 | 判据：weak_signal + 人工接管；禁止“未发现风险/调查成功” ✅ |
 | case6：WordPress 插件/供应链异常但无 WebShell 证据 | radar.offseq（二手聚合） | 二手安全聚合 | 只作为供应链/插件异常场景灵感 | ✅ 支撑“非 WebShell 域” | 不支持 WebShell 植入/持久化/最终目标 | 判据：out_of_scope，禁止任何 WebShell 命中与事实 ✅ |
@@ -45,14 +45,12 @@
 
 `gatekeeper.py` 同时读取 `alerts` 与 `evidence`，因此两种字段都能被门禁识别；但判据/评测若只检查其中一个字段，会产生口径漂移。**建议**：冻结统一字段（建议以 `evidence` 为准，`alerts` 作为原始告警），或要求两套 fixture 字段一致。
 
-### 3.3 门禁 `triage` 字段实现点（陈敏侧需确认）
+### 3.3 门禁 `triage` 字段实现点（陈敏已修复）
 
-`SecurityEventInput` 的 dataclass 恒含 `triage` 字段（即使输入未给），而门禁白名单未包含它，`_extract_triage_signal` 以 `"triage" in forbidden` 判断，导致：**每个 case 恒产生 `forbidden_triage_read`，且 `initial_verdict` 的 verdict 信号实际上永远不会被生成**（因为函数提前 return）。这使“初步研判”这一弱信号来源失效。
-
-**建议**：陈敏确认是否改为以 `used_dict`（过滤后实际字段）判断 triage 是否越界，而非 `all_names`；否则 `initial_verdict` 信号形同虚设。
+`SecurityEventInput` 的 dataclass 恒含 `triage` 字段（即使输入未给），而门禁白名单未包含它，`_extract_triage_signal` 以 `"triage" in forbidden` 判断。**陈敏已修复**：虽然仍会追加 `forbidden_triage_read` 作为无害标记，但不再提前 `return`，因此 `initial_verdict` 的 verdict 信号（verdict_malicious_like / verdict_out_of_scope / verdict_benign_like / verdict_indeterminate）现会正常生成。该标记因为 `forbidden=True` 不计入强度聚合，不影响门禁结果。
 
 ## 4. 收口结论
 
 - 知识卡整体来源等级：`PRINCIPLE/FEATURES/CHECKLIST/RESPONSE` 为官方标准或厂商研究，可直接用于“调查方向/处置流程/启发”；`TOOLS-TRAFFIC` 为厂商经验/启发式，只能标“可疑”。
 - 判据的结论上限已按来源边界收紧：case2（Godzilla）不允许据知识定家族，case3（Beima）收口 weak_signal，case6/case10 为 out_of_scope 且禁止 WebShell 结论。
-- 需三方跟进：① case2 输入与来源冲突（陈敏）；② alerts/evidence 字段位置统一（陈敏）；③ 门禁 triage 判断实现（陈敏）；④ Beima/Cyderes 原始来源补充（沈洪旭）。
+- 需三方跟进：① case2 输入与来源冲突（陈敏，已确认本次未改输入）；② case10 `event_type` 误标（陈敏）；③ Beima/Cyderes 原始来源补充（沈洪旭）；④ 15 张 WSK 知识卡的来源—主张边界收口（闫昱硕，见 `WSK来源主张边界review.md`）。已修复项：alerts/evidence 统一抽取与 triage verdict 信号（陈敏）、case3 RSA 降级（陈敏）。

@@ -16,7 +16,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from sec_agent.services.gatekeeper import SignalStrength
+from sec_agent.deep_agent.models import SecurityEventInput
+from sec_agent.services.gatekeeper import SignalStrength, WebShellGatekeeper
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -170,3 +171,22 @@ def test_alignment_with_chenmin_signal_strength() -> None:
             assert primary in allowed, f"case{i} 允许偏离集合应包含陈敏主期望 {primary}"
         else:
             assert expected_overall == primary, f"case{i} 期望强度应为 {primary}，实际 {expected_overall}"
+
+
+def test_actual_gate_output_matches_expected() -> None:
+    """用陈敏最新门禁跑 10 案，断言实际 overall_strength 落在判据允许集合内。"""
+    gk = WebShellGatekeeper()
+    for i in range(1, 11):
+        d = _load_expected(i)
+        fixture = json.loads((REPO / d["case_file"]).read_text(encoding="utf-8"))
+        evt = SecurityEventInput.from_dict(fixture["input_event"])
+        result = gk.audit(evt)
+        allowed = {SignalStrength(x) for x in d["signal_strength"]["allowed_gate_deviations"]}
+        assert result.overall_strength in allowed, (
+            f"case{i} 门禁实际 {result.overall_strength} 不在判据允许集合 {allowed}"
+        )
+        # 非宽松 case 要求严格相等
+        if i not in LOOSE_CASES:
+            assert result.overall_strength == SignalStrength(
+                d["signal_strength"]["expected_gate_overall"]
+            ), f"case{i} 门禁实际 {result.overall_strength} 应等于判据期望"
