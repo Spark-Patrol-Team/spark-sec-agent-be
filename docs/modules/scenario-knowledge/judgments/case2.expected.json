@@ -1,0 +1,79 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-002",
+  "case_file": "tests/fixtures/gatekeeper_cases/case2.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_CONFIRMED",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_CONFIRMED",
+      "MIXED"
+    ],
+    "expected_upgrade": {
+      "severity": "CRITICAL",
+      "score": 95
+    }
+  },
+  "expected_scope": "in_scope",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-FEATURES",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-TOOLS-TRAFFIC"
+  ],
+  "forbidden_knowledge_ids": [],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "允许 knowledge_query 检索证据检查清单/攻击原理/工具流量特征；mcp_tools 不得写成真实 MCP 成功。"
+  },
+  "allowed_conclusions": [
+    "输入证据显示存在 ASP.NET ViewState 反序列化攻击、WebShell 文件 /1.aspx、AES/RSA 加密通信特征、可疑内核驱动文件(Wingtb.sys)与进程隐藏行为，属于高危 WebShell 事件。",
+    "风险等级高，建议隔离该服务器、保全证据并进入深度调查。",
+    "建议进一步确认 ViewState 反序列化是否触发命令执行、Wingtb.sys 是否被加载、加密通信是否为 WebShell 管理工具。",
+    "建议人工核实内核驱动文件与进程隐藏行为是否指向持久化。"
+  ],
+  "forbidden_conclusions": [
+    "确认该事件为 Godzilla（哥斯拉）家族，来源矩阵明确不支持 Godzilla/ViewState/Wingtb.sys，AES/RSA 特征仅为启发式线索。",
+    "确认攻击者归属为 PassiveNeuron 等 APT 组织。",
+    "确认 Wingtb.sys 为已加载的内核级 Rootkit 持久化，输入仅检测到该文件，未证明加载或驻留。",
+    "确认输入中不存在的初始入侵路径或完整攻击链。",
+    "确认数据已被窃取或已横向移动。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "Godzilla",
+    "哥斯拉",
+    "已建立持久化",
+    "内核级持久化",
+    "已确认攻击者",
+    "数据已窃取",
+    "确认属于APT",
+    "初始入侵路径"
+  ],
+  "required_evidence_gaps": [
+    "未证明 ViewState 反序列化已触发远程命令执行。",
+    "未证明 Wingtb.sys 已被加载或驻留为持久化。",
+    "缺少完整网络会话取证，未确认加密通信的对外目标。",
+    "未证明 /1.aspx 已被访问或执行。"
+  ],
+  "human_required": true,
+  "human_takeover_condition": "高风险事件且关键证据需人工核实（内核驱动、进程隐藏、反序列化利用链），涉及隔离与取证等高风险处置，需人工判定与审批。",
+  "automatic_checks": [
+    "gate overall = IN_SCOPE_CONFIRMED（允许 MIXED），三档 scope = in_scope。",
+    "upgraded_severity = CRITICAL 且 upgraded_score = 95。",
+    "knowledge_query 状态为 success。",
+    "命中的 knowledge_id 属于 allowed，且未命中任何 forbidden knowledge_id。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "evidence_gaps 非空。",
+    "manual_takeover = true。"
+  ],
+  "manual_review_notes": "集中核对：输入证据本身含 ViewState / Wingtb.sys / 进程隐藏，但没有来源支撑「Godzilla 家族 / 内核 Rootkit 已驻留」。判据允许复述输入事实，禁止据知识做家族与持久化定论。"
+}

@@ -1,0 +1,69 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-008",
+  "case_file": "tests/fixtures/gatekeeper_cases/case8.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_WEAK",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_WEAK"
+    ],
+    "expected_upgrade": {
+      "severity": "HIGH",
+      "score": 75
+    }
+  },
+  "expected_scope": "weak_signal",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "partially_applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-EVIDENCE-CHECKLIST"
+  ],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-FEATURES"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "仅文件名可疑：用证据检查清单列出待核项；不调用确认家族/处置类知识。"
+  },
+  "allowed_conclusions": [
+    "仅发现可疑文件名 shell.php，无业务代码引用，无 HTTP 访问记录，无被执行记录，属于弱信号。",
+    "不能确认已执行；建议核查文件内容、Web 日志、进程与文件系统。"
+  ],
+  "forbidden_conclusions": [
+    "确认为真实 WebShell 或确认其已被执行。",
+    "确认为误报 / 无需处理。",
+    "编造访问或执行记录。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "确认真实WebShell",
+    "确认已执行",
+    "确认攻击成立",
+    "无需处理",
+    "确认为误报"
+  ],
+  "required_evidence_gaps": [
+    "未检测到 HTTP 访问记录。",
+    "未检测到文件被访问或执行的记录。",
+    "未取得文件内容。",
+    "来源 IP 与目标资产上下文有限。"
+  ],
+  "human_required": false,
+  "human_takeover_condition": "低危弱信号，可在保留不确定性后结束；若后续发现执行证据再升级为人工/确认。",
+  "automatic_checks": [
+    "gate overall = IN_SCOPE_WEAK，三档 scope = weak_signal。",
+    "knowledge_query 状态为 success。",
+    "命中的 knowledge_id 属于 allowed，且不命中 forbidden_knowledge_ids。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "investigation_checklist 与 false_positive_conditions 非空。",
+    "evidence_gaps 非空。"
+  ],
+  "manual_review_notes": "弱信号案例：单一文件名可疑不能升级为已确认 WebShell。"
+}

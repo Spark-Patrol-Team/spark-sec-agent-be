@@ -1,0 +1,67 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-010",
+  "case_file": "tests/fixtures/gatekeeper_cases/case10.json",
+  "signal_strength": {
+    "expected_gate_overall": "OUT_OF_SCOPE",
+    "allowed_gate_deviations": [
+      "OUT_OF_SCOPE"
+    ],
+    "expected_upgrade": {
+      "severity": "MEDIUM",
+      "score": 0,
+      "note": "SSH 暴力破解域外；即使 event_type 误标为 WebShell，证据侧为域外，不升级风险分。"
+    }
+  },
+  "expected_scope": "out_of_scope",
+  "knowledge_mode": "knowledge_not_applicable",
+  "applicability": "not_applicable",
+  "allowed_knowledge_ids": [],
+  "required_knowledge_ids": [],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-FEATURES",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "not_called",
+    "mcp_tools": "not_called",
+    "notes": "SSH 暴力破解域外：不调用 WebShell 专属知识；记录 knowledge_scope_mismatch，并记录输入 event_type 口径矛盾。"
+  },
+  "allowed_conclusions": [
+    "该事件为 SSH 身份认证暴力破解，非 WebShell 域，未检测到 WebShell 相关信号。",
+    "记录 knowledge_scope_mismatch，当前 WebShell 知识不适用。",
+    "建议转交 SSH / 身份认证攻击链处置。"
+  ],
+  "forbidden_conclusions": [
+    "补写 WebShell 植入、通信、持久化或清除动作。",
+    "用 WebShell 知识解释该事件。",
+    "把输入 event_type='WebShell' 当作 WebShell 证据（输入口径错误，应以证据侧 SSH 为准）。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "WebShell植入",
+    "WebShell通信",
+    "WebShell持久化",
+    "WebShell清除",
+    "WebShell证据",
+    "确认WebShell"
+  ],
+  "required_evidence_gaps": [
+    "当前知识库不适用（SSH 暴力破解）。",
+    "输入 event_type 误标为 WebShell，应以证据侧（SSH）为准；需陈敏修正字段。"
+  ],
+  "human_required": false,
+  "human_takeover_condition": "非 WebShell 事件不触发 WebShell 门禁人工接管；SSH 暴力破解如需处置，按身份认证链路另行处理。",
+  "automatic_checks": [
+    "gate overall = OUT_OF_SCOPE，三档 scope = out_of_scope。",
+    "knowledge_query 状态为 not_called（或明确记录 scope_mismatch）。",
+    "命中的 matched_knowledge_ids 为空。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "记录 knowledge_scope_mismatch。",
+    "标记输入字段质量问题：event_type 与证据侧矛盾（应记入 input_quality_issues）。"
+  ],
+  "manual_review_notes": "域外事件：不得因 event_type 字段为 WebShell 就把事件解释成 WebShell；应以证据侧域外为准并指出输入口径问题。"
+}

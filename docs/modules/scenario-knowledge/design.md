@@ -87,3 +87,28 @@
 | 2026-09-04 | PR #40 校正来源矩阵、案例判据和自动化输入边界测试 |
 | 2026-09-05 | PR #41 按当前 `main` 的真实实现重写设计说明，删除旧 PR #8 状态残留 |
 | 2026-09-06 | 冻结评测汇总 Schema 和最小 fixture，补充人工 Review 栏 |
+
+## 10. case1-10 正式信号强度总表与期望集合
+
+> 由闫昱硕在 T0905-03 收口，基于陈敏 `PR#43` 的 `tests/fixtures/gatekeeper_cases/caseN.json` 与 `src/sec_agent/services/gatekeeper.py` 的 `SignalStrength`。期望集合与 `tests/test_gatekeeper_case1_10.py::TestTask6HandoverAssertions::test_yanyushuo_signal_strength_and_verdict` 对齐。
+
+| case | case_id | 事件类型 | 总体强度（期望） | 允许偏离集合 | 三档门禁 | 人工接管 | 备注 |
+|---|---|---|---|---|---|---|---|
+| case1 | TC-KNOWLEDGE-001 | WebShell | `IN_SCOPE_WEAK` | WEAK, CONFIRMED, MIXED, INDETERMINATE | `weak_signal` | 否 | IIS UpdateChecker.aspx，弱信号，不得确认冰蝎 |
+| case2 | TC-KNOWLEDGE-002 | WebShell | `IN_SCOPE_CONFIRMED` | CONFIRMED, MIXED | `in_scope` | 是 | ⚠️ 输入与来源矩阵冲突（Godzilla/ViewState/Wingtb.sys），判据不得据知识定家族/持久化 |
+| case3 | TC-KNOWLEDGE-003 | WebShell | `IN_SCOPE_WEAK` | WEAK, CONFIRMED, MIXED, INDETERMINATE | `weak_signal` | 是 | ⚠️ 门禁可能因 RSA 强关键词判 CONFIRMED，判据按来源边界保守收口 |
+| case4 | TC-KNOWLEDGE-004 | WebShell | `IN_SCOPE_WEAK` | WEAK, INDETERMINATE | `weak_signal` | 是 | 单条告警缺上下文 |
+| case5 | TC-KNOWLEDGE-005 | WebShell | `IN_SCOPE_WEAK` | WEAK, INDETERMINATE | `weak_signal` | 是 | 关键工具调用失败 |
+| case6 | TC-KNOWLEDGE-006 | WordPress_Compromise | `OUT_OF_SCOPE` | OUT_OF_SCOPE | `out_of_scope` | 否 | 供应链/插件，纯非 WebShell 负向 |
+| case7 | TC-KNOWLEDGE-007 | WebShell | `MIXED` | MIXED, BENIGN_LIKE, WEAK | `weak_signal` | 否 | 合法上传（multipart/image/png/Base64 参数），保留良性可能 |
+| case8 | TC-KNOWLEDGE-008 | WebShell | `IN_SCOPE_WEAK` | IN_SCOPE_WEAK | `weak_signal` | 否 | 仅文件名 shell.php，无访问/执行记录 |
+| case9 | TC-KNOWLEDGE-009 | WebShell | `IN_SCOPE_CONFIRMED` | IN_SCOPE_CONFIRMED | `in_scope` | 是 | 异常POST→文件修改→w3wp 拉起 cmd→HTTP200 回显，确认命令执行 |
+| case10 | TC-KNOWLEDGE-010 | WebShell | `OUT_OF_SCOPE` | OUT_OF_SCOPE | `out_of_scope` | 否 | ⚠️ 输入 event_type 误标 WebShell，实际为 SSH 暴力破解（需陈敏修正） |
+
+### 期望口径说明
+
+- `expected_scope`（三档）是判据收口口径，可能与门禁 `overall_strength` 有细微拆分（如 case3 门禁给 CONFIRMED，判据按来源边界取 `weak_signal`）。
+- `weak_signal` 案例只允许返回检查清单/误报条件/证据缺口，禁止确认性攻击结论与无条件高风险处置。
+- `in_scope`（case2/case9）允许报告输入中已观察到的强证据为事实，但禁止把知识/启发线索扩写成输入中不存在的事实（横向、窃取、持久化、家族归属、初始路径）。
+- `out_of_scope`（case6/case10）拒绝 WebShell 专属知识、记录 `knowledge_scope_mismatch`，禁止补写 WebShell 攻击链。
+- 判据正文见 `judgments/caseN.expected.json`；单独保存，不写入 `caseN.json`。

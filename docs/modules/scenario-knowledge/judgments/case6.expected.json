@@ -1,0 +1,67 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-006",
+  "case_file": "tests/fixtures/gatekeeper_cases/case6.json",
+  "signal_strength": {
+    "expected_gate_overall": "OUT_OF_SCOPE",
+    "allowed_gate_deviations": [
+      "OUT_OF_SCOPE"
+    ],
+    "expected_upgrade": {
+      "severity": "HIGH",
+      "score": 0,
+      "note": "域外事件不因 WebShell 门禁升级风险分；severity 保持输入值。"
+    }
+  },
+  "expected_scope": "out_of_scope",
+  "knowledge_mode": "knowledge_forbidden",
+  "applicability": "not_applicable",
+  "allowed_knowledge_ids": [],
+  "required_knowledge_ids": [],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-FEATURES",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "not_called",
+    "mcp_tools": "not_called",
+    "notes": "纯非 WebShell 负向对照：不调用 WebShell 专属知识；记录 knowledge_scope_mismatch。"
+  },
+  "allowed_conclusions": [
+    "该事件为 WordPress 插件/供应链异常，非 WebShell 域。",
+    "当前 WebShell 知识不适用，记录知识缺口并说明原因。"
+  ],
+  "forbidden_conclusions": [
+    "写入 WebShell 植入、持久化、最终载荷或「最终目标是植入 WebShell」。",
+    "用 WebShell 攻击原理解释供应链初始访问。",
+    "补写 WebShell 攻击链、通信或清除建议。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "WebShell植入",
+    "WebShell持久化",
+    "最终载荷",
+    "植入WebShell",
+    "上传WebShell",
+    "WebShell清除",
+    "WebShell通信",
+    "最终目标是WebShell"
+  ],
+  "required_evidence_gaps": [
+    "当前知识库不适用：供应链/插件主题无匹配知识。",
+    "域名 API 通信目标、隐藏管理员账户来源需按供应链线索追查，非 WebShell 范畴。"
+  ],
+  "human_required": false,
+  "human_takeover_condition": "非 WebShell 域事件不触发 WebShell 门禁的人工接管；如需要，按供应链/插件链路另行处置。",
+  "automatic_checks": [
+    "gate overall = OUT_OF_SCOPE，三档 scope = out_of_scope。",
+    "knowledge_query 状态为 not_called（或明确记录 scope_mismatch）。",
+    "命中的 matched_knowledge_ids 为空。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "记录 knowledge_scope_mismatch。"
+  ],
+  "manual_review_notes": "纯负向对照：出现任何 WebShell 知识命中或 WebShell 结论即判失败。"
+}
