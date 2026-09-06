@@ -26,6 +26,14 @@
 | `案例描述.md` | 输入性质、逐案判据和执行记录 |
 | `来源矩阵.md` | 公开来源能够支持与不能支持的主张 |
 
+评测汇总结构不放在本目录，统一使用：
+
+| 文件 | 用途 |
+|---|---|
+| `tests/fixtures/evaluation/knowledge_evaluation_summary.schema.json` | 冻结评测汇总 Schema |
+| `tests/fixtures/evaluation/minimal_knowledge_evaluation_summary.json` | 最小汇总 fixture |
+| `docs/modules/scenario-knowledge/evaluation-summary-schema.md` | 字段和枚举说明 |
+
 ## 输入字段
 
 6个JSON均使用`SecurityEventInput.from_dict()`可直接读取的顶层结构。关键字段为：
@@ -44,6 +52,7 @@ initial_verdict, confidence, triage, trace_id, run_id
 $env:PYTHONPATH = "src"
 python -m unittest tests.test_knowledge_case_inputs -v
 python -m unittest tests.test_knowledge_tool -v
+python -m unittest tests.test_knowledge_evaluation_summary_schema -v
 ```
 
 前一条命令会实际用`SecurityEventInput.from_dict()`加载全部6案，并检查关键标识、唯一性以及case6不含WebShell证据；不是肉眼检查JSON字段。
