@@ -28,8 +28,8 @@ class SignalStrength(str, Enum):
 
 class SignalSource(str, Enum):
     EVENT_TYPE = "event_type"
-    ALERTS = "alerts"
-    EVIDENCE = "evidence"
+    ALERTS = "alerts"  # 来自原始事件的告警列表字段（如沈洪旭 Case 1-6）
+    EVIDENCE = "evidence"  # 来自原始事件的证据字段（如陈敏 Case 1-10），非 Agent 输出
     TRIAGE = "triage"
 
 
@@ -81,7 +81,6 @@ WEBSHELL_STRONG_CONFIRM_KEYWORDS: tuple[str, ...] = (
     "反序列化攻击",
     "内核驱动文件",
     "进程隐藏行为",
-    "RSA解密函数",
     "AES/RSA加密通信特征",
     "子进程 cmd.exe",
 )
@@ -100,6 +99,7 @@ WEBSHELL_WEAK_KEYWORDS: tuple[str, ...] = (
     "异常POST",
     "加密通信流量",
     "WebShell文件",
+    "RSA解密函数",
     "待调查",
     "证据不足",
 )
@@ -112,6 +112,7 @@ BENIGN_LIKE_KEYWORDS: tuple[str, ...] = (
     "头像上传",
     "avatar",
     "合法",
+    "部署尝试未成功",
 )
 
 OUT_OF_SCOPE_KEYWORDS: tuple[str, ...] = (
@@ -157,8 +158,8 @@ class WebShellGatekeeper:
 
         signals: list[GatekeeperSignal] = []
         self._extract_event_type_signal(used_dict, signals)
-        self._extract_alerts_signals(used_dict, signals)
-        self._extract_evidence_signals(used_dict, signals)
+        self._extract_signals_from_text_list(used_dict.get("alerts") or [], SignalSource.ALERTS, signals)
+        self._extract_signals_from_text_list(used_dict.get("evidence") or [], SignalSource.EVIDENCE, signals)
         self._extract_triage_signal(used_dict, signals, forbidden)
 
         overall = self._aggregate_strength(signals)
@@ -240,74 +241,59 @@ class WebShellGatekeeper:
                 )
             )
 
-    def _extract_alerts_signals(self, d: dict[str, Any], out: list[GatekeeperSignal]) -> None:
-        alerts = d.get("alerts") or []
-        if not isinstance(alerts, list):
+    def _extract_signals_from_text_list(
+        self, texts: list[Any], source: SignalSource, out: list[GatekeeperSignal]
+    ) -> None:
+        if not isinstance(texts, list):
             return
-        for a in alerts:
-            text = str(a)
-            if any(k.lower() in text.lower() for k in WEBSHELL_STRONG_CONFIRM_KEYWORDS):
-                out.append(
-                    GatekeeperSignal(
-                        name="alerts_strong_webshell",
-                        description=f"告警命中强确认关键词: {text}",
-                        strength=SignalStrength.IN_SCOPE_CONFIRMED,
-                        source=SignalSource.ALERTS,
-                    )
-                )
-            elif any(k.lower() in text.lower() for k in WEBSHELL_WEAK_KEYWORDS):
-                out.append(
-                    GatekeeperSignal(
-                        name="alerts_weak_webshell",
-                        description=f"告警命中弱信号关键词: {text}",
-                        strength=SignalStrength.IN_SCOPE_WEAK,
-                        source=SignalSource.ALERTS,
-                    )
-                )
+        for t in texts:
+            text = str(t)
+            text_lower = text.lower()
 
-    def _extract_evidence_signals(self, d: dict[str, Any], out: list[GatekeeperSignal]) -> None:
-        evidence = d.get("evidence") or []
-        if not isinstance(evidence, list):
-            return
-        for e in evidence:
-            text = str(e)
-            if any(k in text for k in WEBSHELL_STRONG_CONFIRM_KEYWORDS):
+            # 1. 强确认
+            if any(k.lower() in text_lower for k in WEBSHELL_STRONG_CONFIRM_KEYWORDS):
                 out.append(
                     GatekeeperSignal(
-                        name="evidence_strong_webshell",
+                        name="input_strong_webshell",
                         description=text,
                         strength=SignalStrength.IN_SCOPE_CONFIRMED,
-                        source=SignalSource.EVIDENCE,
+                        source=source,
                     )
                 )
                 continue
-            if any(k in text for k in OUT_OF_SCOPE_KEYWORDS):
+
+            # 2. 域外
+            if any(k.lower() in text_lower for k in OUT_OF_SCOPE_KEYWORDS):
                 out.append(
                     GatekeeperSignal(
-                        name="evidence_out_of_scope",
+                        name="input_out_of_scope",
                         description=text,
                         strength=SignalStrength.OUT_OF_SCOPE,
-                        source=SignalSource.EVIDENCE,
+                        source=source,
                     )
                 )
                 continue
-            if any(k in text for k in BENIGN_LIKE_KEYWORDS):
+
+            # 3. 良性
+            if any(k.lower() in text_lower for k in BENIGN_LIKE_KEYWORDS):
                 out.append(
                     GatekeeperSignal(
-                        name="evidence_benign_like",
+                        name="input_benign_like",
                         description=text,
                         strength=SignalStrength.BENIGN_LIKE,
-                        source=SignalSource.EVIDENCE,
+                        source=source,
                     )
                 )
                 continue
-            if any(k in text for k in WEBSHELL_WEAK_KEYWORDS):
+
+            # 4. 弱信号
+            if any(k.lower() in text_lower for k in WEBSHELL_WEAK_KEYWORDS):
                 out.append(
                     GatekeeperSignal(
-                        name="evidence_weak_webshell",
+                        name="input_weak_webshell",
                         description=text,
                         strength=SignalStrength.IN_SCOPE_WEAK,
-                        source=SignalSource.EVIDENCE,
+                        source=source,
                     )
                 )
 
@@ -330,8 +316,17 @@ class WebShellGatekeeper:
                     forbidden=True,
                 )
             )
-            return
-        if any(w in verdict for w in ("真实攻击", "恶意", "疑似")):
+        # 即使 triage 字段存在警告，依然继续从 initial_verdict 提取有效信号
+        if any(w in verdict for w in OUT_OF_SCOPE_KEYWORDS):
+            out.append(
+                GatekeeperSignal(
+                    name="verdict_out_of_scope",
+                    description=f"初步研判标记为域外攻击: {verdict}",
+                    strength=SignalStrength.OUT_OF_SCOPE,
+                    source=SignalSource.TRIAGE,
+                )
+            )
+        elif any(w in verdict for w in ("真实攻击", "恶意", "疑似")):
             out.append(
                 GatekeeperSignal(
                     name="verdict_malicious_like",
@@ -436,7 +431,7 @@ class WebShellGatekeeper:
             checklist.append("提取 WebShell 通信加密密钥/算法证据")
             gaps.append("需要完整网络会话取证")
 
-        if benign_sigs or overall == SignalStrength.BENIGN_LIKE:
+        if (benign_sigs or overall == SignalStrength.BENIGN_LIKE) and overall != SignalStrength.OUT_OF_SCOPE:
             checklist.append("核对业务 API 文档与上传白名单")
             fp_conditions.append("已知业务接口的参数编码/头像上传是合法行为")
 

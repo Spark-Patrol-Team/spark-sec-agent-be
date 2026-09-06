@@ -269,12 +269,8 @@ class TestTask4CaseSignalAnnotations:
 
     def test_case3_beima_weak_to_mixed(self) -> None:
         _, _, _, result = self._run(3)
-        # case3 含有 RSA解密函数 强证据，允许进入 CONFIRMED 级。
-        assert result.overall_strength in {
-            SignalStrength.IN_SCOPE_WEAK,
-            SignalStrength.MIXED,
-            SignalStrength.IN_SCOPE_CONFIRMED,
-        }
+        # case3 因“RSA解密函数”降级为弱信号，整体应收口为 WEAK。
+        assert result.overall_strength == SignalStrength.IN_SCOPE_WEAK
 
     def test_case4_insufficient_evidence(self) -> None:
         _, _, _, result = self._run(4)
