@@ -169,6 +169,17 @@ def match_keyword(entries: list[KnowledgeEntry], keyword: str) -> KnowledgeEntry
             best_entry = entry
     return best_entry if best_score > 0 else None
 
+def _collapse_gate_strength(overall_strength: str) -> str:
+    """把 gatekeeper 的 6 档强度折叠为知识工具三档门禁。"""
+    value = str(overall_strength or "").upper()
+
+    if value in {"OUT_OF_SCOPE", "BENIGN_LIKE"}:
+        return "out_of_scope"
+
+    if value == "IN_SCOPE_CONFIRMED":
+        return "in_scope"
+
+    return "weak_signal"
 
 class KnowledgeQueryTool(Tool):
     """`knowledge.query` 检索工具：按关键词返回知识包条目 + evidence_refs。"""
@@ -191,21 +202,72 @@ class KnowledgeQueryTool(Tool):
         "required": ["keyword"],
     }
 
-    def __init__(self, entries: list[KnowledgeEntry] | None = None):
+    def __init__(
+        self,
+        entries: list[KnowledgeEntry] | None = None,
+        event_context: dict[str, Any] | None = None,
+    ):
         self._entries = entries if entries is not None else load_knowledge_entries()
+        self._event_context = dict(event_context or {})
 
     def call(self, params: dict) -> ToolResult:
         keyword = str(params.get("keyword", ""))
-        entry = match_keyword(self._entries, keyword)
-        if entry is None:
-            return ToolResult(status="failed", summary=f"知识库无匹配条目：{keyword}", error="知识库无匹配")
-        return ToolResult(
-            status="success",
-            summary=f"[知识包·{entry.name}]\n{entry.content}\n证据引用 evidence_refs：{entry.evidence_refs}",
-            data={"entry": entry.name, "evidence_refs": entry.evidence_refs},
+
+        gate = _collapse_gate_strength(
+            self._event_context.get("overall_strength", "")
         )
 
+        if gate == "out_of_scope":
+            return ToolResult(
+                status="failed",
+                summary="当前事件上下文与 WebShell 知识域不匹配。",
+                error="knowledge_scope_mismatch",
+                data={
+                    "gate": "out_of_scope",
+                    "knowledge_returned": False,
+                },
+            )
+        if gate == "weak_signal":
+            return ToolResult(
+                status="partial",
+                summary="当前仅有弱信号，知识内容受限；需继续补充事件证据后再确认。",
+                data={
+                    "gate": "weak_signal",
+                    "knowledge_returned": False,
+                    "restriction": "evidence_required_before_confirmatory_knowledge",
+                },
+            )
 
-def build_knowledge_tools(md_path: Path | None = None) -> list[Tool]:
+        entry = match_keyword(self._entries, keyword)
+
+        if entry is None:
+            return ToolResult(
+                status="failed",
+                summary=f"知识库无匹配条目：{keyword}",
+                error="知识库无匹配",
+            )
+
+        return ToolResult(
+            status="success",
+            summary=(
+                f"[知识包·{entry.name}]\n"
+                f"{entry.content}\n"
+                f"证据引用 evidence_refs：{entry.evidence_refs}"
+            ),
+            data={
+                "entry": entry.name,
+                "evidence_refs": entry.evidence_refs,
+            },
+        )
+
+def build_knowledge_tools(
+    md_path: Path | None = None,
+    event_context: dict[str, Any] | None = None,
+) -> list[Tool]:
     """构建知识包检索工具（默认读取包内权威版 webshell-knowledge.md）。"""
-    return [KnowledgeQueryTool(load_knowledge_entries(md_path))]
+    return [
+        KnowledgeQueryTool(
+            load_knowledge_entries(md_path),
+            event_context=event_context,
+        )
+    ]
