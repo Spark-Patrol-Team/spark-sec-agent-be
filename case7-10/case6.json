@@ -1,0 +1,41 @@
+{
+  "case_id": "TC-KNOWLEDGE-006",
+  "category": "纯非WebShell负向案例",
+  "description": "SQL注入攻击事件，无任何WebShell相关信号，用于验证门禁不降低难度",
+  "input_event": {
+    "event_id": "EVT-SQLI-2025-006",
+    "event_type": "SQL Injection",
+    "severity": "HIGH",
+    "timestamp": "2025-08-08T09:30:00Z",
+    "source_ip": "202.105.112.40",
+    "target_ip": "172.16.50.33",
+    "alerts": [
+      "SQL注入攻击告警",
+      "数据库异常操作告警"
+    ],
+    "evidence": [
+      "WAF检测到 /product/list?id=1 OR 1=1-- 攻击载荷",
+      "参数 id 包含 UNION SELECT password FROM admin 关键字",
+      "MySQL通用日志出现 sleep(5) 延时注入语句，执行时间 09:30:18",
+      "业务接口正常不支持多语句查询，本次出现 stacked query 特征",
+      "目标数据库用户 product_app 在 09:30:27 执行 SELECT @@version, user() 语句",
+      "未检测到Web目录新增文件",
+      "未检测到 mysqld 之外的异常子进程创建",
+      "无任何 PHP/JSP/ASPX 脚本落地或 HTTP 文件写入行为记录"
+    ],
+    "initial_verdict": "待调查",
+    "confidence": 0.78,
+    "triage": {
+      "verdict": "malicious",
+      "confidence": 0.80,
+      "risk_score": 82,
+      "priority": "high",
+      "supporting_evidence": ["SQL注入攻击告警"],
+      "opposing_evidence": [],
+      "evidence_gaps": ["是否拖库成功", "数据库表结构泄漏范围"],
+      "enter_investigation": true
+    },
+    "trace_id": "trace-case006",
+    "run_id": "run-case006"
+  }
+}

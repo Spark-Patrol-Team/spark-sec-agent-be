@@ -1,0 +1,38 @@
+{
+  "case_id": "TC-KNOWLEDGE-003",
+  "category": "混合场景synthetic合成案例（弱信号+合法业务）",
+  "description": "含伪装双扩展名上传，同时伴随正常头像上传业务流量",
+  "input_event": {
+    "event_id": "EVT-WS-2025-003",
+    "event_type": "WebShell",
+    "severity": "MEDIUM",
+    "timestamp": "2025-07-21T08:40:00Z",
+    "source_ip": "112.25.80.17",
+    "target_ip": "172.16.20.18",
+    "alerts": [
+      "可疑文件上传告警"
+    ],
+    "evidence": [
+      "检测到连续三次文件上传请求",
+      "第一次 POST /api/user/avatar/upload 上传 avatar_20250721.png，大小 320KB，为已知业务接口",
+      "第二次 POST /news/img_upload.php 上传 banner.jpg.php，文件时间 08:40:27",
+      "第三次 POST /news/img_upload.php 上传 cover.gif.php，文件时间 08:40:33",
+      "上传目标目录 /news/upload/ 不在业务上传白名单中",
+      "最近一小时内 /news/img_upload.php 非编辑账号调用记录"
+    ],
+    "initial_verdict": "待调查",
+    "confidence": 0.40,
+    "triage": {
+      "verdict": "uncertain",
+      "confidence": 0.50,
+      "risk_score": 48,
+      "priority": "medium",
+      "supporting_evidence": [],
+      "opposing_evidence": [],
+      "evidence_gaps": ["banner.jpg.php内容", "访问banner.jpg.php的请求记录"],
+      "enter_investigation": true
+    },
+    "trace_id": "trace-case003",
+    "run_id": "run-case003"
+  }
+}

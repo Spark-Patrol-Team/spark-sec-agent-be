@@ -1,0 +1,36 @@
+{
+  "case_id": "TC-KNOWLEDGE-004",
+  "category": "弱信号不足案例",
+  "description": "仅出现Base64长参数与可疑路径，缺高危代码与执行记录",
+  "input_event": {
+    "event_id": "EVT-WS-2025-004",
+    "event_type": "WebShell",
+    "severity": "LOW",
+    "timestamp": "2025-07-28T16:55:00Z",
+    "source_ip": "58.18.35.220",
+    "target_ip": "172.16.30.14",
+    "alerts": [],
+    "evidence": [
+      "Web日志检测到 POST /admin/setting/query.action 请求",
+      "请求体中出现长度约 3500 字符的 Base64 编码参数",
+      "该接口业务说明为“参数查询接口”，文档未声明 Base64 编码入参",
+      "未检测到服务器端可疑文件落地记录",
+      "未检测到 Java/tomcat 进程创建 bash/sh 子进程",
+      "当前仅能编码参数异常，文件与进程维度无支撑证据"
+    ],
+    "initial_verdict": "待调查",
+    "confidence": 0.22,
+    "triage": {
+      "verdict": "uncertain",
+      "confidence": 0.40,
+      "risk_score": 35,
+      "priority": "low",
+      "supporting_evidence": [],
+      "opposing_evidence": [],
+      "evidence_gaps": ["Base64参数解码结果"],
+      "enter_investigation": true
+    },
+    "trace_id": "trace-case004",
+    "run_id": "run-case004"
+  }
+}

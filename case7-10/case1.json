@@ -1,0 +1,41 @@
+{
+  "case_id": "TC-KNOWLEDGE-001",
+  "category": "正向标准案例",
+  "description": "蚁剑UA+文件上传落地+w3wp创建cmd组合强证据",
+  "input_event": {
+    "event_id": "EVT-WS-2025-001",
+    "event_type": "WebShell",
+    "severity": "CRITICAL",
+    "timestamp": "2025-07-10T03:22:00Z",
+    "source_ip": "103.45.67.89",
+    "target_ip": "172.16.10.25",
+    "alerts": [
+      "WebShell通信行为告警",
+      "可疑文件上传告警",
+      "异常子进程创建告警"
+    ],
+    "evidence": [
+      "IIS日志中检测到User-Agent包含 AntSword 的请求",
+      "POST /content/upload.aspx 请求成功，Content-Type为multipart/form-data",
+      "上传目录 /content/ 下新增文件 aspnet_state.aspx，时间 03:22:18",
+      "文件内容包含 System.Runtime.InteropServices 和 Process.Start 调用代码",
+      "IIS工作进程 w3wp.exe (PID 4120) 在 03:22:35 创建子进程 cmd.exe /c whoami /priv",
+      "后续响应体包含 Base64 编码的系统信息与当前权限输出",
+      "源IP 103.45.67.89 30分钟内仅访问 /content/ 路径下资源"
+    ],
+    "initial_verdict": "疑似真实攻击",
+    "confidence": 0.88,
+    "triage": {
+      "verdict": "malicious",
+      "confidence": 0.82,
+      "risk_score": 92,
+      "priority": "high",
+      "supporting_evidence": ["WebShell通信行为告警"],
+      "opposing_evidence": [],
+      "evidence_gaps": ["攻击入口漏洞定位", "持久化痕迹检查"],
+      "enter_investigation": true
+    },
+    "trace_id": "trace-case001",
+    "run_id": "run-case001"
+  }
+}
