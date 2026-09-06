@@ -81,7 +81,6 @@ WEBSHELL_STRONG_CONFIRM_KEYWORDS: tuple[str, ...] = (
     "反序列化攻击",
     "内核驱动文件",
     "进程隐藏行为",
-    "RSA解密函数",
     "AES/RSA加密通信特征",
     "子进程 cmd.exe",
 )
@@ -100,6 +99,7 @@ WEBSHELL_WEAK_KEYWORDS: tuple[str, ...] = (
     "异常POST",
     "加密通信流量",
     "WebShell文件",
+    "RSA解密函数",
     "待调查",
     "证据不足",
 )
@@ -112,6 +112,7 @@ BENIGN_LIKE_KEYWORDS: tuple[str, ...] = (
     "头像上传",
     "avatar",
     "合法",
+    "部署尝试未成功",
 )
 
 OUT_OF_SCOPE_KEYWORDS: tuple[str, ...] = (
@@ -330,8 +331,17 @@ class WebShellGatekeeper:
                     forbidden=True,
                 )
             )
-            return
-        if any(w in verdict for w in ("真实攻击", "恶意", "疑似")):
+        # 即使 triage 字段存在警告，依然继续从 initial_verdict 提取有效信号
+        if any(w in verdict for w in OUT_OF_SCOPE_KEYWORDS):
+            out.append(
+                GatekeeperSignal(
+                    name="verdict_out_of_scope",
+                    description=f"初步研判标记为域外攻击: {verdict}",
+                    strength=SignalStrength.OUT_OF_SCOPE,
+                    source=SignalSource.TRIAGE,
+                )
+            )
+        elif any(w in verdict for w in ("真实攻击", "恶意", "疑似")):
             out.append(
                 GatekeeperSignal(
                     name="verdict_malicious_like",
@@ -436,7 +446,7 @@ class WebShellGatekeeper:
             checklist.append("提取 WebShell 通信加密密钥/算法证据")
             gaps.append("需要完整网络会话取证")
 
-        if benign_sigs or overall == SignalStrength.BENIGN_LIKE:
+        if (benign_sigs or overall == SignalStrength.BENIGN_LIKE) and overall != SignalStrength.OUT_OF_SCOPE:
             checklist.append("核对业务 API 文档与上传白名单")
             fp_conditions.append("已知业务接口的参数编码/头像上传是合法行为")
 
