@@ -5,15 +5,15 @@
 | 项目 | 内容 |
 |---|---|
 | 模块 | 深度调查 Agent（`sec_agent.deep_agent` 子智能体） |
-| 负责人 | 杨景凡（T0826-03 复验与文档） |
+| 负责人 | 杨景凡（T0826-03 复验与文档；T0903-03 收口） |
 | 文档状态 | 当前有效 |
 | 实现状态 | 已复验 |
 | 能力性质 | 自研代码 / 真实平台 / Mock / fallback（各能力实际范围见 `development.md` 第 7 节边界表与本文第 6 节复验信息） |
-| 复验基线 | `main` @ `2ef29a8`（本次提交后更新为最新） |
-| 复验时间 | 2026-08-25（main + Mock）、2026-08-26（真实 LLM + 前端接口联调 + 知识包检索） |
-| 复验环境 | Windows 11 + Python 3.14.3；LLM：DeepSeek OpenAI 兼容接口（key 走 gitignore 本地文件）；深信服 MCP 5 服务（地址走 gitignore 本地文件） |
-| 对应PR或Commit | PR #13；`383fec7`；`3c49db2`；本次 T0826-03 提交 |
-| 最后更新时间 | 2026-08-26 |
+| 复验基线 | `main` @ `42a51ed`（含 PR #31，不含 PR #36） |
+| 复验时间 | 2026-08-25~27（Mock/真实 LLM/前端联调/知识包）；2026-09-02（真实 XDR 数据，运行 B） |
+| 复验环境 | Windows 11 + Python 3.14.3；LLM：DeepSeek OpenAI 兼容接口（key 走 gitignore 本地文件）；深信服 MCP 5 服务（地址走 gitignore 本地文件）；统一服务器 `xdr_openapi` 后端 |
+| 对应PR或Commit | PR #13；`383fec7`；`3c49db2`；PR #31（已合并）；PR #36（待合并） |
+| 最后更新时间 | 2026-09-04 |
 
 ## 1. 测试目标与非目标
 
@@ -26,9 +26,10 @@
 
 ### 1.2 非目标
 
-- 不承诺真实平台**数据**已验证：深信服 MCP 工具真实连通（本轮 dbproxy 等实测调用返回 `code:0`），但查询的样例虚构实体返回合法空集，真实事件数据联调待平台侧。
+- ~~真实平台数据未验证~~ → **已复验**（运行 B，2026-09-02）：真实 XDR 告警驱动真实 MCP 调用命中真实库，见 §6.2。本文件历史复验（2026-08-25~27，样例虚构实体）的空集结论保留用于对照「样例虚构 → 真实数据」差异。
 - 不验证 FastGPT 目标路线（未实现）。
 - 不验证多场景（仅 WebShell 主场景有 Mock/知识数据）。
+- 不验证证据守卫（PR #36 待合并，本地 main 尚无此逻辑；用例见 `test_deep_agent_evidence_guard.py`，合并后纳入）。
 
 ## 2. 测试范围
 
@@ -98,7 +99,7 @@
 | `test_registered_in_registry` | 注册进 `ToolRegistry`，schema 名唯一 |
 | `test_sample1..5` | 问答样本覆盖：样本 1/3/4/5 命中对应条目；样本 2（攻击组织）为知识缺口（如实标记） |
 
-### 5.3 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
+### 5.3 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增 + 2026-08-28 PR #31 扩展，共 13 例）
 
 | 用例 | 验证点 |
 |------|--------|
@@ -113,6 +114,41 @@
 |------|--------|
 | `test_bridge_loads_real_deep_agent_modules` | bridge 能从 `sec_agent.deep_agent` 加载真实模块（修复前必挂） |
 | 其余 4 例 | 后端分派 / 领域模型互转 / 报告映射 |
+
+### 5.5 证据守卫（`tests/test_deep_agent_evidence_guard.py`，PR #36 新增，待合并，共 5 例）
+
+| 用例 | 验证点 |
+|------|--------|
+| `test_successful_tool_record_allows_llm_report` | 有 `success` 记录 → 接受 LLM 报告，不 fallback |
+| `test_partial_empty_result_is_not_blocked_by_guard` | 仅 `partial`（合法空集）→ 不被门禁误杀，不 fallback |
+| `test_failed_or_401_tool_record_forces_fallback` | `failed`（含 401）→ 强制 `_fallback_report`，结论不得为 LLM 声称 |
+| `test_no_tool_records_rejects_fabricated_llm_steps` | 无记录但 LLM 虚构步骤 → fallback，虚构步骤/证据丢弃 |
+| `test_fabricated_step_is_filtered_when_real_tool_succeeded` | 有真实成功记录时，虚构步骤仍被过滤，仅留真实步骤 |
+
+> 测试用 `_DummyLLM`/`_DummyTools` 隔离真实依赖，IP 用 RFC 5737 文档段（192.0.2.x / 198.51.100.x）、实体全 `synthetic-` 前缀，无真实数据。本地 `main`（不含 PR #36）暂未纳入，合并后随主线执行。
+
+### 5.6 知识门禁 A/B（`tests/test_knowledge_gate.py` + `scripts/ab_gatekeeper.py`，T0905-04 新增）
+
+`KNOWLEDGE_MODE=off/guarded`（PR #42）+ `WebShellGatekeeper`（PR #43）端到端门禁：
+`agent.investigate` 经 `WebShellGatekeeper.audit(event)` 审计真实事件 → 折叠三档（OUT/WEAK/CONFIRMED）→ 以受控 `event_context` 注入 `knowledge_query`，LLM 无法通过工具参数覆盖。
+
+| 用例 | 验证点 |
+|------|--------|
+| `test_fold_scope_*` | 6 档 → 三档折叠（OUT_OF_SCOPE→OUT、IN_SCOPE_CONFIRMED→CONFIRMED、其余→WEAK、缺失→CONFIRMED 兼容） |
+| `test_knowledge_query_rejects_out_of_scope` | OUT → `failed` + `knowledge_scope_mismatch`，不返回知识卡片 |
+| `test_knowledge_query_out_of_scope_rejects_regardless_of_keyword` | 改写 query 不能绕过门禁（scope 判定先于关键词匹配） |
+| `test_agent_injects_real_context_overriding_llm` | Agent 注入真实上下文，覆盖 LLM 自报的 event_context |
+| `test_case6/case10_report_has_no_false_webshell_conclusion` | 负向/域外最终报告不出现 WebShell 攻击确认 |
+
+**可复制 A/B 运行（7 条可重复最低标准）**：
+
+1. **Commit**：基线 `main@da07641`（含 PR #31 收口）；门禁实现位于分支 `feature/t0905-04-gatekeeper-binding`。
+2. **命令**：`PYTHONPATH=src python scripts/ab_gatekeeper.py`（guarded）/ 前置 `KNOWLEDGE_MODE=off`（off）。
+3. **输入**：`tests/fixtures/gatekeeper_cases/case1.json` ~ `case10.json`。
+4. **输出**：默认 stdout 打印对照表；`--out <file>` 落盘 JSON。
+5. **切换模式**：环境变量 `KNOWLEDGE_MODE=off|guarded`，或脚本 `--mode off|guarded`。
+6. **判断失败**：`knowledge_status=failed(knowledge_scope_mismatch)` → 门禁拒绝；报告 `need_manual_takeover=True` → 证据不足。
+7. **复查注册/拒绝**：`knowledge_registered` 字段（off=`False`、guarded=`True` 且 OUT 案例 `failed`）。
 
 ## 6. 复验信息（真实执行路径）
 
@@ -144,6 +180,23 @@
 | 未内部 fallback | ✅ 工具名全为 deep_agent 工具集（非 `evidence_lookup`/`xdr_log_query`） |
 
 本轮报告的 `report_*.json` 不入库（gitignore），上述结论为对报告字段的实际核对。
+
+### 6.2 2026-09-02 运行 B：真实 XDR 数据 + 真实 MCP（T0903-03）
+
+统一服务器后端切 `xdr_openapi`，用真实 XDR 告警 `POST /runs` 触发主链调查，配置 `INVESTIGATION_BACKEND=deep_agent` + `DEEP_AGENT_TOOL_MODE=mcp`（强制真实 MCP，注册阶段 strict 只留真实工具）。
+
+| 复验项 | 结果 |
+|---|---|
+| 主链输入来源 | ✅ `effective_source=xdr_openapi`，无 fixed_sample 回退（fallback=None） |
+| 全新三元组 | ✅ 运行 B 独立 event/run/trace（不复用运行 A 编号） |
+| 真实 tools/list | ✅ 6 种真实 MCP 工具注册并被调用（dbproxy_事件/告警/资产、assets_资产统计、secgpt_告警研判、vul_资产关联漏洞） |
+| 真实 tools/call | ✅ 12 次真实调用，命中真实告警（SQL server数据库查询sa账户密码攻击）、资产、漏洞、事件数据 |
+| 无内部工具回退 | ✅ 全程 0 次 `evidence_lookup`/`xdr_log_query`、0 次 401 |
+| 结果状态 | ✅ `HUMAN_REQUIRED`（conclusion=malicious、final_confidence=0.85、needs_human=True）——因 secgpt 研判 500 + 资产信息空 + 部分查询失败证据不足，合规进入人工接管 |
+
+12 次调用按验收口径分类：**真实返回数据 5 次**（告警详情/资产×2/漏洞/事件聚合）、**合法空集 partial 3 次**（资产查询空×2、事件空集）、**工具错误被误标 success 4 次**（`Input validation error`×2、`Cannot do exclusion on field logTraceInfo`、secgpt `HTTP 500`——见 §10.1 问题 6）。
+
+> 运行 B 证明真实 XDR 告警入主链（无回退）+ deep_agent 走真实 MCP 命中真实数据，工具真实返回真正影响证据与结论。本地报告 `report*.json` 不入库。
 
 ## 7. 执行方式（真实执行命令）
 
@@ -177,6 +230,8 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 - 完整调查（真实 LLM，独立运行）：7 次 Mock 工具调用、完整结构化报告、未内部 fallback。
 - 主链实测（`auto` 后端，真实 LLM）：8 次工具调用（4 Mock failed + 4 dbproxy MCP 空）→ `need_manual_takeover=true` → 停在 `HUMAN_REQUIRED`，不自动处置；未发生内部 fallback。
 - 主链实测（`tool_mock` 后端，内部子链）：2 次工具调用（`evidence_lookup` + `xdr_log_query`）→ 处置方案 → `APPROVAL_REQUIRED` → 审批 → `EXECUTING` → `VERIFYING` → `COMPLETED`；`GET /events/{id}/timeline` 9 步完整、`GET /metrics` 完成计数 +1。
+- 运行 B 实测（`deep_agent` 后端 + 真实 MCP，2026-09-02）：12 次真实 MCP 调用（6 种真实工具，无内部工具），命中真实 XDR 告警/资产/漏洞/事件数据 → `need_manual_takeover=true` → 停在 `HUMAN_REQUIRED`；未发生内部 fallback、无 401。详见 §6.2。
+- 单测汇总：`test_investigation_agent.py` 28 passed/1 skipped（含 bridge，与 `test_deep_agent_bridge.py` 合计）+ `test_knowledge_tool.py` 19 + `test_mcp_client.py` 13 + 待合并 `test_deep_agent_evidence_guard.py` 5。PR #36 上 evidence guard + bridge/agent = 5 passed（guard）/ 28 passed/1 skipped。
 
 ## 9. 验收结论
 
@@ -190,15 +245,17 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 
 ## 10. 已知问题与上游分析
 
-### 10.1 已知问题汇总（2026-08-26，按「问题（所属环节）：具体原因」）
+### 10.1 已知问题汇总（2026-08-26 记录；2026-09-04 增补运行 B 新发现）
 
-1. **Mock 工具 4 次全部「数据不可得」（深度调查环节 → LLM 调 Mock 工具）**：LLM 从样例事件抽出 172.16.8.21 / 10.10.2.15 去查资产/告警/漏洞，但 `mock.py` 内置表只覆盖 192.168.1.100（OA 服务器）→ `.get(ip)` 返回空 → 按设计返回 failed/数据不可得。属工具内置预期边界，非 bug。
-2. **dbproxy MCP 4 次全部返回空数据 `data:[]`（深度调查环节 → LLM 调真实 MCP 工具）**：连接、鉴权、JSON-RPC 全部成功（`code:0`），空的是结果集——查询的 IP 172.16.8.21、告警 ID xdr-alert-001/002、事件 ID evt-97bccf8a… 全是样例虚构/本链生成的 ID，真实 dbproxy 库无这些实体 → 合法空集。
+1. **Mock 工具 4 次全部「数据不可得」（深度调查环节 → LLM 调 Mock 工具）**：LLM 从样例事件抽出 172.16.8.21 / 10.10.2.15 去查资产/告警/漏洞，但 `mock.py` 内置表只覆盖 192.168.1.100（OA 服务器）→ `.get(ip)` 返回空 → 按设计返回 failed/数据不可得。属工具内置预期边界，非 bug。**运行 B（真实 XDR 数据）后不再出现**——真实事件实体来自真实库。
+2. **dbproxy MCP 4 次全部返回空数据 `data:[]`（深度调查环节 → LLM 调真实 MCP 工具）**：连接、鉴权、JSON-RPC 全部成功（`code:0`），空的是结果集——查询的 IP 172.16.8.21、告警 ID xdr-alert-001/002、事件 ID evt-97bccf8a… 全是样例虚构/本链生成的 ID，真实 dbproxy 库无这些实体 → 合法空集。**运行 B 已复验：真实 uuId/IP 命中真实库**，12 次调用中 5 次返回数据、3 次合法空集（真实实体在真实库确无对应资产的场景仍会出现合法空集）。
 3. **MCP 服务连接失败被跳过（深度调查环节 → MCP 工具注册/初始化）**：每个地址先 `initialize()` 再 `list_tools()`，任一失败打印 `[warn]` 并跳过该服务全部工具。真实 MCP 地址属内网敏感信息不入库，需本地 `MCP_URLS`/`mcp_servers.local.json`；未配置/不可达/证书校验（默认已关）都会导致跳过。
 4. **审批接口 body 解析失败（人工审批环节 → 前端 REST 接口）**：Windows curl 命令行直接写 UTF-8 中文 JSON 传送到服务器损坏，FastAPI 解析失败；非后端逻辑问题（换 ASCII 字段或 Swagger UI 输中文即通过）。
 5. **主链启动报 `ZoneInfoNotFoundError: Asia/Shanghai`（服务启动环节）**：Windows Python 缺 `tzdata` 包，`pip install tzdata` 解决。
+6. **非 dbproxy 工具的错误文本被误标 `success`（运行 B，2026-09-02 新发现）**：`_to_tool_result` 对不含 `code/data` 结构的返回一律 `return ToolResult(summary=text)`，导致错误文本落为 `success`。运行 B 实测 4 处：`Input validation error: 'param' is a required property`（Agent 首轮未包 `param`，JSON-RPC 校验错误）、`Cannot do exclusion on field logTraceInfo`（MongoDB 投影错误）、secgpt `HTTP 500`（`{"error":...}` 结构）。后果：错误可能被证据守卫（PR #36）误当有效记录放行。**待修**：`_to_tool_result` 增加对 `{"error":...}` 结构与 `Input validation error`/`Cannot do`/`Internal error` 等错误文本模式的 `failed` 识别（顺序 4 M4）。
+7. **`POST /runs` 同步阻塞超 60s 被网关 504（网关层）**：`deep_agent` 调 LLM + 12 次 MCP 耗时 > 60s，nginx `proxy_read_timeout` 打断同步响应；但服务器后台继续完成（事件已生成、12 次调用齐全）。建议服务器调大该超时，否则调用方需轮询 `/events` 收尾。
 
-**一句话根因**：真实 LLM 轮的 8 次「失败/空」全发生在深度调查环节的工具采集侧——Mock 侧是「演示数据只认识 192.168.1.100，样例 IP 查不到」，MCP 侧是「查的实体是样例虚构的，真实库没有」，本质同源：**LLM 拿样例虚构实体去查真实/有限的数据源**。而 `tool_mock` 内部子链（`evidence_lookup`/`xdr_log_query`）走 fixed_sample 自带种子数据，无任何工具失败，所以能顺利走到审批→执行→COMPLETED。
+**一句话根因**：真实 LLM 轮的 8 次「失败/空」全发生在深度调查环节的工具采集侧——Mock 侧是「演示数据只认识 192.168.1.100，样例 IP 查不到」，MCP 侧是「查的实体是样例虚构的，真实库没有」，本质同源：**LLM 拿样例虚构实体去查真实/有限的数据源**。而 `tool_mock` 内部子链（`evidence_lookup`/`xdr_log_query`）走 fixed_sample 自带种子数据，无任何工具失败，所以能顺利走到审批→执行→COMPLETED。运行 B 证明：真实数据接入后问题 1/2 消失，但暴露出问题 6（status 误判）与问题 7（网关 504）。
 
 ### 10.2 上游问题分析（2026-08-26）
 
@@ -213,6 +270,8 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | ⑤ | tzdata 缺失 | 启动（链路之前） | 环境依赖 | ❌ |
 
 核心含义：① ② 的「证据不足 → 人工接管」本质是**上游喂了虚构样例实体**，不是调查链路或工具的问题。真实接入时事件来自真实库，这两个问题会同时消失。这也解释了为什么 `tool_mock` 内部子链那轮没失败——它走的是 fixed_sample **自带种子数据**（上游数据源一致），所以一路走通到 COMPLETED。
+
+**2026-09-04 增补**：此判断已被运行 B 证实——真实 XDR 数据接入后问题 1/2 消失，调查阶段真实命中真实库。真实接入后的调查侧残留问题转入 §10.1 问题 6（status 误判，调查内部，非链路上游）与问题 7（网关 504，服务层，非调查环节）。
 
 ## 11. 28 日真实平台联调步骤（调查阶段）
 
@@ -302,3 +361,5 @@ WebShell 类事件典型调用序列，按证据缺口推进：
 | 2026-08-26 | 本次（方案 C 提交） | 新增降级报告提炼与 AgentConfig 步数上限用例；执行命令预期更新为 47 passed / 1 skipped |
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一到沈洪旭权威版；新增 `test_mcp_client.py`（11 用例）验证 dbproxy 空结果 `partial` / 结构化错误 `failed` / 有数据 `success` 契约 |
 | 2026-09-04 | PR #31收口 | `test_mcp_client.py`扩至18例：补非dbproxy空文本、MCP `isError`、error JSON、已知错误文本及正常分析含错误词不误判 |
+| 2026-09-03 | PR #36（已合并） | 新增 `test_deep_agent_evidence_guard.py`（5 用例）：零 success/partial→fallback、partial 不误杀、failed/401 强制 fallback、虚构步骤过滤 |
+| 2026-09-04 | T0903-03 | 补 §6.2 运行 B 真实数据复验记录；§8 结果汇总、§10 已知问题 1/2 更新（真实数据接入后消失）、新增问题 6（status 误判）与问题 7（网关 504） |

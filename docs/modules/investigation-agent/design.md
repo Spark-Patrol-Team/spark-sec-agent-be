@@ -5,15 +5,15 @@
 | 项目 | 内容 |
 |---|---|
 | 模块 | 深度调查 Agent（`sec_agent.deep_agent` 子智能体） |
-| 负责人 | 杨景凡（T0826-03 复验与文档）；实现与知识包内容见变更记录 |
+| 负责人 | 杨景凡（T0826-03 复验与文档；T0903-03 运行 B 与收口）；实现与知识包内容见变更记录 |
 | 文档状态 | 当前有效 |
-| 实现状态 | 已复验（独立运行与主链 bridge 均已实测） |
-| 能力性质 | `自研代码`（LLM 驱动调查闭环 + 工具层 + 知识包检索）/ `真实平台`（LLM 真实调用、dbproxy 等 MCP 真实连通）/ `Mock`（6 个兜底工具 + 知识包为人工构造演示）/ `fallback`（`auto` 后端 bridge 不可用时回退内部子链）。各能力实际范围见「实现层次区分」 |
-| 关联任务/需求 | T0826-03：调查 Agent 复验和调查文档；PR #13：深度调查 Agent 子智能体 |
+| 实现状态 | 已复验（独立运行与主链 bridge 均已实测；真实 XDR 数据经运行 B 复验，见变更记录） |
+| 能力性质 | `自研代码`（LLM 驱动调查闭环 + 工具层 + 知识包检索 + 证据守卫）/ `真实平台`（LLM 真实调用、dbproxy 等 MCP 真实连通且真实数据已复验）/ `Mock`（6 个兜底工具 + 知识包为人工构造演示）/ `fallback`（`auto` 后端 bridge 不可用时回退内部子链）。各能力实际范围见「实现层次区分」 |
+| 关联任务/需求 | T0826-03：调查 Agent 复验和调查文档；T0903-03：运行 B、PR 31 与调查 Agent 收口；PR #13：深度调查 Agent 子智能体 |
 | 关联正式交付章节 | 《系统设计说明书》风险研判设计的调查延伸；正式交付章节编号待定（见「当前限制与后续事项」） |
-| 对应PR或Commit | PR #13（子智能体）；`383fec7`（bridge 双包名修复）；`3c49db2`（报告时间戳）；本次 T0826-03 提交（知识包检索工具 + 文档完善） |
-| 最后更新时间 | 2026-08-26 |
-| 最后复验时间 | 2026-08-26 |
+| 对应PR或Commit | PR #13（子智能体）；`383fec7`（bridge 双包名修复）；`3c49db2`（报告时间戳）；PR #31（MCP 空结果识别：空 text→partial，已合并）；PR #36（证据守卫，待合并）；T0903-06 字段契约（陈敏，`docs/modules/platform-tools/xdr_field_mapping.csv` 等） |
+| 最后更新时间 | 2026-09-04 |
+| 最后复验时间 | 2026-09-04（真实 XDR 数据 + 真实 MCP，运行 B） |
 
 ## 1. 目标与非目标
 
@@ -117,6 +117,7 @@
 
 - 权限与审批：调查只读；处置建议不自动执行；高风险处置由下游 `APPROVAL_REQUIRED` 审批。
 - 输入校验：`SecurityEventInput.from_dict` 过滤未知字段；LLM 返回严格 JSON 解析，失败走 `_fallback_report`，不编造证据。
+- **证据守卫（evidence guard，PR #36，待合并）**：解析报告时若没有任何真实 `success`/`partial` 工具调用记录，拒绝接受 LLM 生成的调查步骤与结论，直接走 `_fallback_report`（证据不足→人工接管）；即使存在成功记录，`investigation_steps` 也只能引用代码侧真实执行过的工具（真实名 + ASCII 别名双匹配），防止 LLM 虚构工具调用步骤。`_fallback_report` 与守卫对 `partial`（合法空集）语义一致——空集不算「无记录」。
 - 敏感信息处理：LLM API Key / 真实 MCP URL 只从环境变量或 gitignore 的本地文件（`llm_config.local.json` / `mcp_servers.local.json`）读取，不入代码、不入文档、不入样例。
 - 失败、超时与人工接管：LLM 超时/异常 → bridge 依后端回退内部子链或置不可用报告；证据不足 → 人工接管标记。
 - 真实执行与 Mock 边界：见「实现层次区分」与 `development.md` 第 7 节边界表；LLM 调用、MCP 查询均为真实执行（本轮已实测），Mock 仅作为工具数据兜底。
@@ -132,6 +133,8 @@
 | 知识包统一读沈洪旭权威版（`src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`） | 避免与 PR #8（沈洪旭知识包交付）建立第二套知识入口；运行资源随仓库分发、可追溯 | 各自维护一份副本（重复知识源，已废弃 `webshell_min.md`） |
 | 三后端（`auto` / `deep_agent` / `tool_mock`） | 真实 Agent、仅桥接、仅内部子链三种运行模式按需选择 | 单后端（无法区分真实/回退路径） |
 | `max_tool_calls=12` 硬上限（可环境变量 `AGENT_MAX_TOOL_CALLS` 覆盖） | 防 LLM 死循环、控制单次调查成本；8 次实测偏紧（LLM 常耗尽步数未收尾而降级），扩到 12 并接近上限注入收尾提醒 | 无限循环（不可控）；步数过紧（原 8 次） |
+| **证据守卫**：零真实成功/部分成功工具记录时拒绝 LLM 未验证结论（PR #36） | LLM 可能在 MCP 全挂/超时/鉴权失败时虚构「已调用工具并返回证据」；工具调用记录由代码侧采集，必须以此为准 | 信任 LLM 自述（会把虚构步骤写进正式报告，违背「绝不编造证据」） |
+| `investigation_steps` 只保留真实执行过工具的步骤（真实名 + ASCII 别名双匹配） | LLM 看到的是 ASCII 内部别名、代码记录的是 resolve 后的真实中文名，仅比对一个会误过滤全部步骤 | 只比真实名（PR #30 初版做法，别名不一致导致 `steps` 恒为空） |
 
 ## 8. 非功能、可观测与审计要求
 
@@ -148,7 +151,10 @@
 |---|---|---|
 | FastGPT 编排迁移（目标路线） | 不阻塞（本地实现已可用） | 待 FastGPT 编排能力确认 |
 | 知识包为最小集：问答样本 2（攻击组织）、样本 3（DET0394 细节）未覆盖 | 不阻塞 | 扩充知识包章节即可提升检索覆盖 |
-| dbproxy 等真实 MCP 查询本轮返回合法空集（样例虚构实体在真实库无命中） | 不阻塞（工具链路真实连通） | 真实平台事件数据接入后复验 |
+| ~~dbproxy 等真实 MCP 查询返回合法空集待真实数据复验~~ → **已复验**：运行 B（2026-09-02，真实 XDR 告警）12 次真实 MCP 调用命中真实告警/资产/漏洞/事件数据，5 次返回数据、3 次合法空集；因 secgpt 研判 500 + 部分查询失败证据不足，合规进入 `HUMAN_REQUIRED` | 不阻塞 | 复验通过（见 test.md §6.2） |
+| **非 dbproxy 工具的错误文本被误标 `success`**（`Input validation error`、`Cannot do exclusion`、secgpt `HTTP 500` 等） | 可能被证据守卫误当有效记录放行 | PR #36 收口的 M4，单独提 commit 修 `_to_tool_result`（顺序 4 待办） |
+| **证据守卫（PR #36）尚未合入 main** | 合并前「虚构步骤入报告」仍有敞口 | PR #36 合并（含删第 214 行空白行） |
+| **主链 `InvestigationReport` 的 `key_evidence_refs` 语义未统一**：`deep_agent` 后端把 LLM 自由文本证据塞入 refs，`tool_mock` 后端填 `{alert_id}:traceBackId:{id}` 格式 ref_id | 报告证据引用格式不统一，与 T0903-06 字段契约 §6 不一致 | 桥接层分离 key_evidence（正文）与 key_evidence_refs（ref_id），见交接确认 |
 | Windows Python 缺 `tzdata` 时主链 import 报 `ZoneInfoNotFoundError` | 阻塞主链 | 需 `pip install tzdata`（本机已装；依赖清单待补） |
 | 正式交付章节编号未对齐《系统设计说明书》 | 待确认 | 后续对齐章节编号 |
 
@@ -163,6 +169,11 @@
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`，「Agent 输入输出约定」章节迁至本文第 3 节 | 是 |
 | 2026-08-27 | 本次（打包修复） | 知识包迁入 `sec_agent.deep_agent` 包内并声明 `[tool.setuptools.package-data]`，`knowledge.py` 改用 `importlib.resources` 读取（`pip install` 后仍可用）；`-o` 报告时间戳改微秒级 + 存在检测唯一序号 | 是（打包回归测试新增） |
 | 2026-08-26 | 本次（方案 C 提交） | 步数上限 `max_tool_calls` 8→12（可 `AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限注入收尾提醒；降级报告提炼已采证据与知识包引用 | 是（47 passed / 1 skipped） |
+| 2026-08-28 | PR #31（已合并） | MCP 空结果识别：非 dbproxy 契约工具返回**空 text**（如 `vul_资产关联漏洞数据查询` 命中不到）也应视为「成功但无数据」→ `partial`，避免 Agent 把「无数据」当「出错」；修正 `.env.example` MCP 变量名 | 是（`test_mcp_client.py` 13 passed） |
+| 2026-09-03 | PR #36（待合并，head `a4482bf`） | 证据守卫：零真实 success/partial 工具记录时拒绝 LLM 未验证结论直接 `_fallback_report`；`investigation_steps` 只保留真实执行过工具（真实名+ASCII 别名双匹配）的步骤；`_fallback_report` 统一认 `partial`；新增 `test_deep_agent_evidence_guard.py` 5 用例 | 是（evidence guard 5 passed；bridge+agent 28 passed/1 skipped） |
+| 2026-09-04 | T0903-03 运行 B（服务器实测） | 真实 XDR 告警入主链（`xdr_openapi`，无回退）→ `deep_agent`+`DEEP_AGENT_TOOL_MODE=mcp` → 12 次真实 MCP 调用命中真实告警/资产/漏洞/事件数据；因 secgpt 500 + 部分查询失败证据不足进入 `HUMAN_REQUIRED` | 是（真实工具返回真正影响证据与结论） |
+| 2026-09-04 | T0903-03 知识案例验证 | 加载 PR #37 case1/2/6，确认 `knowledge_query` 调用→命中→evidence_refs 入报告三链全通；case6 暴露「供应链/插件投毒无独立知识条目」缺口 | 是（3 案例全通，见反馈记录） |
+| 2026-09-04 | T0903-06 字段契约对齐（陈敏） | 确认实体权威来源 `SecurityEvent.entities`（src_ips/dst_ips/assets/source_devices）+ `alert_refs` 锚定、`event_id` 不用于 XDR 查询、脱敏边界、证据 ref_id 格式；记录 3 处调查侧消费差异（时间窗/entities 透传/refs 语义） | 部分（差异 3 项待桥接层收敛） |
 
 ---
 
@@ -173,7 +184,7 @@
 | **本地 Python 实现** | `sec_agent.deep_agent` 完整调查闭环（LLM 驱动 + 工具 + 结构化报告 + 知识包检索），`auto` 后端经 bridge 接入主链 | ✅ 独立运行与主链均复验通过（2026-08-25/26） |
 | **FastGPT 目标路线** | 将调查逻辑迁移到 FastGPT 编排（深信服 MCP 已由 FastGPT 托管） | 🔶 目标规划，未实现 / 未验证 |
 | **Mock 工具** | 6 个内置兜底工具 + 知识包条目（人工构造演示数据） | ✅ 本轮复验使用；仅覆盖 WebShell 主场景 |
-| **真实平台能力** | LLM（DeepSeek OpenAI 兼容）真实调用；深信服 MCP 5 服务 19 工具真实连通 | 🔶 LLM 已实测；dbproxy 查询实测返回合法空集（样例虚构实体无命中），真实数据联调待客服/平台确认 |
+| **真实平台能力** | LLM（DeepSeek OpenAI 兼容）真实调用；深信服 MCP 5 服务 19 工具真实连通 | ✅ 真实数据已复验（运行 B，2026-09-02）：真实 XDR 告警命中真实库，12 次真实 MCP 调用含真实告警/资产/漏洞/事件数据；4 处工具错误文本被误标 `success` 为已知缺口（M4 待修） |
 
 ## 附录 B：工具名与内部别名映射表
 

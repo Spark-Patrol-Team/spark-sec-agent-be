@@ -5,15 +5,15 @@
 | 项目 | 内容 |
 |---|---|
 | 模块 | 深度调查 Agent（`sec_agent.deep_agent` 子智能体） |
-| 负责人 | 杨景凡（T0826-03 复验与文档） |
+| 负责人 | 杨景凡（T0826-03 复验与文档；T0903-03 收口） |
 | 文档状态 | 当前有效 |
-| 实现状态 | 已复验 |
+| 实现状态 | 已复验（真实 XDR 数据经运行 B 复验） |
 | 能力性质 | 自研代码 / 真实平台 / Mock / fallback（各能力实际范围见第 7 节边界表） |
-| 关联任务/需求 | T0826-03；PR #13 |
+| 关联任务/需求 | T0826-03；T0903-03；PR #13 |
 | 关联正式交付章节 | 同 `design.md`（风险研判设计的调查延伸，章节编号待对齐） |
-| 对应PR或Commit | PR #13；`383fec7`；`3c49db2`；本次 T0826-03 提交 |
-| 适用代码版本 | `main` @ `2ef29a8`（本次提交后更新为最新） |
-| 最后更新时间 | 2026-08-26 |
+| 对应PR或Commit | PR #13；`383fec7`；`3c49db2`；PR #31（已合并）；PR #36（待合并） |
+| 适用代码版本 | `main` @ `42a51ed` |
+| 最后更新时间 | 2026-09-04 |
 
 ## 1. 当前实现摘要
 
@@ -23,16 +23,19 @@
 - 统一工具层：`Tool` 抽象 + `ToolRegistry`（注册/别名/调用兜底），`tools/base.py`。
 - Mock 工具 6 个（`tools/mock.py`，WebShell 主场景人工构造数据）。
 - 深信服 MCP 客户端（`tools/mcp_client.py`，JSON-RPC over HTTP，兼容 SSE；5 服务 19 工具，地址走 gitignore 本地配置）。
-- MCP 空结果识别：dbproxy 系列工具返回 `{"code":0,"msg":"","data":[]}` 时，`MCPTool.call` 判定为 `partial`（「查询成功但无数据」），与 `success`（有数据）/ `failed`（业务错误 `code!=0` 或异常）区分，供 Agent 按「数据为空」触发停止条件而非静默成功。
+- MCP 空结果识别：dbproxy 系列工具返回 `{"code":0,"msg":"","data":[]}` 时，`MCPTool.call` 判定为 `partial`（「查询成功但无数据」），与 `success`（有数据）/ `failed`（业务错误 `code!=0` 或异常）区分，供 Agent 按「数据为空」触发停止条件而非静默成功。PR #31 后**非 dbproxy 契约工具返回空 text**（如 `vul_资产关联漏洞数据查询` 命中不到时 `content[0].text` 为空串）同样判 `partial`。
 - 知识包检索工具 `knowledge_query`（`tools/knowledge.py` + `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` 权威版），关键词匹配返回条目 + `evidence_refs`；CLI 与主链 bridge 均已注册。
 - 主链集成：`auto` / `deep_agent` 后端经 `services/deep_agent_bridge.py` 桥接；`tool_mock` 后端走内部子链。
 - CLI 入口 `main.py`（`--event` / `-o` 时间戳 / `--list-tools`）、API 可视化配置 `config_gui.py`。
+- **证据守卫**（PR #36，**待合并**，`agent.py` `_parse_report`）：零真实 success/partial 工具记录时拒绝 LLM 未验证结论 → `_fallback_report`；`investigation_steps` 过滤为仅真实执行过工具（真实名 + `alias_of()` ASCII 别名双匹配）；`_fallback_report` 统一认 `partial`。已合并前本地 main 无此防护。
 
 ### 1.2 未实现或未复验
 
 - **FastGPT 目标路线**（调查逻辑迁移 FastGPT 编排）：未实现 / 未验证，仅规划。
-- 真实平台**数据联调**：深信服 MCP 工具真实连通（dbproxy 等实测调用成功），但本轮查询样例虚构实体返回**合法空集**，真实平台事件数据尚未接入复验。
-- 知识包覆盖：问答样本 2（攻击组织）、样本 3（DET0394 细节）无对应章节，属知识包最小集缺口。
+- ~~真实平台数据联调待复验~~ → **已复验**（运行 B，2026-09-02）：真实 XDR 告警经主链 `xdr_openapi`（无回退）→ `deep_agent`+`DEEP_AGENT_TOOL_MODE=mcp`，12 次真实 MCP 调用命中真实告警/资产/漏洞/事件数据（5 次返回数据、3 次合法空集）；因 secgpt 研判 500 + 资产信息空 + 部分查询失败，证据不足合规进入 `HUMAN_REQUIRED`。工具结果真正影响证据与结论。
+- **证据守卫（PR #36）未合入 main**：合并前「虚构步骤入报告」仍有敞口；合并前需删 `_parse_report` 第 214 行空白行（W293）。
+- **非 dbproxy 工具错误文本 status 误判**（M4）：运行 B 实测 `Input validation error`×2、`Cannot do exclusion on field logTraceInfo`、secgpt `HTTP 500` 均被 `_to_tool_result` 默认标 `success`，未识别为 `failed`。待单独修（顺序 4 M4）。
+- 知识包覆盖：问答样本 2（攻击组织）、样本 3（DET0394 细节）无对应章节；case6 场景显示「供应链/插件投毒」无独立知识条目，属知识包最小集缺口。
 - 完整多场景调查（仅 WebShell 主场景有 Mock/知识数据）。
 
 ## 2. 代码位置
@@ -137,7 +140,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 能力 | 当前实际实现 | 触发条件 | 不得误写为 |
 |---|---|---|---|
 | LLM 推理 | **真实调用**（DeepSeek OpenAI 兼容接口，实测通过） | 配置 `LLM_*` 或本地配置 | FastGPT 编排（未实现） |
-| 深信服 MCP 工具 | **真实连通**（5 服务 19 工具注册；dbproxy 等实测调用返回） | 配置 `MCP_URLS` / `mcp_servers.local.json` 且网络可达 | 真实平台**数据**已验证（本轮查询样例虚构实体返回空集，待真实数据联调） |
+| 深信服 MCP 工具 | **真实连通 + 真实数据已复验**（运行 B：5 服务 19 工具注册；真实 XDR 告警驱动 12 次真实调用，命中真实告警/资产/漏洞/事件，5 次返回数据、3 次合法空集） | 配置 `MCP_URLS` / `mcp_servers.local.json` 且网络可达 | 真实平台数据已复验（2026-09-02 运行 B）；非 dbproxy 工具错误文本 status 误判为已知缺口（M4） |
 | Mock 工具（6 个） | **本地实现**（人工构造 WebShell 演示数据） | `TOOL_MODE=mock`/`auto` | 真实平台返回 |
 | 知识包检索（`knowledge_query`） | **本地实现**（解析沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` 为条目 + `evidence_refs`） | 所有工具模式注册 | FastGPT 知识库 / 真实知识服务 |
 | 内部回退子链 | **fallback**（`evidence_lookup` + `xdr_log_query`，无 LLM） | `auto` 后端 bridge 不可用/异常 | 真实 LLM 已运行 |
@@ -148,8 +151,12 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 优先级 | 事项 | 是否影响主链 | 负责人/完成条件 |
 |---|---|---|---|
 | P1 | Windows 缺 `tzdata` 依赖（建议补入 `pyproject.toml`） | 是（主链 import 即挂） | 补依赖 + 跨平台验证 |
-| P1 | 真实平台事件数据联调（dbproxy 空数据问题） | 是（真实场景证据采集） | 真实 XDR 数据接入后复验 |
-| P2 | 知识包最小集缺口（攻击组织、DET0394 细节等） | 否 | 扩充知识包章节 |
+| P1 | ~~真实平台数据联调~~ → 已复验（运行 B，2026-09-02） | — | ✅ 已完成，记录见 test.md §6.2 |
+| P1 | **非 dbproxy 工具错误文本 status 误判**（M4：`Input validation error`/`Cannot do exclusion`/secgpt `HTTP 500` 被标 `success`） | 是（错误可能被证据守卫误当有效记录） | 单独提 commit 修 `_to_tool_result`（顺序 4 M4） |
+| P1 | **证据守卫（PR #36）合入 main**（含删 `_parse_report` 第 214 行空白行） | 是（合并前虚构步骤有敞口） | PR #36 review 通过待合并 |
+| P2 | **主链 `InvestigationReport.key_evidence_refs` 语义统一**：deep_agent 路径把 LLM 自由文本塞 refs，与 T0903-06 契约 ref_id 格式不一致 | 是（报告证据引用格式） | 桥接层分离 key_evidence（正文）与 key_evidence_refs（ref_id），对齐陈敏契约 §6 |
+| P2 | **桥接层透传富化**：`first_seen_at~last_seen_at` 时间窗、完整 `entities`（assets 列表/source_devices）未下传，deep_agent 只能取 src/dst 首值 | 否（IP+时间已够主链查证） | 需要时在 `deep_agent_bridge._to_deep_agent_input` 补传 |
+| P2 | 知识包最小集缺口（攻击组织、DET0394 细节、供应链/插件投毒等） | 否 | 扩充知识包章节 |
 | P2 | 仅覆盖 WebShell 主场景 | 否 | 扩展场景数据 |
 | P2 | 文档与《系统设计说明书》章节编号对齐 | 待确认 | 后续对齐 |
 
@@ -172,3 +179,5 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`；MCP 空结果识别：dbproxy `{"code":0,"data":[]}` → `partial`（查询成功但无数据） | `test_mcp_client.py` 新增（11 用例）；`test_knowledge_tool.py` 全通过 |
 | 2026-08-27 | 本次（打包修复） | 知识包迁入 `sec_agent.deep_agent` 包内 + `[tool.setuptools.package-data]` 随 wheel/sdist 分发，`knowledge.py` 改用 `importlib.resources` 读取；`-o` 时间戳改微秒级 + 存在检测唯一序号 | `test_packaging.py` 新增（4 用例）；`test_investigation_agent.py` 时间戳用例更新 |
 | 2026-09-04 | PR #31收口 | 非dbproxy空文本改为`partial`；`isError=true`、`{"error":...}`、输入校验/字段排除/HTTP 4xx或5xx前缀改为`failed`，避免错误文本作为成功证据 | `test_mcp_client.py` 18例 |
+| 2026-09-03 | PR #36（已合并） | 证据守卫（`agent.py`）：零 success/partial 记录→`_fallback_report`；`investigation_steps` 真实名+别名双匹配过滤；`_fallback_report` 统一认 `partial` | `test_deep_agent_evidence_guard.py` 5 用例 |
+| 2026-09-04 | T0903-03 运行 B | 真实 XDR 数据复验：主链 `xdr_openapi` 真实告警 → `deep_agent`+`mcp` → 12 次真实 MCP 调用命中真实库 | 复验记录见 test.md §6.2 |
