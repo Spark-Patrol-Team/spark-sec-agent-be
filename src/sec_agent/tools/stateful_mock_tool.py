@@ -10,6 +10,7 @@ from sec_agent.domain.models import (
     ToolRequest,
     ToolResult,
     ToolSideEffectType,
+    VerificationEvidenceLayer,
     utc_now,
 )
 
@@ -148,6 +149,7 @@ def build_stateful_response_handler(
             evidence_refs=[action_ref],
             output_preview={
                 "action_status": "executed",
+                "effect_layer": VerificationEvidenceLayer.STATEFUL_MOCK.value,
                 "event_id": request.params.get("event_id"),
                 "target": request.params.get("target"),
             },
@@ -224,7 +226,10 @@ def build_response_verify_handler(
             raw_result_ref=raw_result_ref,
             evidence_refs=evidence_refs,
             output_refs=[raw_result_ref],
-            output_preview={"action_status": action_status},
+            output_preview={
+                "action_status": action_status,
+                "effect_layer": VerificationEvidenceLayer.STATEFUL_MOCK.value,
+            },
             retryable=status != ToolCallStatus.SUCCESS,
             error_type=error_type,
             error_message=None if status == ToolCallStatus.SUCCESS else summary,

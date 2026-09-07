@@ -87,6 +87,19 @@ class VerificationStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ResponseEvidenceScope(StrEnum):
+    IN_SCOPE = "in_scope"
+    WEAK_SIGNAL = "weak_signal"
+    OUT_OF_SCOPE = "out_of_scope"
+
+
+class VerificationEvidenceLayer(StrEnum):
+    STATEFUL_MOCK = "stateful_mock"
+    PLATFORM_REQUEST = "platform_request"
+    PLATFORM_RECORD = "platform_record"
+    DEVICE_EFFECT = "device_effect"
+
+
 class EvidenceRef(BaseModel):
     ref_id: str
     source: str
@@ -162,6 +175,7 @@ class TriageResult(BaseModel):
     confidence: float = Field(ge=0, le=1)
     risk_score: int = Field(ge=0, le=100)
     priority: Priority
+    response_evidence_scope: ResponseEvidenceScope | None = None
     supporting_evidence_refs: list[str] = Field(default_factory=list)
     opposing_evidence_refs: list[str] = Field(default_factory=list)
     evidence_gaps: list[str] = Field(default_factory=list)
@@ -249,8 +263,11 @@ class ResponsePlan(BaseModel):
     target: str
     reason: str
     risk_level: ToolRiskLevel
+    evidence_scope: ResponseEvidenceScope
+    max_allowed_risk_level: ToolRiskLevel
     approval_required: bool
     rollback_available: bool
+    decision_basis: list[str] = Field(default_factory=list)
 
 
 class ExecutionResult(BaseModel):
@@ -258,6 +275,7 @@ class ExecutionResult(BaseModel):
     status: ToolCallStatus
     mode: ExecutionMode
     platform_status: str
+    effect_layer: VerificationEvidenceLayer = VerificationEvidenceLayer.PLATFORM_REQUEST
     error: str | None = None
     retry_count: int = 0
     idempotency_key: str
@@ -266,6 +284,7 @@ class ExecutionResult(BaseModel):
 class VerificationResult(BaseModel):
     status: VerificationStatus
     method: str
+    verified_effect_layer: VerificationEvidenceLayer
     evidence_refs: list[str] = Field(default_factory=list)
     adjustment_suggestion: str | None = None
     final_status: BusinessStatus
@@ -397,9 +416,13 @@ class EventResponseView(BaseModel):
     action: str | None = None
     target: str | None = None
     risk_level: ToolRiskLevel | None = None
+    evidence_scope: ResponseEvidenceScope | None = None
+    max_allowed_risk_level: ToolRiskLevel | None = None
     approval_required: bool | None = None
     execution_status: ToolCallStatus | None = None
+    execution_effect_layer: VerificationEvidenceLayer | None = None
     verification_status: VerificationStatus | None = None
+    verification_effect_layer: VerificationEvidenceLayer | None = None
     final_status: BusinessStatus | None = None
 
 

@@ -1,6 +1,13 @@
 import unittest
 
-from sec_agent.domain.models import ApprovalDecision, BusinessStatus, StartRunRequest, ToolCallStatus, ToolRiskLevel
+from sec_agent.domain.models import (
+    ApprovalDecision,
+    BusinessStatus,
+    StartRunRequest,
+    ToolCallStatus,
+    ToolRiskLevel,
+    VerificationStatus,
+)
 from sec_agent.domain.state_machine import InvalidStatusTransition, StateMachine
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.repositories.memory import InMemoryEventRepository
@@ -37,7 +44,7 @@ class StateFlowTest(unittest.TestCase):
         self.assertTrue(ctx.response.plan.approval_required)
         self.assertEqual(ctx.response.plan.risk_level, ToolRiskLevel.HIGH)
 
-    def test_approval_executes_and_verifies(self) -> None:
+    def test_approval_executes_and_requires_human_for_mock_effect(self) -> None:
         ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
         ctx = self.orchestrator.approve(
             ctx.event_id,
@@ -49,14 +56,15 @@ class StateFlowTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(ctx.status, BusinessStatus.COMPLETED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         statuses = [item.status for item in ctx.timeline]
         self.assertIn(BusinessStatus.EXECUTING, statuses)
         self.assertIn(BusinessStatus.VERIFYING, statuses)
-        self.assertEqual(statuses[-1], BusinessStatus.COMPLETED)
+        self.assertEqual(statuses[-1], BusinessStatus.HUMAN_REQUIRED)
         self.assertIsNotNone(ctx.response.execution)
         self.assertIsNotNone(ctx.response.verification)
         self.assertEqual(ctx.response.execution.status, ToolCallStatus.SUCCESS)
+        self.assertEqual(ctx.response.verification.status, VerificationStatus.UNKNOWN)
 
     def test_duplicate_approval_is_idempotent(self) -> None:
         ctx = self.orchestrator.start(StartRunRequest(source="fixed_sample", sample_id="webshell-001"))
@@ -70,8 +78,8 @@ class StateFlowTest(unittest.TestCase):
         first = self.orchestrator.approve(ctx.event_id, decision)
         second = self.orchestrator.approve(ctx.event_id, decision)
 
-        self.assertEqual(first.status, BusinessStatus.COMPLETED)
-        self.assertEqual(second.status, BusinessStatus.COMPLETED)
+        self.assertEqual(first.status, BusinessStatus.HUMAN_REQUIRED)
+        self.assertEqual(second.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertEqual(
             [item.status for item in first.timeline],
             [item.status for item in second.timeline],

@@ -478,10 +478,10 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
 
         ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="alert-unit-test-stable-id"))
 
-        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertEqual(ctx.alert_refs, ["alert-unit-test-stable-id"])
         self.assertEqual(ctx.triage.risk_score, 80)
-        self.assertEqual(ctx.response.plan.target, "198.51.100.200")
+        self.assertIsNone(ctx.response)
         alert_context = ctx.investigation.steps[0].tool_request.params["entities"]
         self.assertEqual(alert_context["dst_ips"], ["198.51.100.200"])
         self.assertIn("alert-unit-test-stable-id:traceBackId:trace-unit-001", ctx.triage.supporting_evidence_refs)
@@ -526,7 +526,7 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
         self.assertEqual(alert.scenario_fields["risk_score_seed"], 80)
         self.assertEqual(alert.occurred_at.isoformat(), "2026-08-28T09:45:00+08:00")
 
-    def test_optional_xdr_log_auth_failure_does_not_block_real_alert_approval(self) -> None:
+    def test_optional_xdr_log_auth_failure_does_not_create_out_of_scope_response(self) -> None:
         session = FakeSession(
             responses=[
                 FakeResponse(
@@ -568,10 +568,10 @@ class XdrOpenApiPlatformTest(unittest.TestCase):
 
         ctx = orchestrator.start(StartRunRequest(source="xdr", xdr_event_id="alert-unit-test-log-optional"))
 
-        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertFalse(ctx.investigation.needs_human)
         self.assertEqual(ctx.investigation.steps[1].tool_result.status, ToolCallStatus.FAILED)
-        self.assertEqual(ctx.response.plan.target, "198.51.100.200")
+        self.assertIsNone(ctx.response)
 
     def test_business_error_fails_without_fallback(self) -> None:
         adapter = XdrOpenApiAdapter(

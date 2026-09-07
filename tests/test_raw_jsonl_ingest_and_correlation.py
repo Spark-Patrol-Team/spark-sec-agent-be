@@ -126,7 +126,7 @@ class RawJsonlIngestAndCorrelationTest(unittest.TestCase):
                 idempotency_key="raw-jsonl-webshell-approval-001",
             ),
         )
-        self.assertEqual(completed.status, BusinessStatus.COMPLETED)
+        self.assertEqual(completed.status, BusinessStatus.HUMAN_REQUIRED)
 
 
 if __name__ == "__main__":
