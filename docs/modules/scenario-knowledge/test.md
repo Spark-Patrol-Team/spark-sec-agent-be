@@ -9,7 +9,7 @@
 3. **评测汇总契约**：逐案例结果必须按冻结 Schema 记录案例 ID、知识模式、适用性、命中知识 ID、工具状态、证据引用、禁止结论命中、人工接管、步骤数、耗时和人工 Review 栏。
 4. **Agent 报告行为**：知识是否被适当消费，是否把通用知识扩写成事件事实，负向案例是否被错误套用 WebShell 知识。
 
-前三层可由仓库自动化测试确认；Agent 报告行为必须检查实际报告，不能只凭退出码或口头回执判定。
+前三层可由仓库自动化测试确认；Agent 报告行为必须检查实际报告，不能只凭退出码或口头回执判定。正式评测汇总形成后，使用 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向汇总文件复用同一套入口检查。
 
 ## 2. 测试数据边界
 
@@ -32,15 +32,15 @@ python -m unittest tests.test_knowledge_case_inputs -v
 python -m unittest tests.test_knowledge_evaluation_summary_schema -v
 ```
 
-当前相关测试共 24 条：
+当前相关测试共 25 条：
 
 | 文件 | 数量 | 覆盖内容 |
 |---|---:|---|
 | `tests/test_knowledge_tool.py` | 18 | 条目加载、5 类查询覆盖、命中与未命中、`evidence_refs`、工具名及注册 |
 | `tests/test_knowledge_case_inputs.py` | 3 | 六案加载与唯一性、case6 纯负向边界、case1/2 来源限制 |
-| `tests/test_knowledge_evaluation_summary_schema.py` | 3 | 评测汇总 Schema 必填字段、枚举、最小 fixture 和核心路径覆盖 |
+| `tests/test_knowledge_evaluation_summary_schema.py` | 4 | 评测汇总 Schema 必填字段、枚举、最小 fixture、正式汇总入口和核心路径覆盖 |
 
-PR #41 冲突解决提交前的本地复验结果为 `21 passed`（2026-09-05）；评测汇总 Schema 冻结后新增 3 条结构守护测试，远端结果仍以最新 CI 为准。
+当前相关测试共 25 条，2026-09-06 本地复验 `25 passed in 0.06s`。PR #41 冲突解决提交前的本地复验结果为 `21 passed`（2026-09-05）；评测汇总 Schema 冻结后新增结构守护测试，远端结果仍以最新 CI 为准。
 
 ## 3.1 评测汇总 Schema
 
@@ -61,6 +61,21 @@ manual_takeover, step_count, duration_ms, human_review
 ```
 
 `human_review` 是人工 Review 栏，必须包含 `status`、`reviewer`、`reviewed_at`、`comments`、`action_items`。待人工复核时，`status=pending`，`reviewer=null`，`reviewed_at=null`。
+
+正式汇总入口：
+
+```text
+KNOWLEDGE_EVALUATION_SUMMARY_PATH=/path/to/knowledge_evaluation_summary.json \
+  uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
+```
+
+失败定位要求：
+
+```text
+case_id, knowledge_mode, stage
+```
+
+其中 `stage` 用于定位失败发生在字段集合、工具状态、证据引用、人工 Review 或入口定位检查。
 
 ## 4. Agent 运行判据
 
@@ -86,6 +101,7 @@ manual_takeover, step_count, duration_ms, human_review
 
 - [x] PR 冲突解决工作树的 21 条相关自动化测试通过（2026-09-05）。
 - [x] 评测汇总 Schema 与最小 fixture 已冻结并加入结构守护测试（2026-09-06）。
+- [x] 评测汇总正式入口框架已就绪，可用 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 替换正式汇总文件，并将失败定位到案例、知识模式和阶段（2026-09-06）。
 - [ ] PR 最新提交的仓库 CI 通过。
 - [ ] case1、case2 在最终提交上完成报告复验，知识引用与事件证据分开。
 - [ ] case6 在最终提交上完成负向复验，未调用 WebShell 知识且未新增 WebShell 事实。
@@ -103,3 +119,4 @@ manual_takeover, step_count, duration_ms, human_review
 | 2026-09-04 | PR #40 增加案例输入与来源边界测试，纠正 case6 判据 |
 | 2026-09-05 | PR #41 重写测试说明，区分自动化测试、成员回执和 Agent 报告证据 |
 | 2026-09-06 | 冻结评测汇总 Schema，新增最小 fixture 与结构守护测试 |
+| 2026-09-06 | 补齐正式评测汇总入口框架，支持通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 验证正式结果并定位到案例、知识模式和阶段 |

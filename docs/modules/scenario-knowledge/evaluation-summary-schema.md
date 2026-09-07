@@ -9,6 +9,7 @@
 - 结构守护测试：`tests/test_knowledge_evaluation_summary_schema.py`
 
 该 Schema 用于记录每个评测案例的知识使用情况、适用性、命中知识、工具状态、证据引用、禁止结论、人工接管、执行步数、耗时和人工 Review 栏。
+正式评测汇总尚未生成前，测试入口默认使用最小 fixture；正式汇总形成后，通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向正式结果文件即可复用同一套结构守护测试。
 
 ## 2. 顶层结构
 
@@ -100,8 +101,17 @@
 
 ## 7. 验证命令
 
+验证默认最小 fixture：
+
 ```text
 uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
+```
+
+验证正式评测汇总：
+
+```text
+KNOWLEDGE_EVALUATION_SUMMARY_PATH=/path/to/knowledge_evaluation_summary.json \
+  uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
 ```
 
 如需连同知识工具和案例输入一起验证：
@@ -109,3 +119,11 @@ uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
 ```text
 uv run pytest tests/test_knowledge_evaluation_summary_schema.py tests/test_knowledge_case_inputs.py tests/test_knowledge_tool.py -q
 ```
+
+入口框架要求失败信息可定位到：
+
+```text
+case_id, knowledge_mode, stage
+```
+
+其中 `stage` 是校验阶段，例如 `result_contract`、`tool_status`、`evidence_refs`、`human_review` 或 `failure_locator`。

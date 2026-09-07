@@ -30,6 +30,7 @@
 - XDR 日志查询失败不阻断已命中真实告警进入审批的路径。
 - Bridge 与主链真实 Agent 接入显式装配：确认后续 Agent 接入边界为 `SecurityEvent + TriageResult -> Bridge -> InvestigationReport`，主链状态流不直接耦合具体 Agent。
 - `Orchestrator` 可通过构造参数注入 Bridge，主链 `/runs` 路径可消费注入 Bridge 的调查报告。
+- 评测汇总正式入口框架：通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 可替换正式评测汇总文件，失败定位到案例、知识模式和阶段。
 - 状态机合法迁移、非法迁移、审批拒绝和审批幂等。
 - OpenAPI 生成结果与当前代码一致性。
 - CORS 预检和实际接口响应。
@@ -136,6 +137,31 @@ uv run pytest tests/test_deep_agent_bridge.py tests/test_state_flow.py tests/tes
 15 passed in 1.45s
 ```
 
+评测汇总入口框架：
+
+```text
+uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
+```
+
+结果：
+
+```text
+4 passed in 0.01s
+```
+
+显式指定正式汇总路径的入口复验：
+
+```text
+KNOWLEDGE_EVALUATION_SUMMARY_PATH=tests/fixtures/evaluation/minimal_knowledge_evaluation_summary.json \
+  uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
+```
+
+结果：
+
+```text
+4 passed in 0.02s
+```
+
 已修改主链装配文件语法检查：
 
 ```text
@@ -148,7 +174,7 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 
 | 用例ID | 优先级 | 类型 | 场景/输入 | 预期结果 | 实际结果 | 状态 | `trace_id` | 证据编号 | 缺陷编号 |
 |---|---|---|---|---|---|---|---|---|---|
-| MAIN-001 | P0 | 回归 | 执行完整 `pytest` | 全部测试通过 | 2026-09-06 复验 `208 passed in 38.99s` | Pass | 无 | EVID-MAIN-001 | 无 |
+| MAIN-001 | P0 | 回归 | 执行完整 `pytest` | 全部测试通过 | 2026-09-06 复验 `209 passed in 33.67s` | Pass | 无 | EVID-MAIN-001 | 无 |
 | MAIN-002 | P0 | 全链路 | fixed_sample 执行 `run_flow` | 审批前 `APPROVAL_REQUIRED`，审批后 `COMPLETED` | 输出 `启动完成: status=APPROVAL_REQUIRED` 和 `审批后状态: status=COMPLETED` | Pass | 无 | EVID-MAIN-002 | 无 |
 | MAIN-003 | P0 | 接口 | `POST /runs`，请求 `{"source":"fixed_sample"}` | 返回 `EventContext`，状态为 `APPROVAL_REQUIRED` | 生成事件 `evt-f0ce793e-4e47-4db2-afe4-ee3998d92505`，状态 `APPROVAL_REQUIRED` | Pass | `trace-09978e32-22a0-48e4-b066-8742371753c6` | EVID-MAIN-003 | 无 |
 | MAIN-004 | P1 | 接口 | `GET /events/{event_id}` 查询 MAIN-003 事件 | 返回 200，并返回同一事件详情 | 返回 200，事件可查询，响应包含 CORS 头 | Pass | `trace-09978e32-22a0-48e4-b066-8742371753c6` | EVID-MAIN-004 | 无 |
@@ -161,12 +187,13 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 | MAIN-011 | P1 | 语法检查 | 执行已修改 Python 文件 `py_compile` | 文件可被 Python 正常编译 | 通过，无输出 | Pass | 无 | EVID-MAIN-011 | 无 |
 | MAIN-012 | P0 | 文档/设计 | Bridge 与主链真实 Agent 接入装配设计 | 主链三文档内明确装配边界、配置选择、后续落地步骤和未覆盖范围 | 已写入 `design.md`、`development.md`、`test.md`；不新增其他目录文件 | Pass | 无 | EVID-MAIN-012 | 无 |
 | MAIN-013 | P0 | 单元/集成 | 主链通过构造参数注入 Bridge 后执行 `POST /runs` 等价路径 | `Orchestrator` 调用注入 Bridge，并继续推进到 `APPROVAL_REQUIRED` | `tests/test_deep_agent_bridge.py` 新增注入 Bridge 用例；局部回归 `15 passed in 1.45s` | Pass | 无 | EVID-MAIN-013 | 无 |
+| MAIN-014 | P0 | 评测入口 | 使用默认最小 fixture 与显式 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 跑评测汇总入口 | Schema、fixture 和正式入口框架通过；失败可定位到 `case_id`、`knowledge_mode`、`stage` | 默认入口 `4 passed in 0.01s`；显式路径入口 `4 passed in 0.02s` | Pass | 无 | EVID-MAIN-014 | 无 |
 
 ## 5. 结果汇总
 
 | 指标 | 数量 |
 |---|---:|
-| 通过 | 13 |
+| 通过 | 14 |
 | 失败 | 0 |
 | 阻塞 | 0 |
 | 未执行 | 0 |
@@ -181,15 +208,15 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 
 | 指标 | 计算口径 | 分子/原始计数 | 分母/原始计数 | 结果 | 数据或脚本证据 |
 |---|---|---:|---:|---:|---|
-| 主链测试通过率 | 本文列出的正式用例 Pass 数 / 正式用例总数 | 13 | 13 | 100% | EVID-MAIN-001 至 EVID-MAIN-013 |
-| 自动化测试通过情况 | pytest 通过数 / pytest 已执行测试数 | 208 | 208 | 100% | EVID-MAIN-001 |
+| 主链测试通过率 | 本文列出的正式用例 Pass 数 / 正式用例总数 | 14 | 14 | 100% | EVID-MAIN-001 至 EVID-MAIN-014 |
+| 自动化测试通过情况 | pytest 通过数 / pytest 已执行测试数 | 209 | 209 | 100% | EVID-MAIN-001 |
 | CORS 预检通过情况 | 配置 origin 的预检请求成功数 / 本轮预检请求数 | 1 | 1 | 100% | EVID-MAIN-005 |
 
 ## 7. 证据索引
 
 | 证据 | 位置 | 脱敏状态 | 支持的结论 |
 |---|---|---|---|
-| EVID-MAIN-001 | 本地命令输出：`uv run pytest -q`；结果 `208 passed in 38.99s` | 不含敏感信息 | 完整测试回归通过 |
+| EVID-MAIN-001 | 本地命令输出：`uv run pytest -q`；结果 `209 passed in 33.67s` | 不含敏感信息 | 完整测试回归通过 |
 | EVID-MAIN-002 | 本地命令输出：`python -m sec_agent.scripts.run_flow` | 不含敏感信息 | fixed_sample 主流程审批后可到 `COMPLETED` |
 | EVID-MAIN-003 | 本地 HTTP 响应：`POST /runs` | 不含敏感信息 | 主链接口可生成测试事件 |
 | EVID-MAIN-004 | 本地 HTTP 响应：`GET /events/{event_id}` | 不含敏感信息 | 事件详情可查询，CORS 实际响应生效 |
@@ -202,6 +229,7 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 | EVID-MAIN-011 | 本地命令输出：`uv run python -m py_compile ...` | 不含敏感信息 | 已修改 Python 文件语法检查通过 |
 | EVID-MAIN-012 | 主链文档：`docs/modules/main-chain/design.md`、`development.md`、`test.md` | 不含敏感信息 | Bridge 与主链真实 Agent 接入装配设计已收敛在主链三文档 |
 | EVID-MAIN-013 | 本地命令输出：`uv run pytest tests/test_deep_agent_bridge.py tests/test_state_flow.py tests/test_api_http.py -q`；结果 `15 passed in 1.45s` | 不含敏感信息 | Bridge 显式注入、主链状态流和 HTTP 主链回归通过 |
+| EVID-MAIN-014 | 本地命令输出：`uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q`；结果 `4 passed in 0.01s`。显式路径入口：`KNOWLEDGE_EVALUATION_SUMMARY_PATH=tests/fixtures/evaluation/minimal_knowledge_evaluation_summary.json uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q`；结果 `4 passed in 0.02s` | 不含敏感信息 | 评测汇总入口框架已就绪，可在正式汇总形成后替换输入文件 |
 
 ## 8. 失败项与已知限制
 
@@ -219,6 +247,7 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 
 - 本轮可确认：当前后端可以通过现有 `POST /runs` 主链入口，从真实 XDR 告警列表接口拉取目标告警，并到达 `APPROVAL_REQUIRED`。
 - 本轮可确认：Bridge 显式装配已落地，`Orchestrator` 可注入 Bridge，主链可消费注入 Bridge 的 `InvestigationReport` 并继续推进到审批。
+- 本轮可确认：评测汇总入口框架已就绪，正式汇总文件可通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 接入同一套 Schema 守护测试。
 - 本轮仍不能确认：真实深信服 MCP 工具、XDR 日志查询真实接口、真实 LLM 调查闭环、真实高风险处置动作、MySQL 真实环境持久化，以及 FastGPT / 远程 Agent Bridge 实现。
 - 是否影响上下游或主链：真实告警输入已可用；真实调查工具和生产处置能力仍需后续接入。
 - 建议状态：已提交待验收。
@@ -232,3 +261,4 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 | 2026-08-31 | 当前工作区 | 仅续跑真实 XDR `/runs` 主链输入，保存同一次运行的脱敏摘要、状态线和错误列表 | 阶段通过 |
 | 2026-09-06 | 当前工作区 | 在主链三文档内补充 Bridge 与主链真实 Agent 接入装配设计 | 文档设计冻结 |
 | 2026-09-06 | 当前工作区 | 落地 Bridge 显式装配并补主链级注入回归；未新增 fixture 或新文档文件 | 阶段通过 |
+| 2026-09-06 | 当前工作区 | 补齐评测汇总正式入口框架，并记录默认 fixture 与显式路径入口复验结果 | 阶段通过 |
