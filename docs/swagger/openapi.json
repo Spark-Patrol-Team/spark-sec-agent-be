@@ -1109,6 +1109,26 @@
               }
             ]
           },
+          "evidence_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResponseEvidenceScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_allowed_risk_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolRiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "approval_required": {
             "anyOf": [
               {
@@ -1130,10 +1150,30 @@
               }
             ]
           },
+          "execution_effect_layer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationEvidenceLayer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verification_status": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VerificationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_effect_layer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationEvidenceLayer"
               },
               {
                 "type": "null"
@@ -1300,6 +1340,10 @@
           "platform_status": {
             "type": "string",
             "title": "Platform Status"
+          },
+          "effect_layer": {
+            "$ref": "#/components/schemas/VerificationEvidenceLayer",
+            "default": "platform_request"
           },
           "error": {
             "anyOf": [
@@ -1554,6 +1598,15 @@
         ],
         "title": "Priority"
       },
+      "ResponseEvidenceScope": {
+        "type": "string",
+        "enum": [
+          "in_scope",
+          "weak_signal",
+          "out_of_scope"
+        ],
+        "title": "ResponseEvidenceScope"
+      },
       "ResponsePlan": {
         "properties": {
           "action": {
@@ -1571,6 +1624,12 @@
           "risk_level": {
             "$ref": "#/components/schemas/ToolRiskLevel"
           },
+          "evidence_scope": {
+            "$ref": "#/components/schemas/ResponseEvidenceScope"
+          },
+          "max_allowed_risk_level": {
+            "$ref": "#/components/schemas/ToolRiskLevel"
+          },
           "approval_required": {
             "type": "boolean",
             "title": "Approval Required"
@@ -1578,6 +1637,13 @@
           "rollback_available": {
             "type": "boolean",
             "title": "Rollback Available"
+          },
+          "decision_basis": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Decision Basis"
           }
         },
         "type": "object",
@@ -1586,6 +1652,8 @@
           "target",
           "reason",
           "risk_level",
+          "evidence_scope",
+          "max_allowed_risk_level",
           "approval_required",
           "rollback_available"
         ],
@@ -2086,6 +2154,16 @@
           "priority": {
             "$ref": "#/components/schemas/Priority"
           },
+          "response_evidence_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResponseEvidenceScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "supporting_evidence_refs": {
             "items": {
               "type": "string"
@@ -2169,6 +2247,16 @@
         ],
         "title": "ValidationError"
       },
+      "VerificationEvidenceLayer": {
+        "type": "string",
+        "enum": [
+          "stateful_mock",
+          "platform_request",
+          "platform_record",
+          "device_effect"
+        ],
+        "title": "VerificationEvidenceLayer"
+      },
       "VerificationResult": {
         "properties": {
           "status": {
@@ -2177,6 +2265,9 @@
           "method": {
             "type": "string",
             "title": "Method"
+          },
+          "verified_effect_layer": {
+            "$ref": "#/components/schemas/VerificationEvidenceLayer"
           },
           "evidence_refs": {
             "items": {
@@ -2204,6 +2295,7 @@
         "required": [
           "status",
           "method",
+          "verified_effect_layer",
           "final_status"
         ],
         "title": "VerificationResult"
