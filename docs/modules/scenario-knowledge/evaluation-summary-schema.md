@@ -10,6 +10,7 @@
 
 该 Schema 用于记录每个评测案例的知识使用情况、适用性、命中知识、工具状态、证据引用、禁止结论、人工接管、执行步数、耗时和人工 Review 栏。
 正式评测汇总尚未生成前，测试入口默认使用最小 fixture；正式汇总形成后，通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向正式结果文件即可复用同一套结构守护测试。
+前端 OFF/GUARDED 对比页面可先对接 `GET /eval/comparisons`；当前接口返回 `data_source=mock_fixture` 的后端 Mock 对比数据，正式 fixture 稳定后再替换数据源。
 
 ## 2. 顶层结构
 
@@ -127,3 +128,32 @@ case_id, knowledge_mode, stage
 ```
 
 其中 `stage` 是校验阶段，例如 `result_contract`、`tool_status`、`evidence_refs`、`human_review` 或 `failure_locator`。
+
+## 8. 前端对比接口
+
+接口路径：
+
+```text
+GET /eval/comparisons
+```
+
+当前响应顶层字段：
+
+```text
+schema_version, comparison_id, generated_at, data_source, suite, summary, results
+```
+
+逐案例字段：
+
+```text
+case_id, knowledge_mode, applicability, off, guarded, comparison, human_review
+```
+
+其中 `off` 和 `guarded` 均包含：
+
+```text
+verdict, confidence, matched_knowledge_ids, tool_status, evidence_refs,
+forbidden_conclusion_hit, manual_takeover, step_count, duration_ms
+```
+
+当前接口只用于前端先行联调，不代表正式 OFF/GUARDED 评测汇总已经生成。

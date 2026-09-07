@@ -16,10 +16,15 @@ class OpenApiGenerationTest(unittest.TestCase):
 
             self.assertEqual(schema["openapi"], written_schema["openapi"])
             self.assertIn("/runs", written_schema["paths"])
+            self.assertIn("/eval/comparisons", written_schema["paths"])
             self.assertIn("/events/{event_id}/approval", written_schema["paths"])
             self.assertEqual(
                 written_schema["paths"]["/runs"]["post"]["operationId"],
                 "start_event_run",
+            )
+            self.assertEqual(
+                written_schema["paths"]["/eval/comparisons"]["get"]["operationId"],
+                "get_eval_comparisons",
             )
 
 

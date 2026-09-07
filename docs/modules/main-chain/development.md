@@ -12,8 +12,8 @@
 | 关联任务/需求 | 后端主链技术集成、统一工具调度、状态流转、HTTP 接口联调 |
 | 关联正式交付章节 | docs/deliverables/system-development-and-operation-guide.md；第9章模块说明与接入位置 |
 | 对应PR或Commit | 当前工作区；建议提交名 `fix: align XDR OpenAPI auth and alert ingestion` |
-| 适用代码版本 | 当前工作区，包含真实 XDR 告警接入、主链文档补充和 Bridge 显式装配 |
-| 最后更新时间 | 2026-09-06 |
+| 适用代码版本 | 当前工作区，包含真实 XDR 告警接入、主链文档补充、Bridge 显式装配和评测对比接口 |
+| 最后更新时间 | 2026-09-07 |
 
 ## 1. 当前实现摘要
 
@@ -23,7 +23,7 @@
 - `Orchestrator.approve()` 已支持审批通过后执行处置与验证，审批拒绝进入人工处理。
 - `StateMachine` 已约束主链允许的状态迁移，非法迁移会抛出 `InvalidStatusTransition`。
 - `EventContext` 已作为统一上下文返回给 API、脚本和仓储。
-- HTTP 接口已支持 `POST /runs`、`GET /events`、`GET /events/{event_id}`、`GET /events/{event_id}/timeline`、`POST /events/{event_id}/approval`。
+- HTTP 接口已支持 `POST /runs`、`GET /events`、`GET /events/{event_id}`、`GET /events/{event_id}/timeline`、`POST /events/{event_id}/approval`、`GET /eval/comparisons`。
 - `build_container()` 已根据配置组装平台适配器、仓储、Bridge 和主链编排器。
 - fixed_sample 和 jsonl_sample 均可接入主链，并经过现有测试覆盖。
 - `xdr_openapi` 可通过 `POST /api/xdr/v1/alerts/list` 从真实 XDR 拉取告警列表，并经 `POST /runs` 进入主链。
@@ -31,6 +31,7 @@
 - `xdr_event_id` 当前按返回结果里的唯一标识本地匹配，不依赖上游接口支持 `uuId` 过滤。
 - 统一工具调度已接入调查、处置和验证链路，工具结果统一落在 `ToolResult` 契约中。
 - Bridge 与主链真实接入的显式装配已落地：`build_container()` 创建 Bridge，`Orchestrator` 接收 `investigation_bridge`，`DeepInvestigationAgent` 通过构造函数消费 Bridge。
+- `GET /eval/comparisons` 已提供 OFF/GUARDED 评测对比 Mock 数据，供前端评测对比页面先行接入；当前返回 `data_source=mock_fixture`，不代表正式评测结果已生成。
 
 ### 1.2 未实现或未复验
 
@@ -42,12 +43,14 @@
 - 主链尚未实现异步任务队列、超时调度、后台重试和断点续跑。
 - MySQL 持久化已有代码路径，但需要真实数据库环境复验。
 - deep agent 真实 LLM 闭环依赖 `LLM_API_KEY` 和外部工具配置，未配置时会走 fallback 或跳过真实集成测试。
+- OFF/GUARDED 正式评测汇总结果尚未落库或文件化接入 HTTP；当前 `/eval/comparisons` 只返回后端固定 Mock 对比数据。
 
 ## 2. 代码位置
 
 | 路径 | 主要对象/入口 | 作用 |
 |---|---|---|
 | `src/sec_agent/api/routes/events.py` | `start_run()`、`submit_approval()` | 主链 HTTP 启动、查询和审批入口 |
+| `src/sec_agent/api/routes/evals.py` | `get_eval_comparisons()` | OFF/GUARDED 评测对比接口，当前返回 Mock fixture 数据 |
 | `src/sec_agent/api/app.py` | `create_app()` | 创建 FastAPI 应用，挂载路由、中间件和运行容器 |
 | `src/sec_agent/api/deps.py` | `get_orchestrator()` | 从应用状态中获取主链编排器 |
 | `src/sec_agent/bootstrap/container.py` | `build_container()`、`AppContainer` | 根据配置装配平台、仓储、Bridge 和 `Orchestrator` |
@@ -136,6 +139,7 @@ PLATFORM_BACKEND=xdr_openapi INVESTIGATION_BACKEND=tool_mock uv run uvicorn sec_
 - HTTP 查询事件详情：`GET /events/{event_id}`
 - HTTP 查询状态时间线：`GET /events/{event_id}/timeline`
 - HTTP 提交审批：`POST /events/{event_id}/approval`
+- HTTP 查询 OFF/GUARDED 评测对比：`GET /eval/comparisons`
 - 代码入口：`build_container().orchestrator.start(StartRunRequest(...))`
 - 本地脚本入口：`python -m sec_agent.scripts.run_flow`
 
@@ -203,6 +207,24 @@ errors=[]
 timeline=RECEIVED,CORRELATING,TRIAGED,INVESTIGATING,DECISION_READY,APPROVAL_REQUIRED
 ```
 
+查询 OFF/GUARDED 评测对比：
+
+```text
+curl -s 'http://127.0.0.1:8000/eval/comparisons'
+```
+
+响应关键字段：
+
+```text
+schema_version=2026-09-07.eval-comparison.v1
+comparison_id=cmp-20260907-mock
+data_source=mock_fixture
+suite.baseline=OFF
+suite.candidate=GUARDED
+summary.total_cases=3
+results[].off / results[].guarded / results[].comparison / results[].human_review
+```
+
 ### 5.3 上下游接入注意事项
 
 - 新增业务阶段必须同步修改 `BusinessStatus`、`ALLOWED_TRANSITIONS`、`Orchestrator`、API 响应模型和测试。
@@ -253,6 +275,7 @@ build_container()
 | JSONL 接入 | 本地实现 | `JsonlSampleAdapter` 读取样例目录 | 真实平台实时拉取 |
 | 深度调查 | 本地工具链 / deep agent 桥接 / fallback | `INVESTIGATION_BACKEND` 控制 | 未配置 LLM 时的真实 Agent 闭环 |
 | Bridge 装配 | 显式装配已落地，当前实现仍沿用 `DeepAgentBridge` | 后续真实 Agent 接入时使用 | FastGPT / 远程 Agent 已完成接入 |
+| 评测对比接口 | `GET /eval/comparisons` 返回 OFF/GUARDED Mock 对比数据 | 前端评测对比页面先行接入 | 正式 A/B 评测结果已生成或已入库 |
 | XDR 日志查询 | fixed_sample/jsonl_sample 下为内置样例；xdr_openapi 下可走 OpenAPI handler 或注入真实 handler；失败不阻断已命中告警审批 | `xdr_log_query` | 已完成日志接口实机验收 |
 | 处置执行 | Mock / stateful mock | 高风险审批通过后 | 真实封禁、隔离或资产处置 |
 | 处置验证 | Mock / stateful mock | 执行后验证阶段 | 真实平台验证闭环 |
@@ -269,6 +292,7 @@ build_container()
 | P1 | XDR 告警更多样本覆盖 | 否，不影响当前已知告警 | 补齐不同严重级别、不同攻击类型和空字段样本 |
 | P1 | MySQL 模式真实环境复验 | 待确认 | 准备数据库和迁移策略，完成接口回归 |
 | P1 | 主链异步化、超时和重试策略 | 否，不影响 MVP | 引入任务队列或后台任务模型 |
+| P1 | 评测对比接口接入正式 fixture 或存储 | 否，不影响主链运行 | 正式 OFF/GUARDED 结果稳定后替换当前 Mock 数据源，并补契约回归 |
 | P2 | `docs/modules/orchestration` 与 `docs/modules/main-chain` 边界整理 | 否 | 后续统一命名或建立索引 |
 
 ## 9. 运行观测、版本兼容与迁移
@@ -286,3 +310,4 @@ build_container()
 | 2026-08-30 | 当前工作区更新 | 补充真实 XDR 告警输入配置、调用示例、实机验收结果和能力边界 | `tests/test_xdr_openapi_platform.py` |
 | 2026-09-06 | 当前工作区更新 | 在主链开发说明内补充 Bridge 装配设计、配置矩阵和后续落地步骤 | 文档设计，无新增测试 |
 | 2026-09-06 | 当前工作区更新 | 落地 Bridge 显式装配：容器创建 Bridge，主链编排器注入 Bridge，调查服务通过协议消费 Bridge | `uv run pytest tests/test_deep_agent_bridge.py tests/test_state_flow.py tests/test_api_http.py -q` |
+| 2026-09-07 | 当前工作区更新 | 新增 `GET /eval/comparisons`，返回 OFF/GUARDED 评测对比 Mock 数据并进入 OpenAPI | `uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q` |

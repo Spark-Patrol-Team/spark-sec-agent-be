@@ -358,6 +358,27 @@
         }
       }
     },
+    "/eval/comparisons": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "查询 OFF/GUARDED 评测对比数据",
+        "operationId": "get_eval_comparisons",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalComparisonResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metrics": {
       "get": {
         "tags": [
@@ -464,6 +485,375 @@
           "message"
         ],
         "title": "ErrorRecord"
+      },
+      "EvalCaseComparison": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "title": "Case Id"
+          },
+          "knowledge_mode": {
+            "type": "string",
+            "enum": [
+              "knowledge_required",
+              "knowledge_optional",
+              "knowledge_forbidden",
+              "knowledge_not_applicable"
+            ],
+            "title": "Knowledge Mode"
+          },
+          "applicability": {
+            "type": "string",
+            "enum": [
+              "applicable",
+              "partially_applicable",
+              "not_applicable",
+              "unknown"
+            ],
+            "title": "Applicability"
+          },
+          "off": {
+            "$ref": "#/components/schemas/EvalRunResult"
+          },
+          "guarded": {
+            "$ref": "#/components/schemas/EvalRunResult"
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/EvalCaseDelta"
+          },
+          "human_review": {
+            "$ref": "#/components/schemas/EvalHumanReview"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "knowledge_mode",
+          "applicability",
+          "off",
+          "guarded",
+          "comparison",
+          "human_review"
+        ],
+        "title": "EvalCaseComparison"
+      },
+      "EvalCaseDelta": {
+        "properties": {
+          "winner": {
+            "type": "string",
+            "enum": [
+              "OFF",
+              "GUARDED",
+              "TIE"
+            ],
+            "title": "Winner"
+          },
+          "confidence_delta": {
+            "type": "number",
+            "title": "Confidence Delta"
+          },
+          "step_delta": {
+            "type": "integer",
+            "title": "Step Delta"
+          },
+          "duration_delta_ms": {
+            "type": "integer",
+            "title": "Duration Delta Ms"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "winner",
+          "confidence_delta",
+          "step_delta",
+          "duration_delta_ms",
+          "reason"
+        ],
+        "title": "EvalCaseDelta"
+      },
+      "EvalComparisonResponse": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version"
+          },
+          "comparison_id": {
+            "type": "string",
+            "title": "Comparison Id"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "data_source": {
+            "type": "string",
+            "enum": [
+              "mock_fixture",
+              "formal_fixture"
+            ],
+            "title": "Data Source"
+          },
+          "suite": {
+            "$ref": "#/components/schemas/EvalComparisonSuite"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/EvalComparisonSummary"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/EvalCaseComparison"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "comparison_id",
+          "generated_at",
+          "data_source",
+          "suite",
+          "summary",
+          "results"
+        ],
+        "title": "EvalComparisonResponse"
+      },
+      "EvalComparisonSuite": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "case_count": {
+            "type": "integer",
+            "title": "Case Count"
+          },
+          "baseline": {
+            "type": "string",
+            "const": "OFF",
+            "title": "Baseline"
+          },
+          "candidate": {
+            "type": "string",
+            "const": "GUARDED",
+            "title": "Candidate"
+          },
+          "knowledge_base": {
+            "type": "string",
+            "title": "Knowledge Base"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "case_count",
+          "baseline",
+          "candidate",
+          "knowledge_base"
+        ],
+        "title": "EvalComparisonSuite"
+      },
+      "EvalComparisonSummary": {
+        "properties": {
+          "total_cases": {
+            "type": "integer",
+            "title": "Total Cases"
+          },
+          "guarded_wins": {
+            "type": "integer",
+            "title": "Guarded Wins"
+          },
+          "off_wins": {
+            "type": "integer",
+            "title": "Off Wins"
+          },
+          "ties": {
+            "type": "integer",
+            "title": "Ties"
+          },
+          "regressions": {
+            "type": "integer",
+            "title": "Regressions"
+          },
+          "manual_takeovers": {
+            "type": "integer",
+            "title": "Manual Takeovers"
+          },
+          "forbidden_conclusion_hits": {
+            "type": "integer",
+            "title": "Forbidden Conclusion Hits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_cases",
+          "guarded_wins",
+          "off_wins",
+          "ties",
+          "regressions",
+          "manual_takeovers",
+          "forbidden_conclusion_hits"
+        ],
+        "title": "EvalComparisonSummary"
+      },
+      "EvalHumanReview": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "passed",
+              "failed",
+              "needs_follow_up"
+            ],
+            "title": "Status"
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "comments": {
+            "type": "string",
+            "title": "Comments",
+            "default": ""
+          },
+          "action_items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Action Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "action_items"
+        ],
+        "title": "EvalHumanReview"
+      },
+      "EvalRunResult": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "malicious",
+              "benign",
+              "uncertain"
+            ],
+            "title": "Verdict"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "matched_knowledge_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matched Knowledge Ids"
+          },
+          "tool_status": {
+            "$ref": "#/components/schemas/EvalToolStatus"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Refs"
+          },
+          "forbidden_conclusion_hit": {
+            "type": "boolean",
+            "title": "Forbidden Conclusion Hit"
+          },
+          "manual_takeover": {
+            "type": "boolean",
+            "title": "Manual Takeover"
+          },
+          "step_count": {
+            "type": "integer",
+            "title": "Step Count"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "title": "Duration Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict",
+          "confidence",
+          "matched_knowledge_ids",
+          "tool_status",
+          "evidence_refs",
+          "forbidden_conclusion_hit",
+          "manual_takeover",
+          "step_count",
+          "duration_ms"
+        ],
+        "title": "EvalRunResult"
+      },
+      "EvalToolStatus": {
+        "properties": {
+          "knowledge_query": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failed",
+              "partial",
+              "not_called",
+              "skipped"
+            ],
+            "title": "Knowledge Query"
+          },
+          "mcp_tools": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failed",
+              "partial",
+              "not_called",
+              "skipped"
+            ],
+            "title": "Mcp Tools"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "knowledge_query",
+          "mcp_tools"
+        ],
+        "title": "EvalToolStatus"
       },
       "EventContext": {
         "properties": {
@@ -2227,6 +2617,10 @@
     {
       "name": "events",
       "description": "安全事件主流程、查询和审批接口。"
+    },
+    {
+      "name": "evaluations",
+      "description": "评测结果和 OFF/GUARDED 对比接口。"
     },
     {
       "name": "metrics",

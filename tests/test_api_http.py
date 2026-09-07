@@ -206,6 +206,26 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(payload["status"], "FAILED")
         self.assertIn("不匹配", payload["errors"][0]["message"])
 
+    def test_eval_comparisons_returns_off_guarded_mock_payload(self) -> None:
+        response = self.client.get("/eval/comparisons")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["schema_version"], "2026-09-07.eval-comparison.v1")
+        self.assertEqual(payload["data_source"], "mock_fixture")
+        self.assertEqual(payload["suite"]["baseline"], "OFF")
+        self.assertEqual(payload["suite"]["candidate"], "GUARDED")
+        self.assertEqual(payload["summary"]["total_cases"], len(payload["results"]))
+        self.assertGreaterEqual(payload["summary"]["guarded_wins"], 1)
+
+        first = payload["results"][0]
+        self.assertEqual(first["case_id"], "case1")
+        self.assertIn("off", first)
+        self.assertIn("guarded", first)
+        self.assertIn("comparison", first)
+        self.assertEqual(first["comparison"]["winner"], "GUARDED")
+        self.assertIn("K-WEBSHELL-PRINCIPLE", first["guarded"]["matched_knowledge_ids"])
+
 
 if __name__ == "__main__":
     unittest.main()
