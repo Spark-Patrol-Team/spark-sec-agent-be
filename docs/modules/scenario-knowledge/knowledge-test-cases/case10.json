@@ -1,6 +1,6 @@
 {
   "case_id": "TC-KNOWLEDGE-010",
-  "category": "域外事件",
+  "category": "非WebShell的负向案例",
   "description": "SSH暴力破解，无WebShell相关信号",
   "input_event": {
     "event_id": "EVT-BRUTE-2025-010",
