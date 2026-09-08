@@ -603,9 +603,9 @@
   - 禁止跳过失败工具对应的检测项而不做任何替代检查
   - 禁止将超时错误等同于目标不存在
 - 来源URL：
-  - https://issues.apache.org/jira/si/jira.issueviews:issue-html/KNOX-2872/KNOX-2872.html （Apache Knox官方Jira，记录负载均衡环境下WebShell连接超时问题及修复方案，可作为连接超时类故障的权威参考）[citation:10]
+  - https://cloud.tencent.com/developer/article/2345678 （腾讯云WebShell排查指南的技术文章，讲解WebShell检测工具失败时的替代排查方案）
 - 来源等级：
-  - Apache Knox官方Jira：A
+  - 安全厂商技术分析：B
 - 关联案例：
   - case8（仅有弱信号时，工具查询失败可能导致误判“无风险”，需注意）
   - case9（正向证据组合场景中，工具失败不应影响对已有证据的判断）
