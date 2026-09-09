@@ -405,13 +405,39 @@ class KnowledgeQueryTool(Tool):
                 summary=f"无效的知识门禁状态：{self._gate_decision}",
                 error="invalid_knowledge_gate_decision",
             )
-        card = match_knowledge_card(self._cards, keyword)
+        try:
+            card = match_knowledge_card(self._cards, keyword)
+        except TimeoutError:
+            return ToolResult(
+                status="failed",
+                summary="知识查询超时",
+                error="knowledge_timeout",
+                retryable=True,
+                data={
+                    "knowledge_returned": False,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            return ToolResult(
+                status="failed",
+                summary="知识查询发生内部错误",
+                error="knowledge_internal_error",
+                retryable=False,
+                data={
+                    "knowledge_returned": False,
+                    "error_type": type(exc).__name__,
+                },
+            )
 
         if card is None:
             return ToolResult(
                 status="failed",
                 summary=f"知识库无匹配条目：{keyword}",
                 error="knowledge_not_found",
+                retryable=False,
+                data={
+                    "knowledge_returned": False,
+                },
             )
 
         return ToolResult(
@@ -430,6 +456,8 @@ class KnowledgeQueryTool(Tool):
                     "levels": card.source_levels,
                 },
                 "related_cases": card.related_cases,
+                "knowledge_returned": True,
+                "gate_decision": self._gate_decision or "in_scope",
             },
         )
 
