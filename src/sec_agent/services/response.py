@@ -92,6 +92,90 @@ class ResponseBoundaryDecision:
     basis: tuple[str, ...] = ()
 
 
+class ResponseEvidenceScopeResolver:
+    """在调查完成后，用确定性规则冻结最终处置证据范围。"""
+
+    def resolve(
+        self,
+        report: InvestigationReport,
+        triage: TriageResult,
+        event: SecurityEvent | None = None,
+    ) -> ResponseEvidenceScope:
+        # 已有的保守结果不可被调查或知识增强升级；in_scope 仍需经过本次调查重算。
+        if triage.response_evidence_scope in {
+            ResponseEvidenceScope.OUT_OF_SCOPE,
+            ResponseEvidenceScope.WEAK_SIGNAL,
+        }:
+            return triage.response_evidence_scope
+
+        if triage.verdict != TruthVerdict.MALICIOUS or report.conclusion != TruthVerdict.MALICIOUS:
+            return ResponseEvidenceScope.OUT_OF_SCOPE
+
+        if self._has_out_of_scope_signal(report, triage, event):
+            return ResponseEvidenceScope.OUT_OF_SCOPE
+
+        if self._has_tool_failure(report) or triage.evidence_gaps or report.unresolved_questions:
+            return ResponseEvidenceScope.WEAK_SIGNAL
+
+        # 只有上游原始证据达到最小数量时，知识/LLM 产生的报告文本才有资格参与后续边界校验。
+        # 这样 knowledge-derived refs 不能单独把范围升级为 in_scope。
+        if len({ref for ref in triage.supporting_evidence_refs if ref}) < 2:
+            return ResponseEvidenceScope.WEAK_SIGNAL
+
+        if not self._has_webshell_signal(report, triage, event):
+            return ResponseEvidenceScope.WEAK_SIGNAL
+
+        return ResponseEvidenceScope.IN_SCOPE
+
+    @staticmethod
+    def _has_tool_failure(report: InvestigationReport) -> bool:
+        return any(ResponseEvidenceScopeResolver._step_failed(step) for step in report.steps)
+
+    @staticmethod
+    def _step_failed(step) -> bool:
+        if step.tool_request is not None and step.tool_result is None:
+            return True
+        return step.tool_result is not None and step.tool_result.status != ToolCallStatus.SUCCESS
+
+    @staticmethod
+    def _event_text(
+        report: InvestigationReport,
+        triage: TriageResult,
+        event: SecurityEvent | None,
+    ) -> str:
+        parts = [
+            triage.summary,
+            *triage.supporting_evidence_refs,
+            *triage.opposing_evidence_refs,
+            report.summary,
+            *report.key_evidence_refs,
+            *report.evidence_relations,
+            *report.unresolved_questions,
+            *report.recommended_actions,
+        ]
+        if event is not None:
+            parts.extend([event.summary, event.correlation_reason, *event.alert_refs])
+        return " ".join(str(part).lower() for part in parts if part)
+
+    def _has_webshell_signal(
+        self,
+        report: InvestigationReport,
+        triage: TriageResult,
+        event: SecurityEvent | None,
+    ) -> bool:
+        text = self._event_text(report, triage, event)
+        return any(marker in text for marker in WEBSHELL_SCOPE_MARKERS)
+
+    def _has_out_of_scope_signal(
+        self,
+        report: InvestigationReport,
+        triage: TriageResult,
+        event: SecurityEvent | None,
+    ) -> bool:
+        text = self._event_text(report, triage, event)
+        return any(marker in text for marker in OUT_OF_SCOPE_MARKERS)
+
+
 class ResponseDecisionService:
     def build_plan(
         self,
@@ -147,6 +231,15 @@ class ResponseDecisionService:
             step.tool_result is not None and step.tool_result.status != ToolCallStatus.SUCCESS
             for step in report.steps
         )
+
+        if triage.response_evidence_scope is None:
+            return ResponseBoundaryDecision(
+                evidence_scope=ResponseEvidenceScope.WEAK_SIGNAL,
+                max_allowed_risk_level=ToolRiskLevel.LOW,
+                requires_continued_investigation=True,
+                reason="缺少已冻结的 response_evidence_scope，按 fail-closed 处理",
+                basis=basis,
+            )
 
         if triage.response_evidence_scope == ResponseEvidenceScope.OUT_OF_SCOPE:
             return ResponseBoundaryDecision(

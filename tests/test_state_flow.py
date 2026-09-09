@@ -7,6 +7,7 @@ from sec_agent.domain.models import (
     ToolCallStatus,
     ToolRiskLevel,
     VerificationStatus,
+    ResponseEvidenceScope,
 )
 from sec_agent.domain.state_machine import InvalidStatusTransition, StateMachine
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
@@ -39,8 +40,10 @@ class StateFlowTest(unittest.TestCase):
             ],
         )
         self.assertIsNotNone(ctx.triage)
+        self.assertEqual(ctx.triage.response_evidence_scope, ResponseEvidenceScope.IN_SCOPE)
         self.assertIsNotNone(ctx.investigation)
         self.assertIsNotNone(ctx.response)
+        self.assertEqual(ctx.response.plan.evidence_scope, ctx.triage.response_evidence_scope)
         self.assertTrue(ctx.response.plan.approval_required)
         self.assertEqual(ctx.response.plan.risk_level, ToolRiskLevel.HIGH)
 

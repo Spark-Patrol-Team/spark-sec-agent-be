@@ -5,6 +5,7 @@ from sec_agent.domain.models import (
     ExecutionMode,
     ExecutionResult,
     InvestigationReport,
+    InvestigationStep,
     Priority,
     ResponseEvidenceScope,
     ResponsePlan,
@@ -24,11 +25,112 @@ from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.services.response import (
     ResponseDecisionService,
     ResponseExecutionService,
+    ResponseEvidenceScopeResolver,
     ResponseVerificationService,
 )
 
 
 class ResponseBoundaryTest(unittest.TestCase):
+    def test_scope_resolver_strong_evidence_is_in_scope(self) -> None:
+        scope = ResponseEvidenceScopeResolver().resolve(
+            self._confirmed_webshell_report(),
+            self._triage(response_evidence_scope=None),
+            self._event(),
+        )
+        self.assertEqual(scope, ResponseEvidenceScope.IN_SCOPE)
+
+    def test_scope_resolver_knowledge_refs_cannot_replace_weak_original_evidence(self) -> None:
+        triage = self._triage(
+            supporting_evidence_refs=["original-alert-001"],
+            response_evidence_scope=None,
+        )
+        report = self._confirmed_webshell_report(
+            key_evidence_refs=["MITRE ATT&CK T1505.003", "CISA Eliminate Web Shells"],
+        )
+        scope = ResponseEvidenceScopeResolver().resolve(report, triage, self._event())
+        self.assertEqual(scope, ResponseEvidenceScope.WEAK_SIGNAL)
+
+    def test_scope_resolver_domain_external_event_is_out_of_scope(self) -> None:
+        scope = ResponseEvidenceScopeResolver().resolve(
+            self._confirmed_webshell_report(),
+            self._triage(response_evidence_scope=None),
+            self._event(
+                summary="已将 1 条 sql_injection 告警压缩为 1 个安全事件",
+                correlation_reason="同一事件类型 sql_injection",
+            ),
+        )
+        self.assertEqual(scope, ResponseEvidenceScope.OUT_OF_SCOPE)
+
+    def test_scope_resolver_domain_external_report_is_out_of_scope(self) -> None:
+        report = self._confirmed_webshell_report(
+            summary="确认 sql_injection 活动，转交数据库安全处置",
+        )
+        scope = ResponseEvidenceScopeResolver().resolve(
+            report,
+            self._triage(response_evidence_scope=None),
+            self._event(),
+        )
+        self.assertEqual(scope, ResponseEvidenceScope.OUT_OF_SCOPE)
+
+    def test_scope_resolver_tool_failure_is_weak_signal(self) -> None:
+        failed_step = InvestigationStep(
+            step_no=1,
+            goal="查询证据",
+            tool_result=ToolResult(
+                call_id="call-failed",
+                trace_id="trace-boundary",
+                event_id="evt-boundary",
+                tool_name="evidence_lookup",
+                action_name="query_related_evidence",
+                idempotency_key="failed-lookup",
+                status=ToolCallStatus.FAILED,
+                summary="工具失败",
+                started_at=utc_now(),
+                ended_at=utc_now(),
+                duration_ms=1,
+            ),
+        )
+        report = self._confirmed_webshell_report(steps=[failed_step])
+        scope = ResponseEvidenceScopeResolver().resolve(
+            report,
+            self._triage(response_evidence_scope=None),
+            self._event(),
+        )
+        self.assertEqual(scope, ResponseEvidenceScope.WEAK_SIGNAL)
+
+    def test_scope_resolver_missing_tool_result_is_weak_signal(self) -> None:
+        report = self._confirmed_webshell_report(
+            steps=[
+                InvestigationStep(
+                    step_no=1,
+                    goal="查询证据",
+                    tool_request=ToolRequest(
+                        trace_id="trace-boundary",
+                        event_id="evt-boundary",
+                        stage=BusinessStatus.INVESTIGATING,
+                        tool_name="evidence_lookup",
+                        action_name="query_related_evidence",
+                        params={},
+                        reason="测试缺失工具结果",
+                        idempotency_key="missing-result",
+                        risk_level=ToolRiskLevel.LOW,
+                    ),
+                )
+            ]
+        )
+        scope = ResponseEvidenceScopeResolver().resolve(
+            report,
+            self._triage(response_evidence_scope=None),
+            self._event(),
+        )
+        self.assertEqual(scope, ResponseEvidenceScope.WEAK_SIGNAL)
+
+    def test_decision_fails_closed_when_scope_is_missing(self) -> None:
+        plan = ResponseDecisionService().build_plan(
+            self._confirmed_webshell_report(), self._triage(response_evidence_scope=None), self._event()
+        )
+        self.assertIsNone(plan)
+
     def test_confirmed_webshell_can_only_reach_approval_gate_for_high_risk_plan(self) -> None:
         plan = ResponseDecisionService().build_plan(
             self._confirmed_webshell_report(),
@@ -224,7 +326,7 @@ class ResponseBoundaryTest(unittest.TestCase):
         risk_score: int = 85,
         supporting_evidence_refs: list[str] | None = None,
         evidence_gaps: list[str] | None = None,
-        response_evidence_scope: ResponseEvidenceScope | None = None,
+        response_evidence_scope: ResponseEvidenceScope | None = ResponseEvidenceScope.IN_SCOPE,
         summary: str = "WebShell 高风险，需要深度调查",
     ) -> TriageResult:
         return TriageResult(

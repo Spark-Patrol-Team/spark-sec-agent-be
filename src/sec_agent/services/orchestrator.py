@@ -21,6 +21,7 @@ from sec_agent.services.investigation import DeepInvestigationAgent, Investigati
 from sec_agent.services.response import (
     ResponseDecisionService,
     ResponseExecutionService,
+    ResponseEvidenceScopeResolver,
     ResponseVerificationService,
 )
 from sec_agent.services.triage import RiskTriageService
@@ -47,6 +48,7 @@ class Orchestrator:
             bridge=investigation_bridge,
         )
         self._decision = ResponseDecisionService()
+        self._scope_resolver = ResponseEvidenceScopeResolver()
         self._execution = ResponseExecutionService(platform)
         self._verification = ResponseVerificationService(platform)
 
@@ -115,6 +117,11 @@ class Orchestrator:
 
             ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
             ctx.investigation = self._investigation.investigate(ctx.trace_id, event, ctx.triage, run_id=ctx.run_id)
+            ctx.triage.response_evidence_scope = self._scope_resolver.resolve(
+                ctx.investigation,
+                ctx.triage,
+                ctx.event_summary,
+            )
             self._store.save(ctx)
             if ctx.investigation.needs_human:
                 return self._move(ctx, BusinessStatus.HUMAN_REQUIRED, "调查证据不足，需要人工接管")
