@@ -355,11 +355,18 @@ class KnowledgeQueryTool(Tool):
         "required": ["keyword"],
     }
 
-    def __init__(self, cards: list[KnowledgeCard] | None = None):
+    def __init__(
+            self,
+            cards: list[KnowledgeCard] | None = None,
+            gate_decision: str | None = None,
+    ):
         if cards is not None:
             self._cards = cards
         else:
             self._cards = parse_knowledge_cards(_default_knowledge_text())
+
+        self._gate_decision = gate_decision
+
 
     def call(self, params: dict) -> ToolResult:
         keyword = str(params.get("keyword", "")).strip()
@@ -370,7 +377,34 @@ class KnowledgeQueryTool(Tool):
                 summary="知识查询关键词为空",
                 error="empty_knowledge_query",
             )
+        if self._gate_decision == "out_of_scope":
+            return ToolResult(
+                status="failed",
+                summary="当前事件不属于 WebShell 知识适用范围",
+                error="knowledge_scope_mismatch",
+                data={
+                    "gate_decision": "out_of_scope",
+                    "knowledge_returned": False,
+                },
+            )
 
+        if self._gate_decision == "weak_signal":
+            return ToolResult(
+                status="partial",
+                summary="当前仅为弱信号，知识内容受限，不得升级为确认性结论",
+                data={
+                    "gate_decision": "weak_signal",
+                    "knowledge_returned": False,
+                    "restriction": "confirmatory_knowledge_blocked",
+                },
+            )
+
+        if self._gate_decision not in {None, "in_scope"}:
+            return ToolResult(
+                status="failed",
+                summary=f"无效的知识门禁状态：{self._gate_decision}",
+                error="invalid_knowledge_gate_decision",
+            )
         card = match_knowledge_card(self._cards, keyword)
 
         if card is None:
@@ -400,7 +434,10 @@ class KnowledgeQueryTool(Tool):
         )
 
 
-def build_knowledge_tools(md_path: Path | None = None) -> list[Tool]:
+def build_knowledge_tools(
+    md_path: Path | None = None,
+    gate_decision: str | None = None,
+) -> list[Tool]:
     """构建结构化知识卡检索工具。"""
     text = (
         md_path.read_text(encoding="utf-8")
@@ -408,4 +445,10 @@ def build_knowledge_tools(md_path: Path | None = None) -> list[Tool]:
         else _default_knowledge_text()
     )
     cards = parse_knowledge_cards(text)
-    return [KnowledgeQueryTool(cards)]
+
+    return [
+        KnowledgeQueryTool(
+            cards,
+            gate_decision=gate_decision,
+        )
+    ]
