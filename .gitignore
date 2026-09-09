@@ -43,6 +43,6 @@ temp/
 # 深度调查运行产物（调查报告输出，不入库；-o 自动加时间戳，report_*.json 同规则）
 report*.json
 
-# 知识门禁手工跑批的临时目录（case 输入 + report 输出，不入库）
+# 知识案例本地临时产物（脱敏测试输入 + 运行报告，不入库）
 _knowledge_cases/
 

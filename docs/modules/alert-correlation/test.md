@@ -345,4 +345,5 @@ python -m pytest `
 |---|---|---|---|
 | 2026-09-04 Step1-2 | `origin/main@e154343` 切干净分支后 | 新增 2 个官方脱敏 fixture + 20 条 CSV 映射升级 + 契约 MD 升级 + PR#22 升级 2 fixture、4 条契约结构测试；新增 21 条 T0903-06 契约回归（8/2/5/2/4 五组）。 | 干净环境单独跑 21+4 = 25 条通过；但混入真实 LLM/MCP 配置时 3 条偶发失败（非 hermetic 问题）。 |
 | 2026-09-04 Step3（fix） | `1b43652 → 9c6f00d` | 修复 3 条非 hermetic：① 两条主链测试传 `investigation_backend="tool_mock"`（与既有 test_state_flow.py / test_xdr_openapi_platform.py 一致写法）② deep_agent_bridge 测试 `mock.patch.dict(os.environ, {"DEEP_AGENT_TOOL_MODE": ""})` 隔离。 | 干净环境全量 175 passed, 1 skipped；恶劣环境 3 条敏感测试 ≤3s 全部通过，**无回归**。 |
+| 2026-09-08 | `feat/case-quality-check-and-tests`（PR#43） | 新增 WebShell 门禁专项测试 `tests/test_gatekeeper_case1_10.py`，直接读取正式案例 `docs/modules/scenario-knowledge/knowledge-test-cases/case1-10`（case1-6 扁平、case7-10 包裹，做了兼容归一化）。覆盖：白名单字段、信号来源（event_type/alerts/evidence/triage/initial_verdict）、case1-10 输入质量与负向约束、三档判定（in_scope/weak_signal/out_of_scope）、三方交接断言。`case7-10` 由 PR#44 提供，文件未随分支提供时相应用例跳过。 | 本地实跑 `tests/test_gatekeeper_case1_10.py` **62 passed，16 skipped**（case7-10 未提供），与既有知识/契约测试无回归。 |
 

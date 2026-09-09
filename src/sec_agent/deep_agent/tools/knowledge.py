@@ -47,7 +47,171 @@ class KnowledgeEntry:
     content: str                 # 条目正文（markdown）
     evidence_refs: list[str] = field(default_factory=list)   # 证据引用（可填入调查报告）
 
+@dataclass
+class KnowledgeCard:
+    """按统一 Schema 解析后的结构化知识卡。"""
 
+    knowledge_id: str
+    topic: str
+    applicability: list[str]
+    required_evidence: list[str]
+    investigation_steps: list[str]
+    false_positives: list[str]
+    prohibited_inference: list[str]
+    source_urls: list[str]
+    source_levels: list[str]
+    related_cases: list[str]
+
+_REQUIRED_CARD_FIELDS = (
+    "主题",
+    "适用条件",
+    "必要证据",
+    "调查步骤",
+    "常见误报",
+    "禁止推断",
+    "来源URL",
+    "来源等级",
+    "关联案例",
+)
+
+
+def parse_knowledge_card(card_text: str) -> KnowledgeCard:
+    """解析单张统一 Schema 的知识卡。"""
+    id_match = re.search(r"^## 知识ID：(WSK-\d+)\s*$", card_text, re.M)
+    if not id_match:
+        raise ValueError("knowledge card missing knowledge_id")
+
+    knowledge_id = id_match.group(1)
+
+    sections: dict[str, list[str]] = {}
+    current_field: str | None = None
+
+    for raw_line in card_text.splitlines():
+        line = raw_line.strip()
+
+        field_match = re.match(r"^- ([^：]+)：\s*(.*)$", line)
+        if field_match:
+            field_name = field_match.group(1).strip()
+            inline_value = field_match.group(2).strip()
+
+            if field_name in _REQUIRED_CARD_FIELDS:
+                current_field = field_name
+                sections[current_field] = []
+                if inline_value:
+                    sections[current_field].append(inline_value)
+                continue
+
+        if current_field and line:
+            item = re.sub(r"^[-\d.\s]+", "", line).strip()
+            if item:
+                sections[current_field].append(item)
+
+    missing = [
+        field_name
+        for field_name in _REQUIRED_CARD_FIELDS
+        if not sections.get(field_name)
+    ]
+    if missing:
+        raise ValueError(
+            f"{knowledge_id} missing required fields: {', '.join(missing)}"
+        )
+
+    return KnowledgeCard(
+        knowledge_id=knowledge_id,
+        topic=sections["主题"][0],
+        applicability=sections["适用条件"],
+        required_evidence=sections["必要证据"],
+        investigation_steps=sections["调查步骤"],
+        false_positives=sections["常见误报"],
+        prohibited_inference=sections["禁止推断"],
+        source_urls=sections["来源URL"],
+        source_levels=sections["来源等级"],
+        related_cases=sections["关联案例"],
+    )
+
+def parse_knowledge_cards(markdown_text: str) -> list[KnowledgeCard]:
+    """解析 Markdown 中的全部知识卡，并校验知识 ID 唯一性。"""
+    matches = list(
+        re.finditer(
+            r"^## 知识ID：(WSK-\d+)\s*$",
+            markdown_text,
+            re.M,
+        )
+    )
+
+    if not matches:
+        raise ValueError("no knowledge cards found")
+
+    cards: list[KnowledgeCard] = []
+    seen_ids: set[str] = set()
+
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = (
+            matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(markdown_text)
+        )
+
+        card = parse_knowledge_card(markdown_text[start:end])
+
+        if card.knowledge_id in seen_ids:
+            raise ValueError(
+                f"duplicate knowledge_id: {card.knowledge_id}"
+            )
+
+        seen_ids.add(card.knowledge_id)
+        cards.append(card)
+
+    return cards
+
+_KNOWLEDGE_QUERY_ALIASES = {
+    "WebShell攻击原理": "WSK-001",
+    "攻击原理": "WSK-001",
+    "WebShell攻击特征": "WSK-001",
+    "证据检查清单": "WSK-010",
+    "WebShell证据检查清单": "WSK-010",
+    "WebShell处置建议": "WSK-015",
+    "处置建议": "WSK-015",
+    "处置流程": "WSK-015",
+}
+def match_knowledge_card(
+    cards: list[KnowledgeCard],
+    query: str,
+) -> KnowledgeCard | None:
+    """按知识ID或主题确定性匹配知识卡；无命中时返回 None。"""
+    normalized = (query or "").strip()
+    if not normalized:
+        return None
+    alias_id = _KNOWLEDGE_QUERY_ALIASES.get(normalized)
+    if alias_id:
+        for card in cards:
+            if card.knowledge_id == alias_id:
+                return card
+    # 1. 知识ID精确匹配，优先级最高
+    for card in cards:
+        if normalized.upper() == card.knowledge_id.upper():
+            return card
+
+    # 2. 主题精确匹配
+    for card in cards:
+        if normalized == card.topic:
+            return card
+
+    # 3. 查询词与主题互为子串
+    candidates: list[tuple[int, KnowledgeCard]] = []
+
+    for card in cards:
+        if normalized in card.topic:
+            candidates.append((len(normalized), card))
+        elif card.topic in normalized:
+            candidates.append((len(card.topic), card))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
 # 条目规格：标题锚点 + 关键词 + 证据引用（从知识包各章节的引用来源提炼）
 _ENTRY_SPECS: list[dict[str, Any]] = [
     {
@@ -170,36 +334,6 @@ def match_keyword(entries: list[KnowledgeEntry], keyword: str) -> KnowledgeEntry
     return best_entry if best_score > 0 else None
 
 
-# --------------------------------------------------------------------------- #
-# 三档折叠（杨嘉琪冻结知识工具上下文接口）
-# --------------------------------------------------------------------------- #
-# 门禁 6 档信号强度折叠为三档 scope，供 knowledge_query 决定是否放行 WebShell 知识：
-#   OUT       = 域外，拒绝返回知识内容，稳定错误码 knowledge_scope_mismatch；
-#   WEAK      = 弱信号，返回知识但标注「仅供参考、不构成攻击确认」；
-#   CONFIRMED = 强确认，正常返回知识内容。
-_SCOPE_OUT = "OUT"
-_SCOPE_WEAK = "WEAK"
-_SCOPE_CONFIRMED = "CONFIRMED"
-
-_SCOPE_WEAK_STRENGTHS = {"IN_SCOPE_WEAK", "MIXED", "BENIGN_LIKE", "INDETERMINATE"}
-
-
-def fold_scope(overall_strength: str) -> str:
-    """把门禁 6 档 overall_strength 折叠为三档 scope。
-
-    空值/未知值表示「未注入门禁上下文」，按 CONFIRMED 放行（向后兼容：
-    知识工具单测直接按 keyword 检索，不经 agent 门禁注入）。
-    """
-    strength = (overall_strength or "").strip()
-    if strength == "OUT_OF_SCOPE":
-        return _SCOPE_OUT
-    if strength == "IN_SCOPE_CONFIRMED":
-        return _SCOPE_CONFIRMED
-    if strength in _SCOPE_WEAK_STRENGTHS:
-        return _SCOPE_WEAK
-    return _SCOPE_CONFIRMED
-
-
 class KnowledgeQueryTool(Tool):
     """`knowledge.query` 检索工具：按关键词返回知识包条目 + evidence_refs。"""
 
@@ -221,37 +355,128 @@ class KnowledgeQueryTool(Tool):
         "required": ["keyword"],
     }
 
-    def __init__(self, entries: list[KnowledgeEntry] | None = None):
-        self._entries = entries if entries is not None else load_knowledge_entries()
+    def __init__(
+            self,
+            cards: list[KnowledgeCard] | None = None,
+            gate_decision: str | None = None,
+    ):
+        if cards is not None:
+            self._cards = cards
+        else:
+            self._cards = parse_knowledge_cards(_default_knowledge_text())
+
+        self._gate_decision = gate_decision
+
 
     def call(self, params: dict) -> ToolResult:
-        keyword = str(params.get("keyword", ""))
-        # 受控 event_context（由 agent 代码注入真实事件门禁结果，非 LLM 生成）。
-        # 仅依据 overall_strength 折叠三档；OUT 场景拒绝返回 WebShell 知识。
-        event_context = params.get("event_context") or {}
-        scope = fold_scope(str(event_context.get("overall_strength", "")))
-        if scope == _SCOPE_OUT:
+        keyword = str(params.get("keyword", "")).strip()
+
+        if not keyword:
             return ToolResult(
                 status="failed",
+                summary="知识查询关键词为空",
+                error="empty_knowledge_query",
+            )
+        if self._gate_decision == "out_of_scope":
+            return ToolResult(
+                status="failed",
+                summary="当前事件不属于 WebShell 知识适用范围",
                 error="knowledge_scope_mismatch",
-                summary="事件不在 WebShell 范围内（out_of_scope），知识工具拒绝返回 WebShell 内容",
+                data={
+                    "gate_decision": "out_of_scope",
+                    "knowledge_returned": False,
+                },
             )
 
-        entry = match_keyword(self._entries, keyword)
-        if entry is None:
-            return ToolResult(status="failed", summary=f"知识库无匹配条目：{keyword}", error="知识库无匹配")
+        if self._gate_decision == "weak_signal":
+            return ToolResult(
+                status="partial",
+                summary="当前仅为弱信号，知识内容受限，不得升级为确认性结论",
+                data={
+                    "gate_decision": "weak_signal",
+                    "knowledge_returned": False,
+                    "restriction": "confirmatory_knowledge_blocked",
+                },
+            )
 
-        # 弱信号：返回知识但明确标注仅供参考、不构成攻击确认，避免误判为确认性结论。
-        prefix = ""
-        if scope == _SCOPE_WEAK:
-            prefix = "【弱信号提示】当前事件证据不足以确认 WebShell 攻击，以下知识仅供参考、不构成攻击确认。\n"
+        if self._gate_decision not in {None, "in_scope"}:
+            return ToolResult(
+                status="failed",
+                summary=f"无效的知识门禁状态：{self._gate_decision}",
+                error="invalid_knowledge_gate_decision",
+            )
+        try:
+            card = match_knowledge_card(self._cards, keyword)
+        except TimeoutError:
+            return ToolResult(
+                status="failed",
+                summary="知识查询超时",
+                error="knowledge_timeout",
+                retryable=True,
+                data={
+                    "knowledge_returned": False,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            return ToolResult(
+                status="failed",
+                summary="知识查询发生内部错误",
+                error="knowledge_internal_error",
+                retryable=False,
+                data={
+                    "knowledge_returned": False,
+                    "error_type": type(exc).__name__,
+                },
+            )
+
+        if card is None:
+            return ToolResult(
+                status="failed",
+                summary=f"知识库无匹配条目：{keyword}",
+                error="knowledge_not_found",
+                retryable=False,
+                data={
+                    "knowledge_returned": False,
+                },
+            )
+
         return ToolResult(
             status="success",
-            summary=prefix + f"[知识包·{entry.name}]\n{entry.content}\n证据引用 evidence_refs：{entry.evidence_refs}",
-            data={"entry": entry.name, "evidence_refs": entry.evidence_refs, "scope": scope},
+            summary=f"[知识卡·{card.knowledge_id}] {card.topic}",
+            data={
+                "knowledge_id": card.knowledge_id,
+                "topic": card.topic,
+                "applicability": card.applicability,
+                "required_evidence": card.required_evidence,
+                "investigation_steps": card.investigation_steps,
+                "false_positives": card.false_positives,
+                "prohibited_inference": card.prohibited_inference,
+                "source_citations": {
+                    "urls": card.source_urls,
+                    "levels": card.source_levels,
+                },
+                "related_cases": card.related_cases,
+                "knowledge_returned": True,
+                "gate_decision": self._gate_decision or "in_scope",
+            },
         )
 
 
-def build_knowledge_tools(md_path: Path | None = None) -> list[Tool]:
-    """构建知识包检索工具（默认读取包内权威版 webshell-knowledge.md）。"""
-    return [KnowledgeQueryTool(load_knowledge_entries(md_path))]
+def build_knowledge_tools(
+    md_path: Path | None = None,
+    gate_decision: str | None = None,
+) -> list[Tool]:
+    """构建结构化知识卡检索工具。"""
+    text = (
+        md_path.read_text(encoding="utf-8")
+        if md_path
+        else _default_knowledge_text()
+    )
+    cards = parse_knowledge_cards(text)
+
+    return [
+        KnowledgeQueryTool(
+            cards,
+            gate_decision=gate_decision,
+        )
+    ]

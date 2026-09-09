@@ -34,7 +34,7 @@ SYSTEM_PROMPT = """你是「深度调查安全分析 Agent」，运行在深信�
 # 可用工具
 工具清单见系统提供的 tools 定义，你可自主决定调用哪些工具、调用几次（可多轮组合）。
 WebShell 类事件典型调查路径：先查目标资产信息，再查相关告警与漏洞，必要时做攻击检测、调用安全GPT研判、查询漏洞情报。
-需要攻击原理 / 攻击特征 / 证据检查清单 / 处置建议等参考知识时，调用 knowledge_query（关键词示例：WebShell攻击原理、WebShell证据检查清单、WebShell处置建议）；其返回内容带 evidence_refs（证据引用），应填入报告的 evidence_source。
+需要攻击原理 / 攻击特征 / 证据检查清单 / 处置建议等参考知识时，调用 knowledge_query（关键词示例：WebShell攻击原理、WebShell证据检查清单、WebShell处置建议）；其返回内容带 source_citations（来源 URL，证据引用），应填入报告的 evidence_source。
 
 # 收尾原则（重要）
 工具调用次数有限，不要为「多查一点」耗尽步数。证据足以支撑结论时，立即停止调用工具，直接输出最终调查报告 JSON；始终为「直接输出报告」保留至少一次收尾（只输出 JSON、不调用工具的轮次）。工具返回为空或失败时，如实记录「数据不可得」，不要反复调用同一工具。
@@ -93,16 +93,15 @@ class DeepInvestigationAgent:
         if not self.llm.available:
             raise RuntimeError("LLM 未配置，无法运行深度调查。请设置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。")
 
+        # 门禁绑定：基于真实事件审计 gate_decision（三档），动态配置知识工具
+        self._bind_gate_decision(event)
+
         messages = self._build_messages(event)
         schemas = self.tools.schemas()
         tool_records: list[dict] = []
         max_calls = self.config.agent.max_tool_calls
         tool_call_count = 0
         wrapup_reminded = False
-
-        # 门禁绑定：基于真实事件审计出受控 event_context（每次 investigate 绑定一次，
-        # 与其它调用隔离）。LLM 无法通过工具参数覆盖，杜绝自报事件类型绕过门禁。
-        event_context = self._build_event_context(event)
 
         while tool_call_count < max_calls:
             # 接近上限：注入收尾提醒，避免 LLM 耗尽步数后降级
@@ -124,9 +123,6 @@ class DeepInvestigationAgent:
                 # LLM 使用的是 ASCII 内部别名，解析回真实工具名执行并留痕
                 real_name = self.tools.resolve(tc["function"]["name"])
                 args = self._safe_json_loads(tc["function"]["arguments"])
-                # knowledge_query 的 event_context 由代码注入真实事件上下文，覆盖 LLM 传入值
-                if real_name == "knowledge_query":
-                    args["event_context"] = event_context
                 result = self.tools.call(real_name, args)
                 record = {
                     "tool": real_name,
@@ -134,9 +130,9 @@ class DeepInvestigationAgent:
                     "output": result.to_str(),
                     "status": result.status,
                 }
-                # 知识包命中：结构化保留 evidence_refs，供降级报告提炼进证据来源
+                # 知识卡命中：结构化保留来源引用（source_citations.urls），供降级报告提炼进证据来源
                 if real_name == "knowledge_query" and isinstance(result.data, dict):
-                    refs = result.data.get("evidence_refs") or []
+                    refs = (result.data.get("source_citations") or {}).get("urls") or []
                     if refs:
                         record["evidence_refs"] = list(refs)
                 tool_records.append(record)
@@ -151,28 +147,32 @@ class DeepInvestigationAgent:
         return self._fallback_report(event, tool_records, reason="达到最大工具调用次数，证据仍不足")
 
     # ------------------------------------------------------------------
-    @staticmethod
-    def _build_event_context(event: SecurityEventInput) -> Optional[dict]:
-        """基于真实事件构建受控门禁上下文（代码注入，非 LLM 生成）。
+    def _bind_gate_decision(self, event: SecurityEventInput) -> None:
+        """基于真实事件审计 gate_decision（三档），动态配置 knowledge_query 门禁。
 
-        经 WebShellGatekeeper.audit 确定性审计后，把重点字段（overall_strength /
-        upgraded_score / investigation_checklist / false_positive_conditions /
-        evidence_gaps）作为 knowledge_query 的 event_context。gatekeeper 不可用
-        （如 deep_agent 独立打包、无 services 包）时返回 None，knowledge_query 退化为
-        无门禁放行（保持兼容，不阻塞调查）。
+        杨嘉琪 T0905-07 正式接口：`gate_result = WebShellGatekeeper().audit(event)`，
+        读取 `gate_result.gate_decision.value`（仅 in_scope / weak_signal / out_of_scope），
+        再 `build_knowledge_tools(gate_decision=...)`。不再读取旧 overall_strength，也
+        不做六档→三档二次映射。
+
+        仅 KNOWLEDGE_MODE=guarded 生效（off 不注册知识工具，无需绑定）。gatekeeper
+        不可用（deep_agent 独立打包、无 services 包）时跳过，knowledge_query 保持
+        无门禁放行（不阻塞调查）。
         """
+        if getattr(self.config.tools, "knowledge_mode", "guarded") != "guarded":
+            return
         try:
             from sec_agent.services.gatekeeper import WebShellGatekeeper
-            result = WebShellGatekeeper().audit(event)
+            gate_result = WebShellGatekeeper().audit(event)
+            gate_decision = gate_result.gate_decision.value
         except Exception:  # noqa: BLE001
-            return None
-        return {
-            "overall_strength": result.overall_strength.value,
-            "upgraded_score": result.upgraded_score,
-            "investigation_checklist": result.investigation_checklist,
-            "false_positive_conditions": result.false_positive_conditions,
-            "evidence_gaps": result.evidence_gaps,
-        }
+            return
+        try:
+            from sec_agent.deep_agent.tools.knowledge import build_knowledge_tools
+            for tool in build_knowledge_tools(gate_decision=gate_decision):
+                self.tools.register(tool)
+        except Exception:  # noqa: BLE001
+            return
 
     # ------------------------------------------------------------------
     def _build_messages(self, event: SecurityEventInput) -> list[dict]:
@@ -289,7 +289,7 @@ class DeepInvestigationAgent:
         """LLM 未给出有效报告或调查无法继续时的降级报告（证据不足 → 人工接管）。
 
         尽力提炼已采集的证据，避免降级报告完全为空：
-        - knowledge_query 命中的 evidence_refs → evidence_source（"知识包引用: ..."）；
+        - knowledge_query 命中的 source_citations 来源 URL → evidence_source（"知识包引用: ..."）；
         - 成功工具的调用名 → evidence_source（"来源工具: ..."）；
         - 成功工具的返回摘要 → key_evidence（截断 200 字符）。
         """

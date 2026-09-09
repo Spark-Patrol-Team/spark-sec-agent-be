@@ -68,15 +68,21 @@ class DeepAgentBridge:
             "knowledge_mode",
             "guarded",
         )
+
         if tool_mode in {"mock", "auto"}:
             for tool in modules["build_mock_tools"]():
                 registry.register(tool)
-        # 知识包检索工具（knowledge.query）：
-        # guarded = 注册；off = 不注册（A/B 对照用）。
+
         if knowledge_mode == "guarded":
             self._register_knowledge_tools(registry, modules)
+
         if tool_mode in {"mcp", "auto"}:
-            self._register_mcp_tools(registry, config, str(modules["package"]), strict=tool_mode == "mcp")
+            self._register_mcp_tools(
+                registry,
+                config,
+                str(modules["package"]),
+                strict=tool_mode == "mcp",
+            )
         return registry
 
     def _register_knowledge_tools(self, registry: Any, modules: dict[str, Any]) -> None:

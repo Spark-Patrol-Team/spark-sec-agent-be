@@ -20,3 +20,27 @@ def test_knowledge_mode_guarded_registers_tool(monkeypatch):
     registry = build_tools(config)
 
     assert "knowledge_query" in registry.names()
+
+
+def test_knowledge_mode_invalid_value_fails_explicitly(monkeypatch):
+    monkeypatch.setenv("KNOWLEDGE_MODE", "legacy")
+
+    try:
+        Config()
+    except ValueError as exc:
+        assert "Invalid KNOWLEDGE_MODE" in str(exc)
+        assert "off" in str(exc)
+        assert "guarded" in str(exc)
+    else:
+        raise AssertionError("invalid KNOWLEDGE_MODE must fail explicitly")
+
+
+def test_knowledge_mode_empty_value_fails_explicitly(monkeypatch):
+    monkeypatch.setenv("KNOWLEDGE_MODE", "")
+
+    try:
+        Config()
+    except ValueError as exc:
+        assert "Invalid KNOWLEDGE_MODE" in str(exc)
+    else:
+        raise AssertionError("empty KNOWLEDGE_MODE must fail explicitly")
