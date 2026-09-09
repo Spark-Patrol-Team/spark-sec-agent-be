@@ -48,5 +48,5 @@ uv run pytest tests/test_yanyushuo_expected_judgments.py tests/test_gatekeeper_c
 
 - ✅ 交付物 #1~#4 已完成；交付物 #3 已扩展为 15 张 WSK 卡边界 Review；
 - ✅ 交付物 #5（一致性 Review）已完成；已记录陈敏 `feat/case-quality-check-and-tests` 对 triage / case3 RSA / benign / alerts+evidence 统一抽取的修复，以及 case2（已收敛为 PassiveNeuron 部署尝试被阻断）、case10（门禁以 `input_quality_issues` 保守标注误标）的闭环；
-- ✅ 交付物 #6（≥6 案 A/B 研判影响结论）已完成登记（8/10 案），见 `一致性review.md` 第 5 节；**明确标注为「预演」**——数据为确定性 mock 门禁行为对照，无真实 LLM 风险分/置信度数值；含限制与缺陷点（`fold_scope` fail-open、case7 误报档语义）。
-- ⏳ **交付物 #6 正式 Review（待补充）**：等杨景凡 ≥6 案真实 `off/guarded` A/B 结果出来后，基于同一份正式结果补最后一遍，重点核验知识增强有没有让风险判断、置信度或结论在证据不足时变强。
+- ✅ 交付物 #6（≥6 案 A/B 研判影响结论）预演：见 `一致性review.md` 第 5.1-5.4 节（8/10 案，确定性 mock 行为对照，含限制与缺陷点）。
+- ✅ **交付物 #6 正式 Review**：已完成（2026-09-09，基于杨景凡 `T0905-07` / PR#45 真实 A/B），见第 5.5 节。知识增强未在证据不足/域外案制造证据或加强结论，仅在 `in_scope` 案正确使用知识；残留为逐案数值置信度 delta 未固化，可再由杨景凡补齐。
