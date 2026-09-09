@@ -1,0 +1,24 @@
+{
+  "event_id": "EVT-INC-2026-004",
+  "event_type": "WebShell",
+  "severity": "MEDIUM",
+  "timestamp": "2026-08-15T03:12:08Z",
+  "source_ip": "0.0.0.0",
+  "target_ip": "192.168.100.200",
+  "alerts": [
+    "仅检测到一条WebShell文件告警: shell.php",
+    "无攻击源IP信息",
+    "无目标资产详细信息",
+    "无进程异常日志",
+    "无网络连接记录"
+  ],
+  "evidence": [],
+  "initial_verdict": "证据不足",
+  "confidence": 0.35,
+  "triage": {
+    "verdict": "uncertain",
+    "confidence": 0.35
+  },
+  "trace_id": "trace-0903-004",
+  "run_id": "run-0903-004"
+}

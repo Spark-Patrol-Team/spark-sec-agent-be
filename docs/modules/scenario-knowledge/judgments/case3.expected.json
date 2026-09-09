@@ -1,17 +1,12 @@
 {
   "schema_version": "2026-09-06.yanyushuo-expected.v1",
   "case_id": "TC-KNOWLEDGE-003",
-  "case_file": "tests/fixtures/gatekeeper_cases/case3.json",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case3.json",
   "signal_strength": {
     "expected_gate_overall": "IN_SCOPE_WEAK",
     "allowed_gate_deviations": [
       "IN_SCOPE_WEAK"
-    ],
-    "expected_upgrade": {
-      "severity": "HIGH",
-      "score": 75,
-      "note": "陈敏已将「RSA解密函数」降为弱信号关键词，门禁现判 IN_SCOPE_WEAK（HIGH/75），与判据口径一致。来源边界仍限定 Beima 家族/归属不得据此确认。"
-    }
+    ]
   },
   "expected_scope": "weak_signal",
   "knowledge_mode": "knowledge_required",

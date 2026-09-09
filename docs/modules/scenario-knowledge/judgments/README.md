@@ -1,6 +1,6 @@
 # 闫昱硕——评测判据与证据边界交付物
 
-> 本目录存放 T0905-03「评测判据与证据边界」的正式交付物。判据基于陈敏 `PR#43` 的 case1-10 事件信号合同（`tests/fixtures/gatekeeper_cases/caseN.json`），与李雨妍的冻结评测汇总 Schema（`tests/fixtures/evaluation/knowledge_evaluation_summary.schema.json`）字段枚举对齐。
+> 本目录存放 T0905-03「评测判据与证据边界」的正式交付物。判据基于陈敏 `PR#43` 门禁 + 沈洪旭 `PR#44` 的 case1-10 事件信号合同（`docs/modules/scenario-knowledge/knowledge-test-cases/caseN.json`），与李雨妍的冻结评测汇总 Schema（`tests/fixtures/evaluation/knowledge_evaluation_summary.schema.json`）字段枚举对齐。
 
 ## 交付内容
 
@@ -31,7 +31,7 @@
 
 ```powershell
 $env:PYTHONPATH = "src"
-uv run pytest tests/test_yanyushuo_expected_judgments.py tests/test_gatekeeper_case1_10.py tests/test_signal_extraction.py -q
+uv run pytest tests/test_yanyushuo_expected_judgments.py tests/test_gatekeeper_case1_10.py -q
 ```
 
 `test_yanyushuo_expected_judgments.py` 会：
@@ -42,9 +42,11 @@ uv run pytest tests/test_yanyushuo_expected_judgments.py tests/test_gatekeeper_c
 4. 校验内部一致性（forbidden ∩ required = ∅；forbidden ∩ allowed 不为空时需说明；out_of_scope 案例禁命中知识）；
 5. 校验 `case_file` 指向的 fixture 存在，且其 `case_id` 与判据一致。
 
+> 案例目录存在两种结构：`case1-6` 为扁平结构（文件本身就是 `SecurityEventInput`），`case7-10` 为包裹结构（`{"case_id", "category", "description", "input_event"}`）；判据测试已兼容二者。
+
 ## 状态
 
 - ✅ 交付物 #1~#4 已完成；交付物 #3 已扩展为 15 张 WSK 卡边界 Review；
-- ✅ 交付物 #5（一致性 Review）已完成；已记录陈敏 `feat/case-quality-check-and-tests` 对 triage / case3 RSA / benign / alerts+evidence 统一抽取的修复，以及仍待处理的 case2/case10 输入口径问题；
+- ✅ 交付物 #5（一致性 Review）已完成；已记录陈敏 `feat/case-quality-check-and-tests` 对 triage / case3 RSA / benign / alerts+evidence 统一抽取的修复，以及 case2（已收敛为 PassiveNeuron 部署尝试被阻断）、case10（门禁以 `input_quality_issues` 保守标注误标）的闭环；
 - ✅ 交付物 #6（≥6 案 A/B 研判影响结论）已完成登记（8/10 案），见 `一致性review.md` 第 5 节；**明确标注为「预演」**——数据为确定性 mock 门禁行为对照，无真实 LLM 风险分/置信度数值；含限制与缺陷点（`fold_scope` fail-open、case7 误报档语义）。
 - ⏳ **交付物 #6 正式 Review（待补充）**：等杨景凡 ≥6 案真实 `off/guarded` A/B 结果出来后，基于同一份正式结果补最后一遍，重点核验知识增强有没有让风险判断、置信度或结论在证据不足时变强。

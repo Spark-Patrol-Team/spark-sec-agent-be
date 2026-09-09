@@ -1,17 +1,12 @@
 {
   "schema_version": "2026-09-06.yanyushuo-expected.v1",
   "case_id": "TC-KNOWLEDGE-006",
-  "case_file": "tests/fixtures/gatekeeper_cases/case6.json",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case6.json",
   "signal_strength": {
     "expected_gate_overall": "OUT_OF_SCOPE",
     "allowed_gate_deviations": [
       "OUT_OF_SCOPE"
-    ],
-    "expected_upgrade": {
-      "severity": "HIGH",
-      "score": 0,
-      "note": "域外事件不因 WebShell 门禁升级风险分；severity 保持输入值。"
-    }
+    ]
   },
   "expected_scope": "out_of_scope",
   "knowledge_mode": "knowledge_forbidden",

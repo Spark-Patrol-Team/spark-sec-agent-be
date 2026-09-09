@@ -1,16 +1,12 @@
 {
   "schema_version": "2026-09-06.yanyushuo-expected.v1",
   "case_id": "TC-KNOWLEDGE-009",
-  "case_file": "tests/fixtures/gatekeeper_cases/case9.json",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case9.json",
   "signal_strength": {
     "expected_gate_overall": "IN_SCOPE_CONFIRMED",
     "allowed_gate_deviations": [
       "IN_SCOPE_CONFIRMED"
-    ],
-    "expected_upgrade": {
-      "severity": "CRITICAL",
-      "score": 95
-    }
+    ]
   },
   "expected_scope": "in_scope",
   "knowledge_mode": "knowledge_required",
@@ -63,7 +59,7 @@
   "human_takeover_condition": "高风险处置（隔离、删除 WebShell、加固）需审批；建议人工确认受影响范围与是否已持久化。",
   "automatic_checks": [
     "gate overall = IN_SCOPE_CONFIRMED，三档 scope = in_scope。",
-    "upgraded_severity = CRITICAL 且 upgraded_score = 95。",
+    "gate_decision = in_scope（门禁三档，不做风险评分/等级升级）。",
     "knowledge_query 状态为 success。",
     "命中的 knowledge_id 属于 allowed，且未命中任何 forbidden knowledge_id。",
     "报告未出现 forbidden_conclusion_keywords。",

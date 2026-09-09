@@ -1,7 +1,7 @@
 {
   "schema_version": "2026-09-06.yanyushuo-expected.v1",
   "case_id": "TC-KNOWLEDGE-001",
-  "case_file": "tests/fixtures/gatekeeper_cases/case1.json",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case1.json",
   "signal_strength": {
     "expected_gate_overall": "IN_SCOPE_WEAK",
     "allowed_gate_deviations": [
@@ -9,11 +9,7 @@
       "IN_SCOPE_CONFIRMED",
       "MIXED",
       "INDETERMINATE"
-    ],
-    "expected_upgrade": {
-      "severity": "HIGH",
-      "score": 75
-    }
+    ]
   },
   "expected_scope": "weak_signal",
   "knowledge_mode": "knowledge_required",

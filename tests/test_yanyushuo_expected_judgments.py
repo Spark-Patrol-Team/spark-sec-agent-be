@@ -23,7 +23,7 @@ from sec_agent.services.gatekeeper import SignalStrength, WebShellGatekeeper
 REPO = Path(__file__).resolve().parents[1]
 JUDGMENTS_DIR = REPO / "docs" / "modules" / "scenario-knowledge" / "judgments"
 SCHEMA_FILE = REPO / "tests" / "fixtures" / "evaluation" / "knowledge_evaluation_summary.schema.json"
-CASES_DIR = REPO / "tests" / "fixtures" / "gatekeeper_cases"
+CASES_DIR = REPO / "docs" / "modules" / "scenario-knowledge" / "knowledge-test-cases"
 
 KNOWN_SCOPES = {"in_scope", "weak_signal", "out_of_scope"}
 
@@ -34,6 +34,17 @@ def _load_schema() -> dict:
 
 def _load_expected(i: int) -> dict:
     return json.loads((JUDGMENTS_DIR / f"case{i}.expected.json").read_text(encoding="utf-8"))
+
+
+def _load_input_event(i: int) -> tuple[dict, dict]:
+    """读取 case 输入，返回 (原始文件对象, 事件输入对象)。
+
+    正式案例目录存在两种结构：case1-6 为扁平结构（文件本身就是 SecurityEventInput），
+    case7-10 为包裹结构（{"case_id", "category", "description", "input_event"}）。
+    """
+    d = _load_expected(i)
+    fixture = json.loads((REPO / d["case_file"]).read_text(encoding="utf-8"))
+    return fixture, (fixture.get("input_event") if "input_event" in fixture else fixture)
 
 
 def _enums() -> dict:
@@ -53,7 +64,7 @@ SIGNAL_STRENGTH_VALUES = {s.value for s in SignalStrength}
 # Chen Min 交接断言中的期望强度（严格 case 必须完全相等；宽松 case 只须落在允许偏离集合）
 CHENMIN_PRIMARY = {
     1: SignalStrength.IN_SCOPE_WEAK,
-    2: SignalStrength.IN_SCOPE_CONFIRMED,
+    2: SignalStrength.IN_SCOPE_WEAK,
     3: SignalStrength.IN_SCOPE_WEAK,
     4: SignalStrength.IN_SCOPE_WEAK,
     5: SignalStrength.IN_SCOPE_WEAK,
@@ -155,9 +166,12 @@ def test_case_file_references_existing_fixture() -> None:
         case_file = REPO / d["case_file"]
         assert case_file.exists(), f"case{i} case_file 不存在: {d['case_file']}"
         fixture = json.loads(case_file.read_text(encoding="utf-8"))
-        assert fixture["case_id"] == d["case_id"], (
-            f"case{i} 判据 case_id={d['case_id']} 与 fixture {fixture['case_id']} 不一致"
-        )
+        if "case_id" in fixture:
+            assert fixture["case_id"] == d["case_id"], (
+                f"case{i} 判据 case_id={d['case_id']} 与 fixture {fixture['case_id']} 不一致"
+            )
+        else:
+            assert "event_id" in fixture, f"case{i} 扁平结构 fixture 应含 event_id"
 
 
 def test_alignment_with_chenmin_signal_strength() -> None:
@@ -178,8 +192,8 @@ def test_actual_gate_output_matches_expected() -> None:
     gk = WebShellGatekeeper()
     for i in range(1, 11):
         d = _load_expected(i)
-        fixture = json.loads((REPO / d["case_file"]).read_text(encoding="utf-8"))
-        evt = SecurityEventInput.from_dict(fixture["input_event"])
+        _, input_event = _load_input_event(i)
+        evt = SecurityEventInput.from_dict(input_event)
         result = gk.audit(evt)
         allowed = {SignalStrength(x) for x in d["signal_strength"]["allowed_gate_deviations"]}
         assert result.overall_strength in allowed, (

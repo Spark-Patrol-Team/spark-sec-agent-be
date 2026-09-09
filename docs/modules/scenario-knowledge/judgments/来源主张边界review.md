@@ -15,14 +15,14 @@
 | `K-WEBSHELL-RESPONSE-TEMPLATE` | 隔离→保全证据→删除 WebShell→改密→查根因→恢复→修复加固 | CISA Eliminate Web Shells (CM0106) | 官方运营指南 | ✅ 直接支持处置流程 | 仅在确认/高置信时引用；弱信号不得无条件套用 | 明确“高风险处置需审批”；弱信号 case 禁套用 |
 | `K-WEBSHELL-MANUAL-TAKEOVER` | 停止条件与人工接管条件（证据足够/达上限/工具无数据；高风险+关键证据不足+工具失败→人工接管） | 《最小 WebShell 知识包》使用约定 | 内部约定（非外部来源） | ✅ 作为内部规则 | 作为过程规则，不属外部证据事实 | 无；属于过程约束 |
 
-> 关键结论：知识包唯一的“级别低”条目是 `K-WEBSHELL-TOOLS-TRAFFIC`（厂商经验/启发式），它**只能**把工具特征标记为“可疑”，不能作为确认或家族归属证据。这一点直接决定了 case2（Godzilla）与 case3（Beima）的结论上限。
+> 关键结论：知识包唯一的“级别低”条目是 `K-WEBSHELL-TOOLS-TRAFFIC`（厂商经验/启发式），它**只能**把工具特征标记为“可疑”，不能作为确认或家族归属证据。这一点直接决定了 case2（部署尝试）与 case3（Beima）的结论上限。
 
 ## 2. 案例级来源—主张核验（基于公开来源与陈敏 case1-10 输入；旧 `knowledge-test-cases` 的来源矩阵已在本文件收口，不再单独维护）
 
 | case / 主张 | 来源来源 URL | 来源级别 | 来源直接支持什么 | 是否支撑判据中的关键主张 | 不支持/待确认 | 结论 |
 |---|---|---|---|---|---|---|
 | case1：混淆 ASPX WebShell 可用加密 HTTP 通信并提供命令/文件等能力 | fortinet.com（FortiGuard Labs） | 官方厂商研究 | UpdateChecker.aspx 使用 HTTP POST、`application/octet-stream`、Base64 编码加密数据、JSON 命令与命令/文件管理能力 | ✅ 支撑“存在加密通信弱信号”，但**不支撑 AES 算法确认** | 原文未指明算法为 AES；不支持 JSON 的 IP/时间/置信度；不得确认冰蝎 Behinder | 判据允许“弱信号 + 保留不确定性”，禁止“确认冰蝎 / 确认攻击成立” ✅ |
-| case2：PassiveNeuron 活动中攻击者经 Microsoft SQL 获远程执行后尝试部署 ASPX WebShell | securelist.com（Kaspersky GReAT） | 官方厂商研究 | Windows Server 场景 SQL 远程执行、Base64/hex 载荷、PowerShell/VBS 解码写入、安全产品阻止多次部署尝试；**不证明部署成功** | ⚠️ **冲突**：陈敏 case2 输入改为“Godzilla 已确认”（含 ViewState 反序列化、Wingtb.sys、进程隐藏、AES/RSA、initial_verdict=疑似真实攻击） | 来源不支持 Godzilla、MachineKey、ViewState、Wingtb.sys，也不支持“部署成功”；与沈洪旭 case2“部署尝试未成功”亦不一致 | **必须 Review**：判据允许复述输入事实，但禁止“Godzilla 家族 / 内核 Rootkit 持久化 / 部署成功”；建议陈敏修正 case2 输入使其与来源一致 |
+| case2：PassiveNeuron 活动中攻击者经 Microsoft SQL 获远程执行后尝试部署 ASPX WebShell | securelist.com（Kaspersky GReAT） | 官方厂商研究 | Windows Server 场景 SQL 远程执行、Base64/hex 载荷、PowerShell/VBS 解码写入、安全产品阻止多次部署尝试；**不证明部署成功** | ✅ **已对齐**：正式 case2 已收敛为“部署尝试被阻断、无成功证据”，与来源一致 | 来源不支持“部署成功”；判据不得确认 Godzilla 家族/内核持久化 | ✅ 判据按 `weak_signal` 收口，禁止确认部署成功/家族归属/持久化 |
 | case3：Beima PHP WebShell 使用加密命令并面向 WordPress/cPanel | mallory.ai（二手聚合） | 二手聚合页面 | 仅作为寻找 Cyderes 原始研究的线索与案例灵感 | ⚠️ 部分支撑：只支撑“存在 PHP WebShell/加密命令/JSON 通信”类信号 | RSA 细节、感染数量、时间戳篡改、归属未核实 | 判据收口为 weak_signal，禁止“Beima 家族 / 已攻陷”；陈敏已把 RSA 降为弱信号，门禁现判 weak（不再误判确认） |
 | case4：单条 WebShell 文件告警但缺上下文 | 无特定外链 | 通用 synthetic | 用于验证证据不足 | ✅ 支撑“证据不足”判据 | 非真实事件；不支持任何攻击者/来源/处置效果事实 | 判据：weak_signal + 人工接管 ✅ |
 | case5：模拟超时/权限不足/空数据 | 无特定外链 | 通用 synthetic | 验证失败条件下不编造工具返回并建议人工接管 | ✅ 支撑 | JSON 告警文字不是一次真实 XDR 调用 | 判据：weak_signal + 人工接管；禁止“未发现风险/调查成功” ✅ |
@@ -30,20 +30,20 @@
 
 ## 3. 需要三方对齐的核心冲突
 
-### 3.1 case2 输入与来源矩阵冲突（最严重）
+### 3.1 case2 输入与来源矩阵冲突（✅ 已于 PR#44 解决）
 
 - 沈洪旭/R主线的 case2（旧版 `knowledge-test-cases/case2.json`，已废弃）：PassiveNeuron 部署**尝试**，安全产品阻止，**尚无部署成功证据**，`evidence` 为空、信号放在 `alerts`。
-- 陈敏 PR#43 的 case2（`tests/fixtures/gatekeeper_cases/case2.json`）：Godzilla **已确认**，含 `ViewState反序列化`、`Wingtb.sys`、`进程隐藏`、`AES/RSA加密通信`，`initial_verdict=疑似真实攻击`，信号放在 `evidence`。
+- 陈敏 PR#43 早期版本的 case2（旧 `tests/fixtures/gatekeeper_cases/case2.json`，已废弃）：Godzilla **已确认**，含 `ViewState反序列化`、`Wingtb.sys`、`进程隐藏`、`AES/RSA加密通信`，`initial_verdict=疑似真实攻击`。
 - 来源矩阵（已并入本文件第 2 节）明确：来源**不支持 Godzilla、MachineKey、ViewState、Wingtb.sys**，且原文是“部署尝试被阻止”。
 
-**结论**：两条 case2 是**同一 case_id/event_id 下的两套互斥事实**。判据只能以“输入事实”为准复述，但不得把不被来源支持的家族/持久化写成确认事实。**建议**：交由陈敏确认 case2 是否回归“部署尝试未成功”，或补充直接来源后再保留“已确认”口径；在来源补齐前，判据按 weak_signal（保守）收口并标注冲突。
+**结论**：两条 case2 是**同一 case_id/event_id 下的两套互斥事实**，现**已在 PR#44 统一收敛**为 PassiveNeuron 部署尝试被阻断（`initial_verdict=疑似WebShell部署尝试`，无成功证据）。判据已按 `weak_signal` 收口，禁止据此确认部署成功、家族归属或持久化。
 
-### 3.2 证据字段位置冲突（alerts vs evidence）
+### 3.2 证据字段位置冲突（alerts vs evidence，✅ 已统一）
 
 - 沈洪旭 case1-6（旧版，已废弃）：信号放在 `alerts`，`evidence=[]`。
-- 陈敏 case1-10：信号放在 `evidence`，部分 case 无 `alerts`。
+- 现行正式目录 `knowledge-test-cases`：case1-6（扁平）信号放在 `alerts`（`evidence=[]`），case7-10（包裹）信号放在 `evidence`。
 
-`gatekeeper.py` 同时读取 `alerts` 与 `evidence`，因此两种字段都能被门禁识别；但判据/评测若只检查其中一个字段，会产生口径漂移。**建议**：冻结统一字段（建议以 `evidence` 为准，`alerts` 作为原始告警），或要求两套 fixture 字段一致。
+`gatekeeper.py` 同时读取 `alerts` 与 `evidence`，因此两种字段都能被门禁识别，不会产生漏判；本文件仅提醒评测口径需同时覆盖两个字段，避免只检查其一造成漂移。
 
 ### 3.3 门禁 `triage` 字段实现点（陈敏已修复）
 
@@ -52,5 +52,5 @@
 ## 4. 收口结论
 
 - 知识卡整体来源等级：`PRINCIPLE/FEATURES/CHECKLIST/RESPONSE` 为官方标准或厂商研究，可直接用于“调查方向/处置流程/启发”；`TOOLS-TRAFFIC` 为厂商经验/启发式，只能标“可疑”。
-- 判据的结论上限已按来源边界收紧：case2（Godzilla）不允许据知识定家族，case3（Beima）收口 weak_signal，case6/case10 为 out_of_scope 且禁止 WebShell 结论。
-- 需三方跟进：① case2 输入与来源冲突（陈敏，已确认本次未改输入）；② case10 `event_type` 误标（陈敏）；③ Beima/Cyderes 原始来源补充（沈洪旭）；④ 15 张 WSK 知识卡的来源—主张边界收口（闫昱硕，见 `WSK来源主张边界review.md`）。已修复项：alerts/evidence 统一抽取与 triage verdict 信号（陈敏）、case3 RSA 降级（陈敏）。
+- 判据的结论上限已按来源边界收紧：case2（部署尝试）不允许据知识定家族，case3（Beima）收口 weak_signal，case6/case10 为 out_of_scope 且禁止 WebShell 结论。
+- 需跟进项（收口后仅剩来源补充与 Schema 升级）：① Beima/Cyderes 原始来源补充（沈洪旭）；② 15 张 WSK 知识卡的来源—主张边界收口（闫昱硕，见 `WSK来源主张边界review.md`）。已闭环项：case2 输入与来源冲突（PR#44 收敛为部署尝试未成功）、case10 `event_type` 误标（PR#43 门禁以 `input_quality_issues` 保守标注）、alerts/evidence 统一抽取与 triage verdict 信号（陈敏）、case3 RSA 降级（陈敏）。

@@ -1,19 +1,14 @@
 {
   "schema_version": "2026-09-06.yanyushuo-expected.v1",
   "case_id": "TC-KNOWLEDGE-007",
-  "case_file": "tests/fixtures/gatekeeper_cases/case7.json",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case7.json",
   "signal_strength": {
     "expected_gate_overall": "MIXED",
     "allowed_gate_deviations": [
       "MIXED",
       "BENIGN_LIKE",
       "IN_SCOPE_WEAK"
-    ],
-    "expected_upgrade": {
-      "severity": "MEDIUM",
-      "score": 0,
-      "note": "合法上传倾向，不因弱+良性混合而升级风险分。"
-    }
+    ]
   },
   "expected_scope": "weak_signal",
   "knowledge_mode": "knowledge_optional",

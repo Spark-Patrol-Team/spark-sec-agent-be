@@ -1,17 +1,12 @@
 {
   "schema_version": "2026-09-06.yanyushuo-expected.v1",
   "case_id": "TC-KNOWLEDGE-010",
-  "case_file": "tests/fixtures/gatekeeper_cases/case10.json",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case10.json",
   "signal_strength": {
     "expected_gate_overall": "OUT_OF_SCOPE",
     "allowed_gate_deviations": [
       "OUT_OF_SCOPE"
-    ],
-    "expected_upgrade": {
-      "severity": "MEDIUM",
-      "score": 0,
-      "note": "SSH 暴力破解域外；即使 event_type 误标为 WebShell，证据侧为域外，不升级风险分。"
-    }
+    ]
   },
   "expected_scope": "out_of_scope",
   "knowledge_mode": "knowledge_not_applicable",
