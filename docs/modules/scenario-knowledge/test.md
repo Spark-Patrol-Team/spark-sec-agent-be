@@ -6,9 +6,10 @@
 
 1. **知识工具契约**：正文加载、章节解析、关键词命中/未命中、来源引用和工具注册。
 2. **案例输入边界**：6 个 JSON 能被 `SecurityEventInput` 加载，标识唯一，且来源受限字段与 case6 负向输入不被污染。
-3. **Agent 报告行为**：知识是否被适当消费，是否把通用知识扩写成事件事实，负向案例是否被错误套用 WebShell 知识。
+3. **评测汇总契约**：逐案例结果必须按冻结 Schema 记录案例 ID、知识模式、适用性、命中知识 ID、工具状态、证据引用、禁止结论命中、人工接管、步骤数、耗时和人工 Review 栏。
+4. **Agent 报告行为**：知识是否被适当消费，是否把通用知识扩写成事件事实，负向案例是否被错误套用 WebShell 知识。
 
-前两层可由仓库自动化测试确认；第三层必须检查实际报告，不能只凭退出码或口头回执判定。
+前三层可由仓库自动化测试确认；Agent 报告行为必须检查实际报告，不能只凭退出码或口头回执判定。
 
 ## 2. 测试数据边界
 
@@ -28,16 +29,38 @@
 $env:PYTHONPATH = "src"
 python -m unittest tests.test_knowledge_tool -v
 python -m unittest tests.test_knowledge_case_inputs -v
+python -m unittest tests.test_knowledge_evaluation_summary_schema -v
 ```
 
-当前相关测试共 21 条：
+当前相关测试共 24 条：
 
 | 文件 | 数量 | 覆盖内容 |
 |---|---:|---|
 | `tests/test_knowledge_tool.py` | 18 | 条目加载、5 类查询覆盖、命中与未命中、`evidence_refs`、工具名及注册 |
 | `tests/test_knowledge_case_inputs.py` | 3 | 六案加载与唯一性、case6 纯负向边界、case1/2 来源限制 |
+| `tests/test_knowledge_evaluation_summary_schema.py` | 3 | 评测汇总 Schema 必填字段、枚举、最小 fixture 和核心路径覆盖 |
 
-PR #41 冲突解决提交前的本地复验结果为 `21 passed`（2026-09-05）；远端结果仍以该 PR 最新 CI 为准。
+PR #41 冲突解决提交前的本地复验结果为 `21 passed`（2026-09-05）；评测汇总 Schema 冻结后新增 3 条结构守护测试，远端结果仍以最新 CI 为准。
+
+## 3.1 评测汇总 Schema
+
+冻结文件：
+
+| 文件 | 用途 |
+|---|---|
+| `tests/fixtures/evaluation/knowledge_evaluation_summary.schema.json` | 评测汇总 JSON Schema |
+| `tests/fixtures/evaluation/minimal_knowledge_evaluation_summary.json` | 最小 fixture，覆盖正向命中、工具失败人工接管、负向禁止套用知识 |
+| `docs/modules/scenario-knowledge/evaluation-summary-schema.md` | 字段说明、枚举和验证命令 |
+
+单案例结果必须包含：
+
+```text
+case_id, knowledge_mode, applicability, matched_knowledge_ids,
+tool_status, evidence_refs, forbidden_conclusion_hit,
+manual_takeover, step_count, duration_ms, human_review
+```
+
+`human_review` 是人工 Review 栏，必须包含 `status`、`reviewer`、`reviewed_at`、`comments`、`action_items`。待人工复核时，`status=pending`，`reviewer=null`，`reviewed_at=null`。
 
 ## 4. Agent 运行判据
 
@@ -62,6 +85,7 @@ PR #41 冲突解决提交前的本地复验结果为 `21 passed`（2026-09-05）
 ## 6. 验收清单
 
 - [x] PR 冲突解决工作树的 21 条相关自动化测试通过（2026-09-05）。
+- [x] 评测汇总 Schema 与最小 fixture 已冻结并加入结构守护测试（2026-09-06）。
 - [ ] PR 最新提交的仓库 CI 通过。
 - [ ] case1、case2 在最终提交上完成报告复验，知识引用与事件证据分开。
 - [ ] case6 在最终提交上完成负向复验，未调用 WebShell 知识且未新增 WebShell 事实。
@@ -78,3 +102,4 @@ PR #41 冲突解决提交前的本地复验结果为 `21 passed`（2026-09-05）
 |---|---|
 | 2026-09-04 | PR #40 增加案例输入与来源边界测试，纠正 case6 判据 |
 | 2026-09-05 | PR #41 重写测试说明，区分自动化测试、成员回执和 Agent 报告证据 |
+| 2026-09-06 | 冻结评测汇总 Schema，新增最小 fixture 与结构守护测试 |

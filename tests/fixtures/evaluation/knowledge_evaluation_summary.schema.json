@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spark-sec-agent.local/schemas/knowledge-evaluation-summary.schema.json",
+  "title": "KnowledgeEvaluationSummary",
+  "description": "场景知识评测汇总结果冻结 Schema。用于记录每个评测案例的知识适用性、工具调用、证据引用、禁止结论和人工复核状态。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_id",
+    "generated_at",
+    "suite",
+    "results"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "2026-09-06.knowledge-eval-summary.v1",
+      "description": "评测汇总 Schema 版本。字段含义或枚举发生不兼容变化时必须升级。"
+    },
+    "evaluation_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^eval-[0-9]{8}-[a-z0-9-]+$",
+      "description": "本次评测汇总 ID。"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "汇总生成时间，使用 ISO 8601。"
+    },
+    "suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "case_source",
+        "knowledge_base",
+        "case_count"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "评测套件名称。"
+        },
+        "case_source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "评测案例来源路径或说明。"
+        },
+        "knowledge_base": {
+          "type": "string",
+          "minLength": 1,
+          "description": "本轮评测使用的知识库或知识包版本。"
+        },
+        "case_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "本次汇总记录的案例数量，应与 results 长度一致。"
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "description": "逐案例评测汇总行。",
+      "items": {
+        "$ref": "#/$defs/evaluation_result"
+      }
+    }
+  },
+  "$defs": {
+    "evaluation_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "knowledge_mode",
+        "applicability",
+        "matched_knowledge_ids",
+        "tool_status",
+        "evidence_refs",
+        "forbidden_conclusion_hit",
+        "manual_takeover",
+        "step_count",
+        "duration_ms",
+        "human_review"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(case[1-9][0-9]*|TC-[A-Z0-9-]+)$",
+          "description": "案例 ID，对应 knowledge-test-cases/caseN.json 或团队测试用例编号。"
+        },
+        "knowledge_mode": {
+          "type": "string",
+          "enum": [
+            "knowledge_required",
+            "knowledge_optional",
+            "knowledge_forbidden",
+            "knowledge_not_applicable"
+          ],
+          "description": "知识模式：必须用知识、可选参考、禁止套用当前知识、或知识不适用。"
+        },
+        "applicability": {
+          "type": "string",
+          "enum": [
+            "applicable",
+            "partially_applicable",
+            "not_applicable",
+            "unknown"
+          ],
+          "description": "知识对当前案例的适用性。"
+        },
+        "matched_knowledge_ids": {
+          "type": "array",
+          "description": "命中的知识 ID。未命中或禁止使用时为空数组。",
+          "items": {
+            "type": "string",
+            "enum": [
+              "K-WEBSHELL-PRINCIPLE",
+              "K-WEBSHELL-FEATURES",
+              "K-WEBSHELL-TOOLS-TRAFFIC",
+              "K-WEBSHELL-EVIDENCE-CHECKLIST",
+              "K-WEBSHELL-RESPONSE-TEMPLATE",
+              "K-WEBSHELL-MANUAL-TAKEOVER"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "tool_status": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "knowledge_query",
+            "mcp_tools",
+            "notes"
+          ],
+          "properties": {
+            "knowledge_query": {
+              "$ref": "#/$defs/tool_call_state",
+              "description": "knowledge_query 工具状态。"
+            },
+            "mcp_tools": {
+              "$ref": "#/$defs/tool_call_state",
+              "description": "真实或模拟 MCP 工具状态。"
+            },
+            "notes": {
+              "type": "string",
+              "description": "工具状态补充说明；没有补充时填空字符串。"
+            }
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "description": "本案例报告或工具输出引用的证据 ID。知识来源引用和事件观测证据都应保留来源前缀。",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "forbidden_conclusion_hit": {
+          "type": "boolean",
+          "description": "是否命中禁止结论。true 表示报告出现了来源不支持、负向案例禁止或工具失败后编造的结论。"
+        },
+        "manual_takeover": {
+          "type": "boolean",
+          "description": "是否触发人工接管。"
+        },
+        "step_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Agent 或主链执行步骤数。未运行时可填 0。"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "本案例耗时，单位毫秒。未运行或未知时可填 0。"
+        },
+        "human_review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reviewer",
+            "reviewed_at",
+            "comments",
+            "action_items"
+          ],
+          "description": "人工 Review 栏。",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "passed",
+                "failed",
+                "needs_follow_up"
+              ],
+              "description": "人工 Review 状态。"
+            },
+            "reviewer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Review 人；待 Review 时为 null。"
+            },
+            "reviewed_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time",
+              "description": "Review 时间；待 Review 时为 null。"
+            },
+            "comments": {
+              "type": "string",
+              "description": "人工 Review 备注；没有备注时填空字符串。"
+            },
+            "action_items": {
+              "type": "array",
+              "description": "Review 后续动作；没有后续动作时为空数组。",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "tool_call_state": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed",
+        "partial",
+        "not_called",
+        "skipped"
+      ]
+    }
+  }
+}

@@ -16,6 +16,7 @@
 | 工具注册 | `src/sec_agent/deep_agent/main.py::build_tools`，在 `mock`、`mcp`、`auto` 模式下均注册 |
 | 随包分发 | `pyproject.toml` 将 `knowledge/*.md` 声明为 package data |
 | 评测输入 | `docs/modules/scenario-knowledge/knowledge-test-cases/` 下 6 个 synthetic 案例 |
+| 评测汇总 Schema | `tests/fixtures/evaluation/knowledge_evaluation_summary.schema.json` |
 
 文档目录不保存第二份运行时知识正文。PR #8 是历史知识资产来源之一，其有价值内容已按当前结构吸收，不直接形成并行入口。
 
@@ -43,6 +44,7 @@
 3. 加载器按 Markdown 标题解析条目。
 4. 查询器对预设关键词执行确定性匹配，返回得分最高的条目。
 5. Agent 可把返回内容用作调查提示，但最终结论仍须受输入事件和实际工具证据约束。
+6. Agent 评测完成后，逐案例结果按冻结 Schema 汇总，人工 Review 结论只写入 `human_review` 栏，不反向修改原始案例输入。
 
 当前条目覆盖攻击原理、攻击特征速查表、主流管理工具与流量特征、证据检查清单、处置建议模板、停止条件与人工接管规则。
 
@@ -62,6 +64,7 @@
 3. **确定性检索**：当前采用可测试的关键词规则，不引入向量库、RAG 服务或 FastGPT 依赖。
 4. **显式失败**：未知主题返回未命中，不用相近条目强行回答。
 5. **知识与证据分层**：知识负责“该查什么”，事件与工具输出负责“实际发生了什么”。
+6. **汇总 Schema 冻结**：评测输出统一使用 `knowledge_evaluation_summary.schema.json`，避免不同成员用自由表格记录导致字段漂移。
 
 ## 7. 上下游关系
 
@@ -83,3 +86,4 @@
 | 2026-09-04 | PR #37 合入 6 个 synthetic 案例及初版边界记录 |
 | 2026-09-04 | PR #40 校正来源矩阵、案例判据和自动化输入边界测试 |
 | 2026-09-05 | PR #41 按当前 `main` 的真实实现重写设计说明，删除旧 PR #8 状态残留 |
+| 2026-09-06 | 冻结评测汇总 Schema 和最小 fixture，补充人工 Review 栏 |

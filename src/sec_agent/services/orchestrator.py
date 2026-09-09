@@ -17,7 +17,7 @@ from sec_agent.domain.state_machine import StateMachine
 from sec_agent.platforms.base import PlatformAdapter
 from sec_agent.services.correlation import AlertCorrelationService
 from sec_agent.services.ingest import AlertIngestService
-from sec_agent.services.investigation import DeepInvestigationAgent
+from sec_agent.services.investigation import DeepInvestigationAgent, InvestigationBridge
 from sec_agent.services.response import (
     ResponseDecisionService,
     ResponseExecutionService,
@@ -34,13 +34,18 @@ class Orchestrator:
         store: EventRepository,
         investigation_backend: str = "auto",
         platform_backend: str | None = None,
+        investigation_bridge: InvestigationBridge | None = None,
     ) -> None:
         self._store = store
         self._state = StateMachine()
         self._ingest = AlertIngestService(platform, platform_backend=platform_backend)
         self._correlation = AlertCorrelationService()
         self._triage = RiskTriageService()
-        self._investigation = DeepInvestigationAgent(platform, backend=investigation_backend)
+        self._investigation = DeepInvestigationAgent(
+            platform,
+            backend=investigation_backend,
+            bridge=investigation_bridge,
+        )
         self._decision = ResponseDecisionService()
         self._execution = ResponseExecutionService(platform)
         self._verification = ResponseVerificationService(platform)
