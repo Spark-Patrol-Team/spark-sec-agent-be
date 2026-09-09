@@ -1,0 +1,69 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-004",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case4.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_WEAK",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_WEAK",
+      "INDETERMINATE"
+    ]
+  },
+  "expected_scope": "weak_signal",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "partially_applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-EVIDENCE-CHECKLIST"
+  ],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-FEATURES"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "仅用证据检查清单列出缺失证据；不调用需确认家族/处置的知识。"
+  },
+  "allowed_conclusions": [
+    "仅有一条 WebShell 文件告警(shell.php)，缺少攻击源 IP、目标资产、进程与网络上下文，证据不足。",
+    "不能确认真实攻击，也不能确认为误报；建议人工接入补充上下文。",
+    "列出已获取与缺失的证据清单。"
+  ],
+  "forbidden_conclusions": [
+    "确认为真实 WebShell 攻击。",
+    "确认为误报 / 无需处理。",
+    "猜测攻击来源或目的。",
+    "编造进程、网络、资产等输入中不存在的上下文。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "确认真实攻击",
+    "确认攻击成立",
+    "确认为误报",
+    "无需处理",
+    "猜测攻击来源",
+    "已确认来源"
+  ],
+  "required_evidence_gaps": [
+    "source_ip 缺失（输入为 0.0.0.0）。",
+    "目标资产详细信息缺失。",
+    "进程异常日志、网络连接记录缺失。",
+    "无该文件被访问或执行的证据。"
+  ],
+  "human_required": true,
+  "human_takeover_condition": "仅单条告警且关键上下文缺失，知识适用性无法可靠确定，需人工补全资产与上下文。",
+  "automatic_checks": [
+    "gate overall 落在允许偏离集合内，三档 scope = weak_signal。",
+    "knowledge_query 状态为 success。",
+    "命中的 knowledge_id 属于 allowed，且不命中 forbidden_knowledge_ids。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "evidence_gaps 非空。",
+    "manual_takeover = true。"
+  ],
+  "manual_review_notes": "证据不足案例：不得因文件名含 shell.php 就提升结论强度。"
+}

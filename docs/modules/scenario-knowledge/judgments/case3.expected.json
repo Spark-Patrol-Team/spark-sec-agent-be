@@ -1,0 +1,72 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-003",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case3.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_WEAK",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_WEAK"
+    ]
+  },
+  "expected_scope": "weak_signal",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "partially_applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-FEATURES",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-TOOLS-TRAFFIC"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-PRINCIPLE"
+  ],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-RESPONSE-TEMPLATE"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "允许 knowledge_query 检索证据检查清单/攻击原理；来源未补前不得把 RSA/时间戳篡改写成已核实事实。"
+  },
+  "allowed_conclusions": [
+    "检测到 WordPress 服务器 PHP 脚本异常访问、加密通信伪装为 JSON API、文件时间戳被篡改，存在 WebShell 相关信号。",
+    "疑似 WebShell，但证据不足，RSA 细节与来源未充分核实，不能确认攻击成立。",
+    "建议核查脚本文件、Web 日志、网络连接，并核实文件时间戳修改。",
+    "保留证据缺口，不把一般知识升级为本事件已发生事实。"
+  ],
+  "forbidden_conclusions": [
+    "确认该事件为 Beima 家族 WebShell（来源为二手聚合，RSA 与归属未经官方确认）。",
+    "确认攻击者归属或政府相关网站已被攻陷。",
+    "确认数据已被窃取或已建立持久化。",
+    "确认命令已被执行。",
+    "写成无需处理或确认为误报。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "确认Beima",
+    "Beima家族",
+    "已确认入侵",
+    "已被攻陷",
+    "数据已窃取",
+    "已建立持久化",
+    "确认执行",
+    "无需处理",
+    "确认为误报"
+  ],
+  "required_evidence_gaps": [
+    "未证明该 PHP 脚本被执行。",
+    "缺少 Web 访问日志与网络连接记录。",
+    "RSA 解密函数细节、感染数量、时间戳篡改缺乏直接来源，只能作为输入线索而非已核实事实。"
+  ],
+  "human_required": true,
+  "human_takeover_condition": "目标为政府相关网站且关键事实（RSA/家族归属）缺乏直接来源，风险等级较高，需人工确认是否升级为确认级处置。",
+  "automatic_checks": [
+    "gate overall 落在允许偏离集合内，三档 scope 以 weak_signal 为收口口径。",
+    "knowledge_query 状态为 success。",
+    "命中的 knowledge_id 属于 allowed，且不命中 forbidden_knowledge_ids（尤其是 RESPONSE-TEMPLATE）。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "evidence_gaps 非空。",
+    "manual_takeover = true。"
+  ],
+  "manual_review_notes": "判据把 case3 收口为 weak_signal：门禁可能因 RSA 强关键词给出 CONFIRMED，但来源不支持，因此结论上限不应高于「疑似 + 调查建议」。"
+}

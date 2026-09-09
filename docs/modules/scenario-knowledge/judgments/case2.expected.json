@@ -1,0 +1,73 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-002",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case2.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_WEAK",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_WEAK",
+      "MIXED",
+      "INDETERMINATE"
+    ]
+  },
+  "expected_scope": "weak_signal",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "partially_applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-TOOLS-TRAFFIC"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-PRINCIPLE"
+  ],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-RESPONSE-TEMPLATE"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "允许 knowledge_query 检索证据检查清单/攻击原理/工具流量特征；mcp_tools 不得写成真实 MCP 成功。"
+  },
+  "allowed_conclusions": [
+    "输入证据显示存在 Windows Server 上 Microsoft SQL 服务的异常远程命令执行信号，以及 ASPX WebShell 载荷的 Base64 落盘尝试和 PowerShell 解码写入 ASPX 文件行为，但安全产品已阻止部署，目前无证据证明部署成功。",
+    "属于 WebShell 部署尝试（弱信号），不能确认攻击成立。",
+    "建议核查是否仍有未被阻断的落盘/写入成功，并检查目标主机文件系统、Web 目录与相关进程/网络会话。"
+  ],
+  "forbidden_conclusions": [
+    "确认 WebShell 部署成功或攻击成立。",
+    "确认 ASPX 文件已写入 Web 目录并被访问或执行。",
+    "确认该事件属于某 APT 组织或某攻击家族。",
+    "确认已建立持久化、已横向移动或数据已被窃取。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "部署成功",
+    "攻击成立",
+    "确认攻击",
+    "已写入",
+    "已执行",
+    "已建立持久化",
+    "已横向",
+    "数据已窃取",
+    "确认APT",
+    "确认组织"
+  ],
+  "required_evidence_gaps": [
+    "未证明 WebShell 载荷最终落盘成功。",
+    "未证明 PowerShell 解码写入的 ASPX 文件已被访问或执行。",
+    "缺少对目标主机文件系统/Web 目录的直接检查结果。",
+    "缺少命令执行与网络会话取证，未确认载荷是否被加载。"
+  ],
+  "human_required": true,
+  "human_takeover_condition": "高风险事件（severity=CRITICAL）且部署尝试被阻断但攻击者反复尝试，关键证据（是否最终落盘/执行）需人工核实，涉及隔离与取证需审批。",
+  "automatic_checks": [
+    "gate overall = IN_SCOPE_WEAK（允许 MIXED/INDETERMINATE），三档 scope = weak_signal。",
+    "knowledge_query 状态为 success（不要求 mcp_tools）。",
+    "命中的 knowledge_id 属于 allowed，且未命中任何 forbidden knowledge_id。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "evidence_gaps 非空，至少列出落盘/执行上下文缺口。",
+    "manual_takeover = true。"
+  ],
+  "manual_review_notes": "case2 已按来源 Review 收敛为 PassiveNeuron 部署尝试未成功：证据侧只有落盘/写入尝试且被安全产品阻断，不构成确认级攻击。判据按弱信号收口，禁止据此确认部署成功、家族归属或持久化。"
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-001",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case1.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_WEAK",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_WEAK",
+      "IN_SCOPE_CONFIRMED",
+      "MIXED",
+      "INDETERMINATE"
+    ]
+  },
+  "expected_scope": "weak_signal",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "partially_applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-TOOLS-TRAFFIC"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-PRINCIPLE"
+  ],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-RESPONSE-TEMPLATE"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "允许 knowledge_query 检索证据检查清单/攻击原理；本轮无真实 MCP 联调，mcp_tools 不得写成 success。"
+  },
+  "allowed_conclusions": [
+    "检测到 IIS 服务器上 ASPX 脚本异常访问，且请求体为 Base64 编码的加密数据，存在 WebShell 相关弱信号。",
+    "疑似 WebShell，但证据不足，不能确认攻击成立。",
+    "建议核查该 ASPX 文件是否属于业务发布包，查询目标 IP 近 15 分钟 HTTP 访问日志，确认文件创建者与业务部署账号是否一致。",
+    "应保留证据缺口：缺少访问记录、缺少进程/命令执行上下文。"
+  ],
+  "forbidden_conclusions": [
+    "确认该事件为真实 WebShell 攻击/攻击成立。",
+    "确认该事件为冰蝎（Behinder），仅凭 AES 与 application/octet-stream 不足以定家族。",
+    "断言攻击者已植入后门或已建立持久化。",
+    "断言攻击者身份、C2 服务器或输入中不存在的初始访问路径。",
+    "写成无需处理或确认为误报。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "已确认真实攻击",
+    "确认攻击成立",
+    "冰蝎",
+    "Behinder",
+    "已植入",
+    "已持久化",
+    "已建立持久化",
+    "无需处理",
+    "确认为误报",
+    "确认攻击者"
+  ],
+  "required_evidence_gaps": [
+    "缺少 Web 访问日志，未证明该 ASPX 文件被请求或执行。",
+    "未取得文件内容，未确认落入 Web 目录的具体脚本逻辑。",
+    "缺少命令执行/进程上下文，未证明文件被执行。"
+  ],
+  "human_required": false,
+  "human_takeover_condition": "若后续工具查询仍无法确认该文件是否被执行，且风险等级为 HIGH，应转人工确认是否隔离。",
+  "automatic_checks": [
+    "gate overall 落在允许偏离集合内，且三档 scope = weak_signal。",
+    "knowledge_query 状态为 success（不要求 mcp_tools）。",
+    "命中的 knowledge_id 全部属于 allowed_knowledge_ids，且不命中 forbidden_knowledge_ids。",
+    "报告未出现 forbidden_conclusion_keywords 中的任何一项。",
+    "evidence_gaps 非空，至少列出访问/执行上下文缺口。",
+    "未触发 knowledge_scope_mismatch（未把事件判成非 WebShell 领域）。"
+  ],
+  "manual_review_notes": "弱信号案例：保留不确定性，把知识模板用作调查方向而不是当作本事件已发生的事实。"
+}

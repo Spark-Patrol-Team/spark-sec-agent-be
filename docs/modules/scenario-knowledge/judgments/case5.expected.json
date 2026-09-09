@@ -1,0 +1,68 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-005",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case5.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_WEAK",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_WEAK",
+      "INDETERMINATE"
+    ]
+  },
+  "expected_scope": "weak_signal",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "partially_applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-FEATURES"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "关键工具调用失败场景：knowledge_query 用于检索人工接管条件；不得把工具失败写成成功。"
+  },
+  "allowed_conclusions": [
+    "关键工具调用失败（XDR 告警查询超时、资产查询权限不足、日志查询返回空），无法获取补充证据。",
+    "证据不足，需要人工接管。",
+    "工具失败不等于没有发现风险，需保留不确定性。"
+  ],
+  "forbidden_conclusions": [
+    "编造工具返回结果。",
+    "在无证据情况下提升置信度或确认真实攻击。",
+    "把工具失败写成未发现风险 / 无 WebShell。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "已确认工具返回",
+    "确认真实攻击",
+    "未发现风险",
+    "无WebShell",
+    "提升置信度",
+    "调查成功"
+  ],
+  "required_evidence_gaps": [
+    "XDR 告警查询超时，告警详情不可用。",
+    "资产查询权限不足。",
+    "日志查询返回空集。",
+    "仅有原始 WebShell 文件名字符串，无文件内容/执行证据。"
+  ],
+  "human_required": true,
+  "human_takeover_condition": "关键工具调用失败，无法完成必要调查，按知识 §5.2 触发人工接管。",
+  "automatic_checks": [
+    "gate overall 落在允许偏离集合内，三档 scope = weak_signal。",
+    "knowledge_query 状态为 success（用于人工接管条件）。",
+    "命中的 knowledge_id 属于 allowed，且不命中 forbidden_knowledge_ids。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "evidence_gaps 非空。",
+    "manual_takeover = true。"
+  ],
+  "manual_review_notes": "工具失败案例：不得以「模拟的工具失败输入」当成真实 XDR 失败实测，只能描述为输入声明的失败条件。"
+}

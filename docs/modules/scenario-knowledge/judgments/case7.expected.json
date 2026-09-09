@@ -1,0 +1,62 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-007",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case7.json",
+  "signal_strength": {
+    "expected_gate_overall": "MIXED",
+    "allowed_gate_deviations": [
+      "MIXED",
+      "BENIGN_LIKE",
+      "IN_SCOPE_WEAK"
+    ]
+  },
+  "expected_scope": "weak_signal",
+  "knowledge_mode": "knowledge_optional",
+  "applicability": "partially_applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "required_knowledge_ids": [],
+  "forbidden_knowledge_ids": [
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-FEATURES"
+  ],
+  "expected_tool_status": {
+    "knowledge_query": "not_called",
+    "mcp_tools": "not_called",
+    "notes": "合法业务上传：可选调用证据检查清单核对，非必须；不得套用确认类知识。"
+  },
+  "allowed_conclusions": [
+    "该请求为已知业务 API 的头像上传（multipart/form-data + image/png + 合法文件名），Base64 参数为用户 ID 编码，属于正常业务可能。",
+    "未发现 WebShell 确认信号，倾向于误报或正常业务，但仍建议核对上传白名单与业务 API 文档。"
+  ],
+  "forbidden_conclusions": [
+    "自动判定为恶意或已确认 WebShell 上传。",
+    "把 Base64 与 multipart/form-data 误判为加密 WebShell 通信。",
+    "给出无条件隔离/删除等高危处置动作。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "确认WebShell上传",
+    "已确认恶意",
+    "自动判恶意",
+    "无条件隔离",
+    "确认WebShell通信"
+  ],
+  "required_evidence_gaps": [
+    "缺少该上传接口近 15 分钟访问日志比对，未确认是否仅正常调用。",
+    "未排除上传文件被重命名/双扩展名，需核对 /www/uploads/avatars/ 目录。"
+  ],
+  "human_required": false,
+  "human_takeover_condition": "正常业务倾向，不触发人工接管；若后续发现该接口被用于非图片写入，再升级。",
+  "automatic_checks": [
+    "gate overall 落在允许偏离集合内（MIXED/BENIGN_LIKE/IN_SCOPE_WEAK），三档 scope = weak_signal。",
+    "未出现 IN_SCOPE_CONFIRMED。",
+    "命中的 knowledge_id 属于 allowed，且不命中 forbidden_knowledge_ids。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "保留正常业务可能（明确列出误报/正常业务条件）。"
+  ],
+  "manual_review_notes": "合法业务误报：只在输入确实出现双扩展名、web 目录执行信号时才升级；仅凭 Base64 参数不构成 WebShell 证据。"
+}

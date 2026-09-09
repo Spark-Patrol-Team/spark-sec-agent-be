@@ -1,0 +1,70 @@
+{
+  "schema_version": "2026-09-06.yanyushuo-expected.v1",
+  "case_id": "TC-KNOWLEDGE-009",
+  "case_file": "docs/modules/scenario-knowledge/knowledge-test-cases/case9.json",
+  "signal_strength": {
+    "expected_gate_overall": "IN_SCOPE_CONFIRMED",
+    "allowed_gate_deviations": [
+      "IN_SCOPE_CONFIRMED"
+    ]
+  },
+  "expected_scope": "in_scope",
+  "knowledge_mode": "knowledge_required",
+  "applicability": "applicable",
+  "allowed_knowledge_ids": [
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-FEATURES",
+    "K-WEBSHELL-TOOLS-TRAFFIC",
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-RESPONSE-TEMPLATE",
+    "K-WEBSHELL-MANUAL-TAKEOVER"
+  ],
+  "required_knowledge_ids": [
+    "K-WEBSHELL-EVIDENCE-CHECKLIST",
+    "K-WEBSHELL-PRINCIPLE",
+    "K-WEBSHELL-RESPONSE-TEMPLATE"
+  ],
+  "forbidden_knowledge_ids": [],
+  "expected_tool_status": {
+    "knowledge_query": "success",
+    "mcp_tools": "not_called",
+    "notes": "确认级后进入深度调查与处置建议；mcp_tools 不得写成真实 MCP 成功。"
+  },
+  "allowed_conclusions": [
+    "输入证据完整链：异常 POST → /orders/UpdateStatus.aspx 物理文件被修改（新增 InteropServices 与 Process.Start） → w3wp.exe(PID 2844) 创建 cmd.exe /c whoami → 子进程结果经 HTTP 200 返回 Base64 系统信息，已观察到 WebShell 命令执行。",
+    "风险高，确认为 WebShell 命令执行事件，建议隔离、保全证据、删除 WebShell、修复加固。",
+    "建议人工审批隔离/删除等高风险处置动作。"
+  ],
+  "forbidden_conclusions": [
+    "断言输入中不存在的横向移动、数据窃取或多个植入点。",
+    "把 Stateful Mock / 模拟工具结果写成真实设备处置已生效。",
+    "在无持久化证据时断言已建立持久化。",
+    "声称已清除后门或已恢复。"
+  ],
+  "forbidden_conclusion_keywords": [
+    "横向移动",
+    "数据已窃取",
+    "多个植入",
+    "已建立持久化",
+    "真实处置已生效",
+    "已清除后门",
+    "已恢复"
+  ],
+  "required_evidence_gaps": [
+    "缺少完整网络会话取证，未确认通信目标与外传。",
+    "未确认是否存在其他植入点或持久化。",
+    "未确认受影响范围（whoami 为当前用户信息，未证实横向）。"
+  ],
+  "human_required": true,
+  "human_takeover_condition": "高风险处置（隔离、删除 WebShell、加固）需审批；建议人工确认受影响范围与是否已持久化。",
+  "automatic_checks": [
+    "gate overall = IN_SCOPE_CONFIRMED，三档 scope = in_scope。",
+    "gate_decision = in_scope（门禁三档，不做风险评分/等级升级）。",
+    "knowledge_query 状态为 success。",
+    "命中的 knowledge_id 属于 allowed，且未命中任何 forbidden knowledge_id。",
+    "报告未出现 forbidden_conclusion_keywords。",
+    "evidence_gaps 非空。",
+    "manual_takeover = true。"
+  ],
+  "manual_review_notes": "确认级案例：允许报告输入中已观察到的命令执行事实；禁止把知识或模拟结果扩写成输入中没有的横向/窃取/持久化事实。"
+}

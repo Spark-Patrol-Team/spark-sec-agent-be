@@ -92,7 +92,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^(case[1-9][0-9]*|TC-[A-Z0-9-]+)$",
-          "description": "案例 ID，对应 knowledge-test-cases/caseN.json 或团队测试用例编号。"
+          "description": "案例 ID，对应 tests/fixtures/gatekeeper_cases/caseN.json 或团队测试用例编号。"
         },
         "knowledge_mode": {
           "type": "string",
