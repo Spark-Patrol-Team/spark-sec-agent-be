@@ -46,4 +46,5 @@ uv run pytest tests/test_yanyushuo_expected_judgments.py tests/test_gatekeeper_c
 
 - ✅ 交付物 #1~#4 已完成；交付物 #3 已扩展为 15 张 WSK 卡边界 Review；
 - ✅ 交付物 #5（一致性 Review）已完成；已记录陈敏 `feat/case-quality-check-and-tests` 对 triage / case3 RSA / benign / alerts+evidence 统一抽取的修复，以及仍待处理的 case2/case10 输入口径问题；
-- ✅ 交付物 #6（≥6 案 A/B 研判影响结论）已完成登记（8/10 案），见 `一致性review.md` 第 5 节；含限制（mock 行为对照，无真实 LLM 风险分/置信度数值）与缺陷点（`fold_scope` fail-open、case7 误报档语义）。
+- ✅ 交付物 #6（≥6 案 A/B 研判影响结论）已完成登记（8/10 案），见 `一致性review.md` 第 5 节；**明确标注为「预演」**——数据为确定性 mock 门禁行为对照，无真实 LLM 风险分/置信度数值；含限制与缺陷点（`fold_scope` fail-open、case7 误报档语义）。
+- ⏳ **交付物 #6 正式 Review（待补充）**：等杨景凡 ≥6 案真实 `off/guarded` A/B 结果出来后，基于同一份正式结果补最后一遍，重点核验知识增强有没有让风险判断、置信度或结论在证据不足时变强。
