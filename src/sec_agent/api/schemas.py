@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HealthResponse(BaseModel):
@@ -45,12 +45,19 @@ class EvalToolStatus(BaseModel):
     notes: str = ""
 
 
+class EvalEvidenceBreakdown(BaseModel):
+    event_evidence_refs: list[str] = Field(default_factory=list)
+    tool_result_refs: list[str] = Field(default_factory=list)
+    knowledge_refs: list[str] = Field(default_factory=list)
+
+
 class EvalRunResult(BaseModel):
     verdict: Literal["malicious", "benign", "uncertain"]
     confidence: float
     matched_knowledge_ids: list[str]
     tool_status: EvalToolStatus
     evidence_refs: list[str]
+    evidence_breakdown: EvalEvidenceBreakdown = Field(default_factory=EvalEvidenceBreakdown)
     forbidden_conclusion_hit: bool
     manual_takeover: bool
     step_count: int

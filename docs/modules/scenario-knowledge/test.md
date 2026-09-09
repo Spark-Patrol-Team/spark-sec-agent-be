@@ -10,7 +10,7 @@
 4. **Agent 报告行为**：知识是否被适当消费，是否把通用知识扩写成事件事实，负向案例是否被错误套用 WebShell 知识。
 
 前三层可由仓库自动化测试确认；Agent 报告行为必须检查实际报告，不能只凭退出码或口头回执判定。正式评测汇总形成后，使用 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向汇总文件复用同一套入口检查。
-前端对比页面可先对接 `GET /eval/comparisons`；当前接口返回 OFF/GUARDED Mock 对比数据，正式 fixture 稳定后再替换数据源。
+前端对比页面可先对接 `GET /eval/comparisons`；当前接口默认返回 OFF/GUARDED Mock 对比数据，配置 `EVAL_COMPARISON_FIXTURE_PATH` 后可读取正式结果包，并区分事件证据、工具查询结果和知识引用。
 
 ## 2. 测试数据边界
 
@@ -104,6 +104,7 @@ case_id, knowledge_mode, stage
 - [x] 评测汇总 Schema 与最小 fixture 已冻结并加入结构守护测试（2026-09-06）。
 - [x] 评测汇总正式入口框架已就绪，可用 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 替换正式汇总文件，并将失败定位到案例、知识模式和阶段（2026-09-06）。
 - [x] OFF/GUARDED 前端对比接口已就绪，`GET /eval/comparisons` 当前返回 Mock 数据并进入 OpenAPI（2026-09-07）。
+- [x] OFF/GUARDED 接口已支持证据分层、正式结果包读取、至少 6 案校验和 actual summary 生成（2026-09-09）。
 - [ ] PR 最新提交的仓库 CI 通过。
 - [ ] case1、case2 在最终提交上完成报告复验，知识引用与事件证据分开。
 - [ ] case6 在最终提交上完成负向复验，未调用 WebShell 知识且未新增 WebShell 事实。
@@ -123,3 +124,4 @@ case_id, knowledge_mode, stage
 | 2026-09-06 | 冻结评测汇总 Schema，新增最小 fixture 与结构守护测试 |
 | 2026-09-06 | 补齐正式评测汇总入口框架，支持通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 验证正式结果并定位到案例、知识模式和阶段 |
 | 2026-09-07 | 新增 `GET /eval/comparisons` 前端对比接口说明；当前为 Mock 数据源，等待正式 fixture 稳定后替换 |
+| 2026-09-09 | 补充 `GET /eval/comparisons` 正式结果包读取说明：`EVAL_COMPARISON_FIXTURE_PATH`、至少 6 案、证据三分和 actual summary |

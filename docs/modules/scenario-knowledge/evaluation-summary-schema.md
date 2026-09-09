@@ -10,7 +10,7 @@
 
 该 Schema 用于记录每个评测案例的知识使用情况、适用性、命中知识、工具状态、证据引用、禁止结论、人工接管、执行步数、耗时和人工 Review 栏。
 正式评测汇总尚未生成前，测试入口默认使用最小 fixture；正式汇总形成后，通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向正式结果文件即可复用同一套结构守护测试。
-前端 OFF/GUARDED 对比页面可先对接 `GET /eval/comparisons`；当前接口返回 `data_source=mock_fixture` 的后端 Mock 对比数据，正式 fixture 稳定后再替换数据源。
+前端 OFF/GUARDED 对比页面可先对接 `GET /eval/comparisons`。未配置正式包时，接口返回 `data_source=mock_fixture` 的后端 Mock 对比数据；配置 `EVAL_COMPARISON_FIXTURE_PATH` 后，接口读取正式结果包，要求至少 6 案，并自动生成 actual `summary`。
 
 ## 2. 顶层结构
 
@@ -153,7 +153,24 @@ case_id, knowledge_mode, applicability, off, guarded, comparison, human_review
 
 ```text
 verdict, confidence, matched_knowledge_ids, tool_status, evidence_refs,
-forbidden_conclusion_hit, manual_takeover, step_count, duration_ms
+evidence_breakdown, forbidden_conclusion_hit, manual_takeover, step_count, duration_ms
 ```
 
-当前接口只用于前端先行联调，不代表正式 OFF/GUARDED 评测汇总已经生成。
+`evidence_breakdown` 用于区分不同来源：
+
+```text
+event_evidence_refs   事件证据
+tool_result_refs      工具查询结果
+knowledge_refs        知识引用
+```
+
+读取正式 OFF/GUARDED 结果包：
+
+```text
+EVAL_COMPARISON_FIXTURE_PATH=/path/to/formal_comparison.json \
+  uv run uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
+```
+
+正式结果包必须至少包含 6 条 `results`。如果正式包缺少 `evidence_breakdown`，接口会按 `evidence_refs` 前缀自动拆分：`knowledge:` / `K-` 归入知识引用，`tool:` / `tool_result:` / `mcp:` 归入工具查询结果，其余归入事件证据。
+
+当前接口已具备正式包读取链路，但本地尚未持有杨景凡最终正式 A/B 结果包；收到正式包后可直接用同一路径复验。

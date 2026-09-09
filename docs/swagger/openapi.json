@@ -701,6 +701,33 @@
         ],
         "title": "EvalComparisonSummary"
       },
+      "EvalEvidenceBreakdown": {
+        "properties": {
+          "event_evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Event Evidence Refs"
+          },
+          "tool_result_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tool Result Refs"
+          },
+          "knowledge_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledge Refs"
+          }
+        },
+        "type": "object",
+        "title": "EvalEvidenceBreakdown"
+      },
       "EvalHumanReview": {
         "properties": {
           "status": {
@@ -786,6 +813,9 @@
             },
             "type": "array",
             "title": "Evidence Refs"
+          },
+          "evidence_breakdown": {
+            "$ref": "#/components/schemas/EvalEvidenceBreakdown"
           },
           "forbidden_conclusion_hit": {
             "type": "boolean",

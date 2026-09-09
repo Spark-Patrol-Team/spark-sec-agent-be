@@ -5,10 +5,10 @@
 | 项目 | 内容 |
 |---|---|
 | 模块 | 主链 |
-| 任务/测试批次 | 真实 XDR 告警输入接入后主链回归；Bridge 显式装配优化；评测对比接口接入 |
+| 任务/测试批次 | 真实 XDR 告警输入接入后主链回归；Bridge 显式装配优化；评测对比接口接入与正式包读取 |
 | 执行人 | 李雨妍|
-| 执行时间 | 2026-08-30；2026-08-31；2026-09-06；2026-09-07 |
-| 基线分支与Commit | 当前工作区，包含真实 XDR 告警接入、签名实现、主链文档补充、Bridge 显式装配和评测对比接口 |
+| 执行时间 | 2026-08-30；2026-08-31；2026-09-06；2026-09-07；2026-09-09 |
+| 基线分支与Commit | 当前工作区，包含真实 XDR 告警接入、签名实现、主链文档补充、Bridge 显式装配和评测对比接口正式包读取 |
 | 环境 | macOS；Python 3.11；pytest；FastAPI TestClient；真实 XDR OpenAPI 联调环境 |
 | 数据集/样例版本 | `tests/fixtures/fixed_alerts`；`fixed_sample` 内置样例；JSONL 样例；真实 XDR 告警 `alert-9fd0c034-ba09-4311-8360-cf1787206450` |
 | 工作流/知识库版本 | 不适用，当前主链测试不依赖外部知识库 |
@@ -32,6 +32,8 @@
 - `Orchestrator` 可通过构造参数注入 Bridge，主链 `/runs` 路径可消费注入 Bridge 的调查报告。
 - 评测汇总正式入口框架：通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 可替换正式评测汇总文件，失败定位到案例、知识模式和阶段。
 - 评测对比 HTTP 接口：`GET /eval/comparisons` 返回 OFF/GUARDED 对比 Mock 数据，供前端评测对比页面先行接入。
+- 评测对比证据分层：接口区分事件证据、工具查询结果和知识引用，并保留 `evidence_refs` 兼容字段。
+- 评测对比正式包读取：通过 `EVAL_COMPARISON_FIXTURE_PATH` 读取正式 OFF/GUARDED JSON 结果包，要求至少 6 案，并自动生成 actual `summary`。
 - 状态机合法迁移、非法迁移、审批拒绝和审批幂等。
 - OpenAPI 生成结果与当前代码一致性。
 - CORS 预检和实际接口响应。
@@ -44,7 +46,8 @@
 - 真实高风险处置动作，原因是当前主链使用 Mock 处置工具。
 - 真实 LLM deep agent 集成，原因是本轮主链装配优化不验证外部 LLM 服务和真实 MCP 工具闭环。
 - FastGPT / 远程 Agent / 新 MCP Agent 真实 Bridge 实现，原因是本轮只完成主链显式装配，不新增外部 Agent 适配器。
-- 正式 OFF/GUARDED 评测结果入库或动态读取，原因是当前 `/eval/comparisons` 使用后端固定 Mock 数据。
+- 正式 OFF/GUARDED 评测结果入库，原因是当前 `/eval/comparisons` 支持文件结果包读取但未接数据库。
+- 杨景凡最终正式 A/B 结果包实测，原因是本地尚未持有该外部交付物；当前用临时 6 案测试包验证读取链路。
 - MySQL 仓储真实数据库回归，原因是本轮未启动真实 MySQL 环境。
 
 ## 2. 前置条件与测试数据
@@ -101,7 +104,7 @@ uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q
 结果：
 
 ```text
-8 passed in 0.53s
+10 passed in 0.92s
 ```
 
 HTTP 服务和接口联调：
@@ -188,7 +191,7 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 
 | 用例ID | 优先级 | 类型 | 场景/输入 | 预期结果 | 实际结果 | 状态 | `trace_id` | 证据编号 | 缺陷编号 |
 |---|---|---|---|---|---|---|---|---|---|
-| MAIN-001 | P0 | 回归 | 执行完整 `pytest` | 全部测试通过 | 2026-09-07 复验 `210 passed in 45.15s` | Pass | 无 | EVID-MAIN-001 | 无 |
+| MAIN-001 | P0 | 回归 | 执行完整 `pytest` | 全部测试通过 | 2026-09-09 复验 `212 passed in 35.92s` | Pass | 无 | EVID-MAIN-001 | 无 |
 | MAIN-002 | P0 | 全链路 | fixed_sample 执行 `run_flow` | 审批前 `APPROVAL_REQUIRED`，审批后 `COMPLETED` | 输出 `启动完成: status=APPROVAL_REQUIRED` 和 `审批后状态: status=COMPLETED` | Pass | 无 | EVID-MAIN-002 | 无 |
 | MAIN-003 | P0 | 接口 | `POST /runs`，请求 `{"source":"fixed_sample"}` | 返回 `EventContext`，状态为 `APPROVAL_REQUIRED` | 生成事件 `evt-f0ce793e-4e47-4db2-afe4-ee3998d92505`，状态 `APPROVAL_REQUIRED` | Pass | `trace-09978e32-22a0-48e4-b066-8742371753c6` | EVID-MAIN-003 | 无 |
 | MAIN-004 | P1 | 接口 | `GET /events/{event_id}` 查询 MAIN-003 事件 | 返回 200，并返回同一事件详情 | 返回 200，事件可查询，响应包含 CORS 头 | Pass | `trace-09978e32-22a0-48e4-b066-8742371753c6` | EVID-MAIN-004 | 无 |
@@ -202,13 +205,15 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 | MAIN-012 | P0 | 文档/设计 | Bridge 与主链真实 Agent 接入装配设计 | 主链三文档内明确装配边界、配置选择、后续落地步骤和未覆盖范围 | 已写入 `design.md`、`development.md`、`test.md`；不新增其他目录文件 | Pass | 无 | EVID-MAIN-012 | 无 |
 | MAIN-013 | P0 | 单元/集成 | 主链通过构造参数注入 Bridge 后执行 `POST /runs` 等价路径 | `Orchestrator` 调用注入 Bridge，并继续推进到 `APPROVAL_REQUIRED` | `tests/test_deep_agent_bridge.py` 新增注入 Bridge 用例；局部回归 `15 passed in 1.45s` | Pass | 无 | EVID-MAIN-013 | 无 |
 | MAIN-014 | P0 | 评测入口 | 使用默认最小 fixture 与显式 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 跑评测汇总入口 | Schema、fixture 和正式入口框架通过；失败可定位到 `case_id`、`knowledge_mode`、`stage` | 默认入口 `4 passed in 0.01s`；显式路径入口 `4 passed in 0.02s` | Pass | 无 | EVID-MAIN-014 | 无 |
-| MAIN-015 | P0 | 接口/评测 | `GET /eval/comparisons` | 返回 OFF/GUARDED 对比数据，包含 `schema_version`、`comparison_id`、`data_source`、`suite`、`summary`、`results` | 返回 `data_source=mock_fixture`、`suite.baseline=OFF`、`suite.candidate=GUARDED`；接口与 OpenAPI 回归 `8 passed in 0.53s` | Pass | 无 | EVID-MAIN-015 | 无 |
+| MAIN-015 | P0 | 接口/评测 | `GET /eval/comparisons` | 返回 OFF/GUARDED 对比数据，包含 `schema_version`、`comparison_id`、`data_source`、`suite`、`summary`、`results` | 返回 `data_source=mock_fixture`、`suite.baseline=OFF`、`suite.candidate=GUARDED`；接口与 OpenAPI 回归通过 | Pass | 无 | EVID-MAIN-015 | 无 |
+| MAIN-016 | P0 | 接口/评测 | `GET /eval/comparisons` 证据分层 | `off` 和 `guarded` 均区分事件证据、工具查询结果和知识引用 | 响应包含 `evidence_breakdown.event_evidence_refs`、`tool_result_refs`、`knowledge_refs`；默认 Mock 和正式包路径均通过断言 | Pass | 无 | EVID-MAIN-016 | 无 |
+| MAIN-017 | P0 | 接口/评测 | 配置 `EVAL_COMPARISON_FIXTURE_PATH` 指向正式结果包 | 读取正式 JSON 包，至少 6 案，自动生成 actual `summary`；少于 6 案拒绝 | 临时 6 案 formal fixture 返回 `data_source=formal_fixture`、`summary.total_cases=6`；临时 1 案包返回 500 且提示至少 6 案 | Pass | 无 | EVID-MAIN-017 | 无 |
 
 ## 5. 结果汇总
 
 | 指标 | 数量 |
 |---|---:|
-| 通过 | 15 |
+| 通过 | 17 |
 | 失败 | 0 |
 | 阻塞 | 0 |
 | 未执行 | 0 |
@@ -223,15 +228,15 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 
 | 指标 | 计算口径 | 分子/原始计数 | 分母/原始计数 | 结果 | 数据或脚本证据 |
 |---|---|---:|---:|---:|---|
-| 主链测试通过率 | 本文列出的正式用例 Pass 数 / 正式用例总数 | 15 | 15 | 100% | EVID-MAIN-001 至 EVID-MAIN-015 |
-| 自动化测试通过情况 | pytest 通过数 / pytest 已执行测试数 | 210 | 210 | 100% | EVID-MAIN-001 |
+| 主链测试通过率 | 本文列出的正式用例 Pass 数 / 正式用例总数 | 17 | 17 | 100% | EVID-MAIN-001 至 EVID-MAIN-017 |
+| 自动化测试通过情况 | pytest 通过数 / pytest 已执行测试数 | 212 | 212 | 100% | EVID-MAIN-001 |
 | CORS 预检通过情况 | 配置 origin 的预检请求成功数 / 本轮预检请求数 | 1 | 1 | 100% | EVID-MAIN-005 |
 
 ## 7. 证据索引
 
 | 证据 | 位置 | 脱敏状态 | 支持的结论 |
 |---|---|---|---|
-| EVID-MAIN-001 | 本地命令输出：`uv run pytest -q`；结果 `210 passed in 45.15s` | 不含敏感信息 | 完整测试回归通过 |
+| EVID-MAIN-001 | 本地命令输出：`uv run pytest -q`；结果 `212 passed in 35.92s` | 不含敏感信息 | 完整测试回归通过 |
 | EVID-MAIN-002 | 本地命令输出：`python -m sec_agent.scripts.run_flow` | 不含敏感信息 | fixed_sample 主流程审批后可到 `COMPLETED` |
 | EVID-MAIN-003 | 本地 HTTP 响应：`POST /runs` | 不含敏感信息 | 主链接口可生成测试事件 |
 | EVID-MAIN-004 | 本地 HTTP 响应：`GET /events/{event_id}` | 不含敏感信息 | 事件详情可查询，CORS 实际响应生效 |
@@ -245,7 +250,9 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 | EVID-MAIN-012 | 主链文档：`docs/modules/main-chain/design.md`、`development.md`、`test.md` | 不含敏感信息 | Bridge 与主链真实 Agent 接入装配设计已收敛在主链三文档 |
 | EVID-MAIN-013 | 本地命令输出：`uv run pytest tests/test_deep_agent_bridge.py tests/test_state_flow.py tests/test_api_http.py -q`；结果 `15 passed in 1.45s` | 不含敏感信息 | Bridge 显式注入、主链状态流和 HTTP 主链回归通过 |
 | EVID-MAIN-014 | 本地命令输出：`uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q`；结果 `4 passed in 0.01s`。显式路径入口：`KNOWLEDGE_EVALUATION_SUMMARY_PATH=tests/fixtures/evaluation/minimal_knowledge_evaluation_summary.json uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q`；结果 `4 passed in 0.02s` | 不含敏感信息 | 评测汇总入口框架已就绪，可在正式汇总形成后替换输入文件 |
-| EVID-MAIN-015 | 本地命令输出：`uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q`；结果 `8 passed in 0.53s`；OpenAPI 生成输出 `接口数量: 9` | 不含敏感信息 | `GET /eval/comparisons` 可返回 OFF/GUARDED Mock 对比数据，并已进入 OpenAPI |
+| EVID-MAIN-015 | 本地命令输出：`uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q`；结果 `10 passed in 0.92s`；OpenAPI 生成输出 `接口数量: 9` | 不含敏感信息 | `GET /eval/comparisons` 可返回 OFF/GUARDED 对比数据，并已进入 OpenAPI |
+| EVID-MAIN-016 | `tests/test_api_http.py::ApiHttpTest::test_eval_comparisons_returns_off_guarded_mock_payload` | 不含敏感信息 | 默认 Mock 响应已区分事件证据、工具查询结果和知识引用 |
+| EVID-MAIN-017 | `tests/test_api_http.py::ApiHttpTest::test_eval_comparisons_reads_formal_fixture_and_builds_actual_summary`；`test_eval_comparisons_rejects_incomplete_formal_fixture` | 不含敏感信息 | `EVAL_COMPARISON_FIXTURE_PATH` 正式包读取、至少 6 案校验和 actual summary 生成链路通过 |
 
 ## 8. 失败项与已知限制
 
@@ -254,7 +261,8 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 | 真实 LLM 集成未复验 | 本轮主链装配优化不启动外部 LLM 服务 | 不阻塞主链 Mock / 样例回归；阻塞真实 deep agent 验证 | 后续配置脱敏环境变量和真实工具后单独复验 |
 | 真实 MCP 未接入 | 期望主链调用真实 MCP 调查工具 | 阻塞生产调查闭环 | 补齐 MCP 工具地址、鉴权、schema 和测试数据 |
 | FastGPT / 远程 Agent Bridge 未实现 | 期望通过同一 Bridge 契约替换不同真实 Agent | 不影响当前主链；影响后续多 Agent 接入范围 | 在现有 `InvestigationBridge` 协议下新增适配实现和集成测试 |
-| `/eval/comparisons` 当前为 Mock 数据 | 期望返回正式 OFF/GUARDED 评测结果 | 不影响前端页面先行对接；影响正式验收数据真实性 | 正式 fixture 稳定后替换 Mock 数据源，并补数据源契约测试 |
+| `/eval/comparisons` 未接数据库 | 期望返回入库后的正式 OFF/GUARDED 评测结果 | 不影响前端页面和正式 JSON 包先行对接；影响长期归档查询 | 正式 fixture 稳定后从文件读取升级为存储读取，并补数据源契约测试 |
+| 杨景凡正式 A/B 结果包本地未持有 | 期望使用真实 6 案以上结果包完成最终 V2 统一回归 | 不影响读取链路和最小集成测试；影响正式数据验收 | 收到正式结果包后设置 `EVAL_COMPARISON_FIXTURE_PATH` 跑同一套回归 |
 | XDR OpenAPI 只验证告警列表接口 | 期望调用全量 XDR OpenAPI 能力 | 不阻塞真实告警输入；阻塞完整平台能力声明 | 补齐更多接口契约、错误码和联调样本 |
 | XDR 日志查询接口未验收 | `xdr_log_query` 调用真实日志接口 | 不阻塞已命中告警进入审批；影响调查证据丰富度 | 索要日志接口路径、请求参数、返回结构和权限说明 |
 | 真实高风险处置未接入 | 审批通过后期望真实封禁或隔离 | 阻塞生产处置动作 | 替换 Mock 工具并补审批、回滚、审计测试 |
@@ -265,8 +273,9 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 - 本轮可确认：当前后端可以通过现有 `POST /runs` 主链入口，从真实 XDR 告警列表接口拉取目标告警，并到达 `APPROVAL_REQUIRED`。
 - 本轮可确认：Bridge 显式装配已落地，`Orchestrator` 可注入 Bridge，主链可消费注入 Bridge 的 `InvestigationReport` 并继续推进到审批。
 - 本轮可确认：评测汇总入口框架已就绪，正式汇总文件可通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 接入同一套 Schema 守护测试。
-- 本轮可确认：`GET /eval/comparisons` 已可用，返回 OFF/GUARDED 对比 Mock 数据，并已进入 OpenAPI。
-- 本轮仍不能确认：真实深信服 MCP 工具、XDR 日志查询真实接口、真实 LLM 调查闭环、真实高风险处置动作、MySQL 真实环境持久化，以及 FastGPT / 远程 Agent Bridge 实现。
+- 本轮可确认：`GET /eval/comparisons` 已可用，返回 OFF/GUARDED 对比数据，并已进入 OpenAPI。
+- 本轮可确认：评测对比接口已区分事件证据、工具查询结果和知识引用；已支持正式 JSON 结果包读取、至少 6 案校验和 actual summary 自动生成。
+- 本轮仍不能确认：真实深信服 MCP 工具、XDR 日志查询真实接口、真实 LLM 调查闭环、真实高风险处置动作、MySQL 真实环境持久化、FastGPT / 远程 Agent Bridge 实现，以及杨景凡最终正式 A/B 结果包内容。
 - 是否影响上下游或主链：真实告警输入已可用；真实调查工具和生产处置能力仍需后续接入。
 - 建议状态：已提交待验收。
 
@@ -281,3 +290,4 @@ uv run python -m py_compile src/sec_agent/services/investigation.py src/sec_agen
 | 2026-09-06 | 当前工作区 | 落地 Bridge 显式装配并补主链级注入回归；未新增 fixture 或新文档文件 | 阶段通过 |
 | 2026-09-06 | 当前工作区 | 补齐评测汇总正式入口框架，并记录默认 fixture 与显式路径入口复验结果 | 阶段通过 |
 | 2026-09-07 | 当前工作区 | 新增 `GET /eval/comparisons` OFF/GUARDED 对比接口、OpenAPI 路径和 HTTP 回归 | 阶段通过 |
+| 2026-09-09 | 当前工作区 | 完善 `GET /eval/comparisons`：新增证据分层字段、正式结果包读取、至少 6 案校验和 actual summary 生成回归 | 阶段通过 |
