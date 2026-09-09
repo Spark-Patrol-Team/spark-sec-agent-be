@@ -151,9 +151,13 @@ def _response(ctx: EventContext) -> EventResponseView | None:
         action=plan.action if plan else None,
         target=plan.target if plan else None,
         risk_level=plan.risk_level if plan else None,
+        evidence_scope=plan.evidence_scope if plan else None,
+        max_allowed_risk_level=plan.max_allowed_risk_level if plan else None,
         approval_required=plan.approval_required if plan else None,
         execution_status=execution.status if execution else None,
+        execution_effect_layer=execution.effect_layer if execution else None,
         verification_status=verification.status if verification else None,
+        verification_effect_layer=verification.verified_effect_layer if verification else None,
         final_status=verification.final_status if verification else None,
     )
 

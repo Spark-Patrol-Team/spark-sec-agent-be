@@ -153,8 +153,8 @@ class T090306DesensitizedRealConversionTest(unittest.TestCase):
         """非空数组 url 应留存（与空数组过滤区分）。"""
         self.assertEqual(self.alert.scenario_fields["xdr_url"], ["http://example.local/path"])
 
-    def test_full_main_chain_to_approval_required(self):
-        """脱敏真实结构 → 完整主链 APPROVAL_REQUIRED，无 fallback。
+    def test_full_main_chain_stops_before_webshell_response_for_out_of_scope_alert(self):
+        """脱敏真实结构 → 接入和调查成功，非 WebShell 不进入处置候选。
 
         investigation_backend 固定 tool_mock：主链状态与 deep_agent/LLM 环境解耦，
         避免开发机配置 LLM 凭据/DEEP_AGENT_TOOL_MODE 时走真实深度调查导致非确定性。
@@ -164,16 +164,18 @@ class T090306DesensitizedRealConversionTest(unittest.TestCase):
                             store=InMemoryEventRepository(),
                             investigation_backend="tool_mock")
         ctx = orch.start(StartRunRequest(source="xdr", xdr_event_id="alert-REDACTED-UUID"))
-        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertEqual(ctx.effective_source, "xdr_openapi")
         self.assertIsNone(ctx.fallback_source)
         self.assertEqual(ctx.alert_refs, ["alert-REDACTED-UUID"])
         self.assertEqual(ctx.errors, [])
-        # timeline 六状态
+        self.assertIsNone(ctx.response)
+        # 非 WebShell 事件不应形成 DECISION_READY / APPROVAL_REQUIRED
         statuses = [e.status.value for e in ctx.timeline]
-        for expected in ["RECEIVED", "CORRELATING", "TRIAGED", "INVESTIGATING",
-                          "DECISION_READY", "APPROVAL_REQUIRED"]:
+        for expected in ["RECEIVED", "CORRELATING", "TRIAGED", "INVESTIGATING", "HUMAN_REQUIRED"]:
             self.assertIn(expected, statuses, f"缺少状态 {expected}")
+        self.assertNotIn("DECISION_READY", statuses)
+        self.assertNotIn("APPROVAL_REQUIRED", statuses)
 
 
 # ---------------------------------------------------------------------------

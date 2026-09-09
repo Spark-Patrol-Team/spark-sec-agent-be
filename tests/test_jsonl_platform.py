@@ -124,7 +124,7 @@ class JsonlPlatformTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(ctx.status, BusinessStatus.COMPLETED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertEqual(ctx.response.execution.status, ToolCallStatus.SUCCESS)
         self.assertIsNotNone(ctx.response.verification)
         self.assertEqual(ctx.response.verification.evidence_refs, ["jsonl://actions/jsonl-approval-test-001"])
