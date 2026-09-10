@@ -235,11 +235,13 @@ class InvestigationReport(BaseModel):
     timeline: list[str] = Field(default_factory=list)
     tool_results: list[str] = Field(default_factory=list)
     key_evidence_refs: list[str] = Field(default_factory=list)
+    evidence_sources: list[str] = Field(default_factory=list)
     evidence_relations: list[str] = Field(default_factory=list)
     affected_objects: list[str] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
     needs_human: bool = False
+    manual_takeover_reason: str | None = None
     steps: list[InvestigationStep] = Field(default_factory=list)
     summary: str
 
@@ -390,6 +392,8 @@ class EventInvestigationView(BaseModel):
     unresolved_questions: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
     key_evidence_refs: list[str] = Field(default_factory=list)
+    evidence_sources: list[str] = Field(default_factory=list)
+    manual_takeover_reason: str | None = None
     tool_result_count: int = 0
 
 

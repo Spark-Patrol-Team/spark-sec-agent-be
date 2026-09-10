@@ -137,6 +137,8 @@ def _investigation(ctx: EventContext) -> EventInvestigationView | None:
         unresolved_questions=_unique(ctx.investigation.unresolved_questions),
         recommended_actions=_unique(ctx.investigation.recommended_actions),
         key_evidence_refs=_clean_evidence_refs(ctx.investigation.key_evidence_refs),
+        evidence_sources=_unique(ctx.investigation.evidence_sources),
+        manual_takeover_reason=ctx.investigation.manual_takeover_reason,
         tool_result_count=len(ctx.investigation.tool_results),
     )
 

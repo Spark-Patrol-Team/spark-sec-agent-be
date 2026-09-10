@@ -119,6 +119,8 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(view["response"]["execution_status"], "success")
         self.assertEqual(view["response"]["final_status"], "COMPLETED")
         self.assertEqual(view["investigation"]["tool_result_count"], 2)
+        self.assertIn("evidence_sources", view["investigation"])
+        self.assertIn("manual_takeover_reason", view["investigation"])
         self.assertNotIn("tool_results", view["investigation"])
         self.assertEqual(
             [item["status_label"] for item in view["timeline"]],

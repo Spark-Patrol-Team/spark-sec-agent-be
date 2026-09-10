@@ -1220,6 +1220,24 @@
             "type": "array",
             "title": "Key Evidence Refs"
           },
+          "evidence_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Sources"
+          },
+          "manual_takeover_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Takeover Reason"
+          },
           "tool_result_count": {
             "type": "integer",
             "title": "Tool Result Count",
@@ -1830,6 +1848,13 @@
             "type": "array",
             "title": "Key Evidence Refs"
           },
+          "evidence_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Sources"
+          },
           "evidence_relations": {
             "items": {
               "type": "string"
@@ -1862,6 +1887,17 @@
             "type": "boolean",
             "title": "Needs Human",
             "default": false
+          },
+          "manual_takeover_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Takeover Reason"
           },
           "steps": {
             "items": {

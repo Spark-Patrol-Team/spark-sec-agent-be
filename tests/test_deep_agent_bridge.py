@@ -15,7 +15,7 @@ from sec_agent.domain.models import (
 )
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.repositories.memory import InMemoryEventRepository
-from sec_agent.services.deep_agent_bridge import DeepAgentBridgeUnavailable
+from sec_agent.services.deep_agent_bridge import DeepAgentBridge, DeepAgentBridgeUnavailable
 from sec_agent.services.investigation import DeepInvestigationAgent
 from sec_agent.services.orchestrator import Orchestrator
 
@@ -37,6 +37,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertEqual(report.final_confidence, 0.91)
         self.assertEqual(report.recommended_actions, ["隔离目标主机", "保留取证副本"])
         self.assertEqual(report.affected_objects, ["198.51.100.11"])
+        self.assertEqual(report.evidence_sources, ["来源工具: query_asset", "知识包引用: K-WEBSHELL-PRINCIPLE"])
         self.assertIn("WebShell 上传后命令执行", report.evidence_relations)
         self.assertEqual(report.steps[0].goal, "查询资产和关联告警")
 
@@ -79,6 +80,37 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertIsNotNone(ctx.investigation)
         self.assertEqual(ctx.investigation.summary, "注入 Bridge 已完成调查")
         self.assertEqual(ctx.investigation.tool_results, ["bridge-tool-call"])
+
+    def test_bridge_fails_closed_when_manual_takeover_field_missing(self) -> None:
+        report = DeepAgentBridge()._to_domain_report(
+            {
+                "conclusion": "外部 Agent 未返回人工接管字段",
+                "confidence": 0.8,
+                "disposal_suggestions": ["人工复核"],
+                "affected_objects": ["198.51.100.11"],
+            },
+            self._triage(),
+        )
+
+        self.assertTrue(report.needs_human)
+        self.assertEqual(report.manual_takeover_reason, "deep_agent 报告缺少 need_manual_takeover，按 fail-closed 转人工")
+        self.assertIn(report.manual_takeover_reason, report.unresolved_questions)
+
+    def test_bridge_fails_closed_when_manual_takeover_field_is_invalid(self) -> None:
+        report = DeepAgentBridge()._to_domain_report(
+            {
+                "conclusion": "外部 Agent 返回非法人工接管字段",
+                "confidence": 0.8,
+                "need_manual_takeover": "false",
+                "disposal_suggestions": ["人工复核"],
+                "affected_objects": ["198.51.100.11"],
+            },
+            self._triage(),
+        )
+
+        self.assertTrue(report.needs_human)
+        self.assertEqual(report.manual_takeover_reason, "deep_agent 报告 need_manual_takeover 类型非法，按 fail-closed 转人工")
+        self.assertIn(report.manual_takeover_reason, report.unresolved_questions)
 
     def _install_fake_deep_agent(self) -> None:
         package = types.ModuleType("deep_agent")
@@ -131,6 +163,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
                         }
                     ],
                     "tool_call_records": [{"tool": "query_asset", "status": "success"}],
+                    "evidence_source": ["来源工具: query_asset", "知识包引用: K-WEBSHELL-PRINCIPLE"],
                     "attack_chain": "WebShell 上传后命令执行",
                     "disposal_suggestions": ["隔离目标主机", "保留取证副本"],
                     "need_manual_takeover": False,
