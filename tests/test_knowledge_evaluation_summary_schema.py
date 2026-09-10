@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import unittest
 from pathlib import Path
@@ -11,7 +12,8 @@ from typing import Any
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "evaluation"
 SCHEMA_PATH = FIXTURE_DIR / "knowledge_evaluation_summary.schema.json"
-SUMMARY_PATH = FIXTURE_DIR / "minimal_knowledge_evaluation_summary.json"
+DEFAULT_SUMMARY_PATH = (FIXTURE_DIR / "minimal_knowledge_evaluation_summary.json").resolve()
+SUMMARY_PATH_ENV = "KNOWLEDGE_EVALUATION_SUMMARY_PATH"
 
 SCHEMA_VERSION = "2026-09-06.knowledge-eval-summary.v1"
 
@@ -79,7 +81,8 @@ HUMAN_REVIEW_STATUSES = {
 class TestKnowledgeEvaluationSummarySchema(unittest.TestCase):
     def setUp(self) -> None:
         self.schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-        self.summary = json.loads(SUMMARY_PATH.read_text(encoding="utf-8"))
+        self.summary_path = Path(os.getenv(SUMMARY_PATH_ENV, str(DEFAULT_SUMMARY_PATH))).expanduser().resolve()
+        self.summary = json.loads(self.summary_path.read_text(encoding="utf-8"))
 
     def test_schema_freezes_required_result_fields(self) -> None:
         result_schema = self.schema["$defs"]["evaluation_result"]
@@ -107,12 +110,20 @@ class TestKnowledgeEvaluationSummarySchema(unittest.TestCase):
 
         seen_cases: set[str] = set()
         for result in self.summary["results"]:
-            with self.subTest(case_id=result.get("case_id")):
+            with self.subTest(
+                case_id=result.get("case_id"),
+                knowledge_mode=result.get("knowledge_mode"),
+                stage="result_contract",
+                summary_path=str(self.summary_path),
+            ):
                 self._assert_result_contract(result)
                 self.assertNotIn(result["case_id"], seen_cases)
                 seen_cases.add(result["case_id"])
 
     def test_minimal_fixture_covers_core_evaluation_paths(self) -> None:
+        if self.summary_path != DEFAULT_SUMMARY_PATH:
+            self.skipTest(f"{SUMMARY_PATH_ENV} 指向正式汇总时不强制最小 fixture 的三条路径")
+
         by_case = {result["case_id"]: result for result in self.summary["results"]}
 
         self.assertEqual(by_case["case1"]["knowledge_mode"], "knowledge_required")
@@ -123,8 +134,38 @@ class TestKnowledgeEvaluationSummarySchema(unittest.TestCase):
         self.assertEqual(by_case["case6"]["matched_knowledge_ids"], [])
         self.assertFalse(by_case["case6"]["forbidden_conclusion_hit"])
 
+    def test_formal_summary_entry_framework_can_locate_failures(self) -> None:
+        """正式汇总入口框架：失败必须能定位到案例、知识模式和阶段。"""
+        for result in self.summary["results"]:
+            case_id = result.get("case_id", "<missing-case-id>")
+            knowledge_mode = result.get("knowledge_mode", "<missing-knowledge-mode>")
+            with self.subTest(case_id=case_id, knowledge_mode=knowledge_mode, stage="failure_locator"):
+                self.assertTrue(case_id, "stage=failure_locator 缺少 case_id，无法定位失败案例")
+                self.assertTrue(knowledge_mode, "stage=failure_locator 缺少 knowledge_mode，无法定位知识模式")
+                self.assertIn(
+                    "human_review",
+                    result,
+                    f"case_id={case_id} knowledge_mode={knowledge_mode} stage=human_review 缺少人工 Review 栏",
+                )
+                self.assertIn(
+                    "tool_status",
+                    result,
+                    f"case_id={case_id} knowledge_mode={knowledge_mode} stage=tool_status 缺少工具状态",
+                )
+                self.assertIn(
+                    "evidence_refs",
+                    result,
+                    f"case_id={case_id} knowledge_mode={knowledge_mode} stage=evidence_refs 缺少证据引用",
+                )
+
     def _assert_result_contract(self, result: dict[str, Any]) -> None:
-        self.assertEqual(set(result), RESULT_REQUIRED_KEYS)
+        case_id = str(result.get("case_id", "<missing-case-id>"))
+        knowledge_mode = str(result.get("knowledge_mode", "<missing-knowledge-mode>"))
+        self.assertEqual(
+            set(result),
+            RESULT_REQUIRED_KEYS,
+            f"case_id={case_id} knowledge_mode={knowledge_mode} stage=result_keys 字段集合不符合冻结 Schema",
+        )
         self.assertRegex(result["case_id"], r"^(case[1-9][0-9]*|TC-[A-Z0-9-]+)$")
         self.assertIn(result["knowledge_mode"], KNOWLEDGE_MODES)
         self.assertIn(result["applicability"], APPLICABILITY_VALUES)
@@ -137,10 +178,18 @@ class TestKnowledgeEvaluationSummarySchema(unittest.TestCase):
 
         self.assertEqual(len(result["matched_knowledge_ids"]), len(set(result["matched_knowledge_ids"])))
         for knowledge_id in result["matched_knowledge_ids"]:
-            self.assertIn(knowledge_id, KNOWLEDGE_IDS)
+            self.assertIn(
+                knowledge_id,
+                KNOWLEDGE_IDS,
+                f"case_id={case_id} knowledge_mode={knowledge_mode} stage=matched_knowledge_ids 未登记知识 ID",
+            )
 
         tool_status = result["tool_status"]
-        self.assertEqual(set(tool_status), {"knowledge_query", "mcp_tools", "notes"})
+        self.assertEqual(
+            set(tool_status),
+            {"knowledge_query", "mcp_tools", "notes"},
+            f"case_id={case_id} knowledge_mode={knowledge_mode} stage=tool_status 字段集合不符合约定",
+        )
         self.assertIn(tool_status["knowledge_query"], TOOL_STATES)
         self.assertIn(tool_status["mcp_tools"], TOOL_STATES)
         self.assertIsInstance(tool_status["notes"], str)
@@ -148,10 +197,17 @@ class TestKnowledgeEvaluationSummarySchema(unittest.TestCase):
         self.assertEqual(len(result["evidence_refs"]), len(set(result["evidence_refs"])))
         for evidence_ref in result["evidence_refs"]:
             self.assertIsInstance(evidence_ref, str)
-            self.assertTrue(evidence_ref.strip())
+            self.assertTrue(
+                evidence_ref.strip(),
+                f"case_id={case_id} knowledge_mode={knowledge_mode} stage=evidence_refs 存在空证据引用",
+            )
 
         human_review = result["human_review"]
-        self.assertEqual(set(human_review), HUMAN_REVIEW_KEYS)
+        self.assertEqual(
+            set(human_review),
+            HUMAN_REVIEW_KEYS,
+            f"case_id={case_id} knowledge_mode={knowledge_mode} stage=human_review 字段集合不符合约定",
+        )
         self.assertIn(human_review["status"], HUMAN_REVIEW_STATUSES)
         self.assertTrue(human_review["reviewer"] is None or isinstance(human_review["reviewer"], str))
         self.assertTrue(human_review["reviewed_at"] is None or re.match(r"^\\d{4}-\\d{2}-\\d{2}T", human_review["reviewed_at"]))

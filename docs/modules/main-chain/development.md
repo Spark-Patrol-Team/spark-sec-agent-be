@@ -7,13 +7,13 @@
 | 模块 | 主链 |
 | 负责人 | 李雨妍 |
 | 文档状态 | 已保存至docs文件夹下 |
-| 实现状态 | 主链已实现；真实 XDR 告警列表拉取已完成一次实机验证；Bridge 显式装配已落地 |
+| 实现状态 | 主链已实现；真实 XDR 告警列表拉取已完成一次实机验证；Bridge 显式装配与安全边界已落地；评测对比接口支持正式结果包读取 |
 | 能力性质 | 自研代码；fixed_sample / jsonl_sample / xdr_openapi / Mock / fallback 混合能力 |
 | 关联任务/需求 | 后端主链技术集成、统一工具调度、状态流转、HTTP 接口联调 |
 | 关联正式交付章节 | docs/deliverables/system-development-and-operation-guide.md；第9章模块说明与接入位置 |
 | 对应PR或Commit | 当前工作区；建议提交名 `fix: align XDR OpenAPI auth and alert ingestion` |
-| 适用代码版本 | 当前工作区，包含真实 XDR 告警接入、主链文档补充和 Bridge 显式装配 |
-| 最后更新时间 | 2026-09-06 |
+| 适用代码版本 | 当前工作区，包含真实 XDR 告警接入、主链文档补充、Bridge 显式装配、安全边界补齐和评测对比接口 |
+| 最后更新时间 | 2026-09-11 |
 
 ## 1. 当前实现摘要
 
@@ -23,7 +23,7 @@
 - `Orchestrator.approve()` 已支持审批通过后执行处置与验证，审批拒绝进入人工处理。
 - `StateMachine` 已约束主链允许的状态迁移，非法迁移会抛出 `InvalidStatusTransition`。
 - `EventContext` 已作为统一上下文返回给 API、脚本和仓储。
-- HTTP 接口已支持 `POST /runs`、`GET /events`、`GET /events/{event_id}`、`GET /events/{event_id}/timeline`、`POST /events/{event_id}/approval`。
+- HTTP 接口已支持 `POST /runs`、`GET /events`、`GET /events/{event_id}`、`GET /events/{event_id}/timeline`、`POST /events/{event_id}/approval`、`GET /eval/comparisons`。
 - `build_container()` 已根据配置组装平台适配器、仓储、Bridge 和主链编排器。
 - fixed_sample 和 jsonl_sample 均可接入主链，并经过现有测试覆盖。
 - `xdr_openapi` 可通过 `POST /api/xdr/v1/alerts/list` 从真实 XDR 拉取告警列表，并经 `POST /runs` 进入主链。
@@ -31,23 +31,31 @@
 - `xdr_event_id` 当前按返回结果里的唯一标识本地匹配，不依赖上游接口支持 `uuId` 过滤。
 - 统一工具调度已接入调查、处置和验证链路，工具结果统一落在 `ToolResult` 契约中。
 - Bridge 与主链真实接入的显式装配已落地：`build_container()` 创建 Bridge，`Orchestrator` 接收 `investigation_bridge`，`DeepInvestigationAgent` 通过构造函数消费 Bridge。
+- Bridge 已按处置与人工接管边界补齐 fail-closed：外部 Agent 报告缺少 `need_manual_takeover` 或字段类型非法时，主链按人工接管处理，并保留 `manual_takeover_reason`。
+- Bridge 已保留外部 Agent 报告中的 `evidence_source` 到主链 `InvestigationReport.evidence_sources`，避免知识引用、工具来源和事件证据在下游展示中混淆。
+- `GET /eval/comparisons` 已提供 OFF/GUARDED 评测对比数据。未配置正式结果包时返回 `data_source=mock_fixture`；配置 `EVAL_COMPARISON_FIXTURE_PATH` 后读取正式结果包，返回 `data_source=formal_fixture`。
+- 评测对比接口已区分 `event_evidence_refs`、`tool_result_refs` 和 `knowledge_refs`，并保留兼容字段 `evidence_refs`。
+- 正式结果包路径下，接口会校验至少 6 案，并根据逐案例 `comparison.winner`、人工接管和禁止结论字段生成 actual `summary`。
+- 本地 `.env` 已补齐真实 MCP/Agent 接入所需配置键：`MCP_API_KEY`、`MCP_VERIFY_SSL`、`AGENT_MAX_STEPS`、`AGENT_MAX_TOOL_CALLS`、FastGPT 占位项和 `EVAL_COMPARISON_FIXTURE_PATH`；真实敏感值仍不进入仓库。
 
 ### 1.2 未实现或未复验
 
 - XDR OpenAPI 目前只完成告警列表接口验收，不代表全量 XDR 接口能力完成。
-- 真实深信服 MCP 工具尚未完成主链实机闭环复验。
+- 真实深信服 MCP 只读查询工具已有交付资料和受控配置入口，但尚未在当前主链服务器环境完成重新部署后的实机闭环复验。
 - XDR 日志查询接口路径、权限和返回结构尚未拿到完整契约；当前作为调查补充工具，不阻断已命中告警进入审批。
 - 后续 FastGPT / 远程 Agent / 新 MCP Agent 尚未实现；当前显式装配的 Bridge 仍为现有 `DeepAgentBridge`。
 - 真实高风险处置动作尚未接入，当前执行阶段仍为 Mock 能力。
 - 主链尚未实现异步任务队列、超时调度、后台重试和断点续跑。
 - MySQL 持久化已有代码路径，但需要真实数据库环境复验。
 - deep agent 真实 LLM 闭环依赖 `LLM_API_KEY` 和外部工具配置，未配置时会走 fallback 或跳过真实集成测试。
+- OFF/GUARDED 正式评测汇总结果尚未落库；当前 `/eval/comparisons` 已支持读取正式 JSON 结果包，但本地尚未持有杨景凡最终正式结果包。
 
 ## 2. 代码位置
 
 | 路径 | 主要对象/入口 | 作用 |
 |---|---|---|
 | `src/sec_agent/api/routes/events.py` | `start_run()`、`submit_approval()` | 主链 HTTP 启动、查询和审批入口 |
+| `src/sec_agent/api/routes/evals.py` | `get_eval_comparisons()` | OFF/GUARDED 评测对比接口，当前返回 Mock fixture 数据 |
 | `src/sec_agent/api/app.py` | `create_app()` | 创建 FastAPI 应用，挂载路由、中间件和运行容器 |
 | `src/sec_agent/api/deps.py` | `get_orchestrator()` | 从应用状态中获取主链编排器 |
 | `src/sec_agent/bootstrap/container.py` | `build_container()`、`AppContainer` | 根据配置装配平台、仓储、Bridge 和 `Orchestrator` |
@@ -91,8 +99,16 @@
 | `DEEP_AGENT_TOOL_MODE` | deep_agent 主链桥接可选 | 环境变量或 `.env` | 未配置时沿用 deep agent 的 `TOOL_MODE`；可设 `mock` / `mcp` / `auto` |
 | `TOOL_MODE` | deep agent 独立运行可选 | 环境变量或 `.env` | 默认 `auto`，即 Mock + 可连通 MCP 并存 |
 | `MCP_URLS` | 真实 MCP 工具可选/必需 | 环境变量或本地 gitignore 配置 | 未配置时真实 MCP 工具不可注册 |
+| `MCP_API_KEY` | MCP 可选 | 环境变量或 `.env` | 当前网络安全数据查询 MCP 可为空；如平台要求独立鉴权则填写受控值 |
+| `MCP_VERIFY_SSL` | MCP 可选 | 环境变量或 `.env` | 默认 `0`，适配深信服测试环境自签证书/IP 直连；正式可信证书环境可设 `1` |
+| `AGENT_MAX_STEPS` | deep agent 可选 | 环境变量或 `.env` | 默认 `5`，限制调查步数 |
+| `AGENT_MAX_TOOL_CALLS` | deep agent 可选 | 环境变量或 `.env` | 默认 `12`，限制单次调查工具调用数 |
 | `MYSQL_DSN` | MySQL 模式必需 | 环境变量或拆分 MySQL 配置拼接 | memory 模式不需要；MySQL 模式连接失败会影响运行 |
 | `LLM_API_KEY` | deep agent 真实 LLM 可选/必需 | 环境变量 | 未配置时真实 LLM 集成不可运行，测试中对应用例跳过或 fallback |
+| `EVAL_COMPARISON_FIXTURE_PATH` | OFF/GUARDED 正式结果包可选 | 环境变量或本地 `.env` | 未配置时 `/eval/comparisons` 返回 Mock 数据；配置后读取正式 JSON 并要求至少 6 案 |
+| `ALLOW_REAL_HIGH_RISK_ACTION` | 安全策略必需 | 环境变量或 `.env` | 当前应保持 `false`，未授权真实封禁、隔离等写操作 |
+| `REQUIRE_APPROVAL_FOR_HIGH_RISK` | 安全策略必需 | 环境变量或 `.env` | 当前应保持 `true`，高风险动作必须审批 |
+| `FASTGPT_BASE_URL` / `FASTGPT_API_KEY` | FastGPT 直连预留 | 环境变量或 `.env` | 当前平台原生直连接口未冻结，保持空占位，不用 MCP 地址替代 |
 | `CORS_ALLOWED_ORIGINS` | 前端联调可选 | 环境变量 | 默认允许本地常见前端端口 |
 
 - 支持的运行环境：当前本地验证使用 Python 3.11；项目代码已兼容 Python 3.9 的枚举实现调整。
@@ -136,6 +152,7 @@ PLATFORM_BACKEND=xdr_openapi INVESTIGATION_BACKEND=tool_mock uv run uvicorn sec_
 - HTTP 查询事件详情：`GET /events/{event_id}`
 - HTTP 查询状态时间线：`GET /events/{event_id}/timeline`
 - HTTP 提交审批：`POST /events/{event_id}/approval`
+- HTTP 查询 OFF/GUARDED 评测对比：`GET /eval/comparisons`
 - 代码入口：`build_container().orchestrator.start(StartRunRequest(...))`
 - 本地脚本入口：`python -m sec_agent.scripts.run_flow`
 
@@ -203,6 +220,46 @@ errors=[]
 timeline=RECEIVED,CORRELATING,TRIAGED,INVESTIGATING,DECISION_READY,APPROVAL_REQUIRED
 ```
 
+查询 OFF/GUARDED 评测对比：
+
+```text
+curl -s 'http://127.0.0.1:8000/eval/comparisons'
+```
+
+响应关键字段：
+
+```text
+schema_version=2026-09-07.eval-comparison.v1
+comparison_id=cmp-20260907-mock
+data_source=mock_fixture
+suite.baseline=OFF
+suite.candidate=GUARDED
+summary.total_cases=3
+results[].off / results[].guarded / results[].comparison / results[].human_review
+results[].off.evidence_breakdown.event_evidence_refs
+results[].off.evidence_breakdown.tool_result_refs
+results[].off.evidence_breakdown.knowledge_refs
+results[].guarded.evidence_breakdown.event_evidence_refs
+results[].guarded.evidence_breakdown.tool_result_refs
+results[].guarded.evidence_breakdown.knowledge_refs
+```
+
+读取正式 OFF/GUARDED 结果包：
+
+```text
+EVAL_COMPARISON_FIXTURE_PATH=/path/to/formal_comparison.json \
+  uv run uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
+```
+
+正式结果包约束：
+
+```text
+results 至少 6 案
+data_source 由接口置为 formal_fixture
+summary 由接口基于 results 自动生成
+缺少 evidence_breakdown 时，接口按 evidence_refs 前缀自动拆分
+```
+
 ### 5.3 上下游接入注意事项
 
 - 新增业务阶段必须同步修改 `BusinessStatus`、`ALLOWED_TRANSITIONS`、`Orchestrator`、API 响应模型和测试。
@@ -235,6 +292,8 @@ build_container()
 6. `INVESTIGATION_BACKEND=auto` 用于联调演示；Bridge 不可用时允许回退内部工具调查子链。
 7. 后续新增 FastGPT / 远程 Agent 时，优先增加新的 Bridge 实现和配置选择，不在主链里硬编码具体 Agent。
 8. 单元测试通过 `investigation_bridge` 构造参数注入替身 Bridge，不直接修改 `DeepInvestigationAgent` 私有字段。
+9. 外部 Agent 输出缺少 `need_manual_takeover` 或字段不是布尔值时，Bridge 必须按 fail-closed 转人工。
+10. 外部 Agent 输出的 `evidence_source` 必须保留到 `InvestigationReport.evidence_sources`，知识引用不得冒充事件证据。
 
 ## 6. 异常处理与安全控制
 
@@ -243,6 +302,8 @@ build_container()
 - 重复调用与幂等：审批通过使用仓储的 `claim_idempotency_key()` 防止重复执行；同一幂等键重复提交返回当前上下文。
 - 超时、重试与回滚：`ToolRequest` 已包含超时、尝试次数和幂等字段；主链尚未实现统一后台重试和自动回滚调度。
 - 权限、审批与敏感数据：高风险计划默认进入审批等待；真实密钥、内网地址和 Token 不写入仓库。
+- 人工接管字段：`need_manual_takeover=true` 必须人工；`false` 不代表自动执行授权；缺失或非法字段必须 fail-closed。
+- 处置建议字段：`disposal_suggestions` 只映射为调查建议，不直接授权 Response 调用真实写操作。
 
 ## 7. 真实平台、Mock与fallback边界
 
@@ -252,7 +313,8 @@ build_container()
 | XDR 告警列表 | 真实 OpenAPI 单接口已验收 | `PLATFORM_BACKEND=xdr_openapi` 且配置官方鉴权 | XDR 全量接口均已完成 |
 | JSONL 接入 | 本地实现 | `JsonlSampleAdapter` 读取样例目录 | 真实平台实时拉取 |
 | 深度调查 | 本地工具链 / deep agent 桥接 / fallback | `INVESTIGATION_BACKEND` 控制 | 未配置 LLM 时的真实 Agent 闭环 |
-| Bridge 装配 | 显式装配已落地，当前实现仍沿用 `DeepAgentBridge` | 后续真实 Agent 接入时使用 | FastGPT / 远程 Agent 已完成接入 |
+| Bridge 装配 | 显式装配和 fail-closed 安全边界已落地，当前实现仍沿用 `DeepAgentBridge` | 后续真实 Agent 接入时使用 | FastGPT / 远程 Agent 已完成接入 |
+| 评测对比接口 | `GET /eval/comparisons` 返回 OFF/GUARDED 对比数据；支持 Mock 与正式 JSON 结果包 | 前端评测对比页面接入；`EVAL_COMPARISON_FIXTURE_PATH` 指向正式包 | 正式 A/B 评测结果已入库 |
 | XDR 日志查询 | fixed_sample/jsonl_sample 下为内置样例；xdr_openapi 下可走 OpenAPI handler 或注入真实 handler；失败不阻断已命中告警审批 | `xdr_log_query` | 已完成日志接口实机验收 |
 | 处置执行 | Mock / stateful mock | 高风险审批通过后 | 真实封禁、隔离或资产处置 |
 | 处置验证 | Mock / stateful mock | 执行后验证阶段 | 真实平台验证闭环 |
@@ -262,13 +324,14 @@ build_container()
 
 | 优先级 | 事项 | 是否影响主链 | 负责人/完成条件 |
 |---|---|---|---|
-| P0 | 真实平台 MCP 工具闭环 | 是，影响生产调查闭环 | 补齐 MCP 地址、鉴权、工具 schema 和集成测试 |
+| P0 | 真实平台 MCP 工具闭环 | 是，影响生产调查闭环 | 使用受控 `MCP_URLS`/LLM 配置完成主链服务器实机复验 |
 | P0 | 真实 Agent Bridge 扩展 | 是，影响后续真实 Agent 接入 | 在现有 `InvestigationBridge` 契约下新增 FastGPT / 远程 Agent 适配并补集成测试 |
 | P0 | 真实高风险处置动作和回滚策略 | 是，影响生产处置 | 接入真实处置 API，补审批、回滚、审计测试 |
 | P1 | XDR 日志查询接口契约确认 | 否，不影响告警输入 | 索要日志查询真实路径、请求参数、返回结构和权限说明 |
 | P1 | XDR 告警更多样本覆盖 | 否，不影响当前已知告警 | 补齐不同严重级别、不同攻击类型和空字段样本 |
 | P1 | MySQL 模式真实环境复验 | 待确认 | 准备数据库和迁移策略，完成接口回归 |
 | P1 | 主链异步化、超时和重试策略 | 否，不影响 MVP | 引入任务队列或后台任务模型 |
+| P1 | 评测对比接口接入正式存储 | 否，不影响主链运行 | 正式 OFF/GUARDED 结果稳定后从 JSON 包升级为存储读取，并补契约回归 |
 | P2 | `docs/modules/orchestration` 与 `docs/modules/main-chain` 边界整理 | 否 | 后续统一命名或建立索引 |
 
 ## 9. 运行观测、版本兼容与迁移
@@ -286,3 +349,6 @@ build_container()
 | 2026-08-30 | 当前工作区更新 | 补充真实 XDR 告警输入配置、调用示例、实机验收结果和能力边界 | `tests/test_xdr_openapi_platform.py` |
 | 2026-09-06 | 当前工作区更新 | 在主链开发说明内补充 Bridge 装配设计、配置矩阵和后续落地步骤 | 文档设计，无新增测试 |
 | 2026-09-06 | 当前工作区更新 | 落地 Bridge 显式装配：容器创建 Bridge，主链编排器注入 Bridge，调查服务通过协议消费 Bridge | `uv run pytest tests/test_deep_agent_bridge.py tests/test_state_flow.py tests/test_api_http.py -q` |
+| 2026-09-07 | 当前工作区更新 | 新增 `GET /eval/comparisons`，返回 OFF/GUARDED 评测对比 Mock 数据并进入 OpenAPI | `uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q` |
+| 2026-09-09 | 当前工作区更新 | 完善 `GET /eval/comparisons`：区分事件证据、工具查询结果和知识引用；支持 `EVAL_COMPARISON_FIXTURE_PATH` 读取至少 6 案正式结果包并生成 actual summary | `uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q` |
+| 2026-09-11 | 当前工作区更新 | 根据 MCP/Agent/处置边界资料补齐主链 Bridge 安全映射：保留 `evidence_source`，缺失或非法 `need_manual_takeover` 时 fail-closed；补齐本地配置键和 OpenAPI | `uv run pytest -q` |

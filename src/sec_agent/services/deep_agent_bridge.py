@@ -116,6 +116,10 @@ class DeepAgentBridge:
 
     def _to_domain_report(self, deep_report: Any, triage: TriageResult) -> InvestigationReport:
         data = self._as_dict(deep_report)
+        needs_human, manual_reason = self._manual_takeover(data)
+        unresolved_questions = [str(item) for item in data.get("unresolved_issues") or []]
+        if manual_reason and manual_reason not in unresolved_questions:
+            unresolved_questions.append(manual_reason)
         steps = [
             InvestigationStep(
                 step_no=self._step_no(index, step),
@@ -132,11 +136,13 @@ class DeepAgentBridge:
             timeline=[step.goal for step in steps] or ["deep_agent 子智能体完成深度调查"],
             tool_results=[str(item) for item in tool_call_records],
             key_evidence_refs=[str(item) for item in data.get("key_evidence") or []],
+            evidence_sources=[str(item) for item in data.get("evidence_source") or []],
             evidence_relations=[str(data["attack_chain"])] if data.get("attack_chain") else [],
             affected_objects=[str(item) for item in data.get("affected_objects") or []],
-            unresolved_questions=[str(item) for item in data.get("unresolved_issues") or []],
+            unresolved_questions=unresolved_questions,
             recommended_actions=[str(item) for item in data.get("disposal_suggestions") or []],
-            needs_human=bool(data.get("need_manual_takeover")),
+            needs_human=needs_human,
+            manual_takeover_reason=manual_reason,
             steps=steps,
             summary=str(data.get("conclusion") or "deep_agent 子智能体调查完成"),
         )
@@ -179,6 +185,21 @@ class DeepAgentBridge:
         if isinstance(value, int | float):
             return min(1.0, max(0.0, float(value)))
         return fallback
+
+    @staticmethod
+    def _manual_takeover(data: dict[str, Any]) -> tuple[bool, str | None]:
+        if "need_manual_takeover" not in data:
+            return True, "deep_agent 报告缺少 need_manual_takeover，按 fail-closed 转人工"
+
+        value = data["need_manual_takeover"]
+        if not isinstance(value, bool):
+            return True, "deep_agent 报告 need_manual_takeover 类型非法，按 fail-closed 转人工"
+
+        reason = data.get("manual_takeover_reason")
+        reason_text = str(reason).strip() if reason is not None else ""
+        if value and not reason_text:
+            reason_text = "deep_agent 要求人工接管但未提供原因"
+        return value, reason_text or None
 
     @staticmethod
     def _as_dict(value: Any) -> dict[str, Any]:
