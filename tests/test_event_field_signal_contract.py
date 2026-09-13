@@ -1,27 +1,25 @@
 # -*- coding: utf-8 -*-
-"""《事件字段—来源—信号强度合同》v1.0 的代码一致性测试。
+"""《事件字段—来源—信号强度合同》v1.1 的代码一致性测试。
 
 负责人/执行人：陈敏（登记方）
 日期：2026-09-13
 合同文档：docs/modules/alert-correlation/event-field-signal-contract.md
+基线：`main@0001bbd`（PR #50 已合入；合同 §5 D1 已由 `38cee87 fix: address PR50 review findings`
+按“稳定引用 ID + 摘要映射”实现，本轮由 xfail 转为通过）
 
 本文件只验证“主链是否按合同理解字段”，不重复验证门禁自身的判定规则
 （判定规则由 tests/test_gatekeeper_boundary.py 与 tests/test_gatekeeper_case1_10.py 覆盖）。
 
 已冻结部分（对齐即通过）：
-- event_type 由告警类型产生，是机器契约字段，不再由面向人的 summary 反推；
-- alert_refs 与 alert_summaries 同长同序，按位置一一对应；
-- 门禁只读取白名单字段，空字段安全降级。
-
-待冻结部分（contract §5 D1）：supporting_evidence_refs 与 evidence_summaries
-当前由两个不同排序来源产生，桥接按位置配对会产生证据串位，因此该项以 xfail 记录，
-修好之后会自动转为 xpass，提醒双方同步更新合同版本。
+- `event_type` 由告警类型产生，是机器契约字段，不再由面向人的 `summary` 反推；
+- `alert_summaries` / `evidence_summaries` 均以稳定引用 ID 为键，禁止按数组下标拼接；
+- 无摘要证据不进入映射，桥接仍保留其原始 ID；
+- 门禁只读取白名单字段，空字段安全降级；
+- D1：证据 ID 与摘要一一对应，覆盖“新的在前”入参顺序与空摘要两种错位场景。
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-
-import pytest
 
 from sec_agent.deep_agent.models import SecurityEventInput
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
@@ -31,8 +29,9 @@ from sec_agent.services.gatekeeper import GateDecision, WebShellGatekeeper
 from sec_agent.services.triage import RiskTriageService
 
 
-CONTRACT_VERSION = "v1.0"
+CONTRACT_VERSION = "v1.1"
 KNOWN_TYPES = {"webshell", "sql_injection", "lateral_movement", "unauthorized_access", "other"}
+REF_SEPARATOR = ": "
 
 
 def _fixed_sample_alerts():
@@ -46,13 +45,17 @@ def _chain(alerts):
     return event, triage, payload
 
 
+def _alert_truth(alerts) -> dict[str, str]:
+    return {alert.alert_id: alert.name for alert in alerts}
+
+
 def _evidence_truth(alerts) -> dict[str, str]:
     """以告警自带的 evidence_refs 为基准，构造 ref_id → summary 的真实映射。"""
     return {ref.ref_id: (ref.summary or "") for alert in alerts for ref in alert.evidence_refs}
 
 
 def _split(payload_item: str) -> tuple[str, str]:
-    head, _, tail = payload_item.partition(": ")
+    head, _, tail = payload_item.partition(REF_SEPARATOR)
     return head, tail
 
 
@@ -72,15 +75,33 @@ class TestContractVersionAndFields:
         assert event.summary and event.summary != event.event_type
         assert payload["event_type"] != event.summary, "主链不得再用 summary 猜事件类型"
 
-    def test_alert_refs_and_alert_summaries_are_aligned(self) -> None:
+    def test_alert_summaries_are_keyed_by_alert_id(self) -> None:
         alerts = _fixed_sample_alerts()
-        event, _, payload = _chain(alerts)
+        event, _, _ = _chain(alerts)
+        truth = _alert_truth(alerts)
 
-        assert event.alert_refs == [alert.alert_id for alert in alerts]
-        assert event.alert_summaries == [alert.name for alert in alerts]
-        assert len(event.alert_refs) == len(event.alert_summaries)
-        for item, alert_id, name in zip(payload["alerts"], event.alert_refs, event.alert_summaries):
-            assert item == f"{alert_id}: {name}"
+        assert set(event.alert_summaries) == set(event.alert_refs)
+        for ref in event.alert_refs:
+            assert event.alert_summaries[ref] == truth[ref], "告警摘要必须与自己的 ID 绑定"
+
+    def test_alert_payload_pairs_each_id_with_its_own_summary(self) -> None:
+        alerts = _fixed_sample_alerts()
+        _, _, payload = _chain(alerts)
+        truth = _alert_truth(alerts)
+
+        for item in payload["alerts"]:
+            ref, summary = _split(item)
+            assert truth.get(ref) == summary, f"告警 {ref} 被贴上了别人的摘要"
+
+    def test_evidence_summaries_are_keyed_by_ref_id(self) -> None:
+        alerts = _fixed_sample_alerts()
+        event, _, _ = _chain(alerts)
+        truth = _evidence_truth(alerts)
+
+        assert set(event.evidence_summaries) <= set(truth)
+        for ref, summary in event.evidence_summaries.items():
+            assert summary == truth[ref], "证据摘要必须与自己的 ref_id 绑定"
+        assert all(event.evidence_summaries.values()), "空摘要不应进入映射"
 
     def test_event_type_and_summaries_survive_domain_model_round_trip(self) -> None:
         event, _, payload = _chain(_fixed_sample_alerts())
@@ -109,16 +130,9 @@ class TestGateFieldProvenance:
         assert result.gate_decision != GateDecision.IN_SCOPE
 
 
-class TestEvidencePairingFreezeItem:
-    """合同 §5 D1：证据 ID 与摘要必须一一对应，避免证据串位。"""
+class TestEvidencePairingById:
+    """合同 §5 D1（已在 main 实现）：证据 ID 与摘要必须一一对应，避免证据串位。"""
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "合同 v1.0 §5 D1 未冻结：deep_agent_bridge._described_refs 目前按位置配对，"
-            "correlation 按 occurred_at 排序、triage 按入参顺序，两者不一致时会证据串位。"
-        ),
-    )
     def test_evidence_refs_and_summaries_are_aligned_by_id(self) -> None:
         base = datetime.fromisoformat("2026-09-01T10:00:00+08:00")
         first, second = _fixed_sample_alerts()
@@ -137,12 +151,6 @@ class TestEvidencePairingFreezeItem:
                 f"合同 {CONTRACT_VERSION} §5 D1：evidence {ref_id} 被贴上了别人的摘要"
             )
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "合同 v1.0 §5 D1 未冻结：correlation 会过滤空摘要，导致后续证据整体串位。"
-        ),
-    )
     def test_evidence_without_summary_keeps_its_own_ref_id(self) -> None:
         alerts = _fixed_sample_alerts()
         stripped = alerts[0].model_copy(
@@ -158,6 +166,8 @@ class TestEvidencePairingFreezeItem:
 
         for item in payload["evidence"]:
             ref_id, summary = _split(item)
-            assert truth.get(ref_id) == summary, (
-                f"合同 {CONTRACT_VERSION} §5 D1：空摘要证据 {ref_id} 被贴上了别人的摘要"
-            )
+            expected = truth.get(ref_id)
+            if expected:
+                assert summary == expected, f"合同 {CONTRACT_VERSION} §5 D1：{ref_id} 摘要错位"
+            else:
+                assert item == ref_id, "无摘要证据必须只保留原始 ID，不得借用他人摘要"

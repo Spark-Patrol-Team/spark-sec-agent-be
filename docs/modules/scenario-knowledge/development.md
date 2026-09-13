@@ -12,7 +12,7 @@
 | 工具单元测试 | `tests/test_knowledge_tool.py` |
 | 案例输入边界测试 | `tests/test_knowledge_case_inputs.py` |
 | 门禁边界回归测试 | `tests/test_gatekeeper_boundary.py`（24 条：否定语义 / 通用进程 / 反序列化 / 内核驱动 / 大小写 / 空字段 / 冲突字段） |
-| 字段来源与判定合同 | `docs/modules/alert-correlation/event-field-signal-contract.md`（v1.0，登记陈敏、冻结杨嘉琪） |
+| 字段来源与判定合同 | `docs/modules/alert-correlation/event-field-signal-contract.md`（v1.1，登记陈敏、冻结杨嘉琪；D1 已按 main 实现关闭） |
 | 评测案例与来源说明 | `docs/modules/scenario-knowledge/knowledge-test-cases/` |
 
 不要在 `docs/` 下再复制一份 WebShell 知识正文。需要更新知识时，只修改唯一运行时文件，并同步补充测试。
@@ -112,4 +112,4 @@ python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/know
 | 2026-09-05 | PR #41 依据当前运行时实现重写开发说明，并明确维护与验收方法 |
 | 2026-09-13 | 最终收口候选实现CLI/bridge先门禁后注册、知识工具缺门禁二次拒绝、通用冲突提示和否定/域外语义测试；`pyproject.toml`加入Windows时区依赖 |
 | 2026-09-13 | 清理旧`KnowledgeEntry`解析实现和旧测试，正式运行与测试统一使用15张`KnowledgeCard`；同步`out_of_scope`正式路径不注册工具的接口说明 |
-| 2026-09-13 | 门禁关键词语义修订：通用进程名降为弱信号、内核/驱动证据转域外、否定语义扩展到`排除/并非/不属于`并覆盖域外与合法语境；新增门禁边界回归与字段来源合同（v1.0）登记 |
+| 2026-09-13 | 门禁关键词语义修订：通用进程名降为弱信号、内核/驱动证据转域外、否定语义扩展到`排除/并非/不属于`并覆盖域外与合法语境；新增门禁边界回归与字段来源合同（v1.1）登记 |

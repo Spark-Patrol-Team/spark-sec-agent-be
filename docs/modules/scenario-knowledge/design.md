@@ -97,4 +97,4 @@
 | 2026-09-06 | 冻结评测汇总 Schema 和最小 fixture，补充人工 Review 栏 |
 | 2026-09-13 | 最终收口候选修复门禁`None/异常`fail-open，CLI与bridge改为先审计后注册；修正来源和case10域外边界；补Windows `tzdata`依赖与回归测试 |
 | 2026-09-13 | 删除未被正式工具调用的旧`KnowledgeEntry`解析链，只保留`KnowledgeCard→parse_knowledge_cards→match_knowledge_card→KnowledgeQueryTool`；明确域外事件在正式Agent路径不注册知识工具 |
-| 2026-09-13 | 边界测试驱动的最小修复：通用进程名降为弱信号、内核/驱动证据转域外、“排除/并非”类否定语义纳入否定范围；登记《事件字段—来源—信号强度合同》v1.0（`docs/modules/alert-correlation/event-field-signal-contract.md`），明确字段来源与三档判定组合 |
+| 2026-09-13 | 边界测试驱动的最小修复：通用进程名降为弱信号、内核/驱动证据转域外、“排除/并非”类否定语义纳入否定范围；登记《事件字段—来源—信号强度合同》v1.1（`docs/modules/alert-correlation/event-field-signal-contract.md`），明确字段来源与三档判定组合，并按 `main@0001bbd` 的引用ID映射契约关闭 D1 |

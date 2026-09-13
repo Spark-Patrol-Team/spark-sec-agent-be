@@ -1,14 +1,14 @@
-# 事件字段—来源—信号强度合同（v1.0）
+# 事件字段—来源—信号强度合同（v1.1）
 
 ## 0. 文档信息
 
 | 项目 | 内容 |
 |---|---|
 | 合同名称 | 事件字段—来源—信号强度合同 |
-| 版本号 | **v1.0**（登记方与冻结方共用同一个版本号） |
+| 版本号 | **v1.1**（登记方与冻结方共用同一个版本号） |
 | 登记（信号语义） | 陈敏，告警关联模块，2026-09-13 |
-| 冻结（代码接口确认） | 杨嘉琪，门禁与主链接口 —— **状态：待冻结确认** |
-| 适用代码基线 | PR #50 头 `ae5aea0`（门禁与字段扩展尚未合入 `main`；合入后本合同的基线改记 `main` 对应提交） |
+| 冻结（代码接口确认） | 杨嘉琪，门禁与主链接口 —— D1 已按 Review 实现（`38cee87`）；D2/D3/D4 待确认 |
+| 适用代码基线 | `main@0001bbd`（PR #50 已合入 main；本合同自 v1.1 起以 main 为基线） |
 | 门禁实现 | `src/sec_agent/services/gatekeeper.py` |
 | 字段生产 | `src/sec_agent/services/correlation.py`、`src/sec_agent/services/triage.py` |
 | 桥接 | `src/sec_agent/services/deep_agent_bridge.py::_to_deep_agent_input` |
@@ -27,14 +27,15 @@
 | `event_type` | `correlate()` 取同一事件内已校验一致的 `alert_type`（`correlation.py:71`） | **机器事件类型 token**（`webshell` / `sql_injection` / `lateral_movement` / `unauthorized_access` / `other`） | 可读，只作弱信号 | 不产生事件类型信号，按第 4 节降级 |
 | `summary` | `correlate()` | 面向人的压缩摘要句 | 可读但**不得用于反推 `event_type`** | 记录输入质量问题 |
 | `alert_refs` | `correlate()`，取 `AlertRecord.alert_id`（真实 XDR `uuId`） | 审计定位锚点 | 不作为语义字段，只作为文本载体 | 与 `alert_summaries` 同步缺失 |
-| `alert_summaries` | `correlate()`，取 `AlertRecord.name`（`correlation.py:72`） | 与 `alert_refs` **同长同序**的告警名称 | 可读（文本信号） | 该条只保留 ID |
+| `alert_summaries` | `correlate()`，`{alert_id: alert.name}` 映射（`correlation.py`） | **以告警 ID 为键**的告警名称；与 `alert_refs` 键集合一致 | 可读（文本信号） | 该条只保留 ID |
 | `supporting_evidence_refs` | `RiskTriageService.triage`，按**入参告警顺序**展开 `evidence_refs.ref_id`（`triage.py:48`） | 证据定位锚点 | 不作为语义字段，只作为文本载体 | 无证据时为空列表 |
-| `evidence_summaries` | `correlate()`，按 **`occurred_at` 升序**展开 `evidence_refs.summary` 并**过滤空摘要**（`correlation.py:73`） | 与 `supporting_evidence_refs` **必须按 `ref_id` 一一对应** | 可读（文本信号） | 该条只保留 ID |
+| `evidence_summaries` | `correlate()`，`{ref_id: summary}` 映射，**过滤空摘要**（`correlation.py`） | **以证据 ref_id 为键**的摘要；与 `supporting_evidence_refs` 按 ID 对应 | 可读（文本信号） | 该条只保留 ID |
 | `triage.verdict` | 风险研判模块 | 结构化研判结论（`malicious` / `benign` / `uncertain`） | 可读 | 不产生研判信号 |
 | `initial_verdict` | 上游初步研判文本 | 初步结论文本 | 可读 | 不产生研判信号 |
 | `confidence` / `trace_id` / `run_id` | 上游 | 置信度与链路标识 | **禁止读取**（不在白名单） | 与判定无关 |
 
-桥接把带摘要的引用拼成 `<ref_id>: <摘要>` 交给门禁与 Agent；只有 ID 没有摘要时保留裸 ID。
+桥接（`deep_agent_bridge.py::_described_refs`）**按 ID 查映射**后拼成 `<ref_id>: <摘要>` 交给门禁与 Agent；
+映射中查不到（或摘要为空）的引用只保留裸 ID。禁止把“全部 ID 列表”和“仅非空摘要列表”按数组下标拼接。
 
 ## 2. 信号来源与强度
 
@@ -89,7 +90,7 @@
 
 | 编号 | 事项 | 现状与复现 | 影响 | 建议处理 |
 |---|---|---|---|---|
-| D1 | `supporting_evidence_refs` 与 `evidence_summaries` 的对应关系 | 桥接 `_described_refs`（`deep_agent_bridge.py:198`）按**位置**配对，而两份列表分别来自 `occurred_at` 升序（correlation）与入参顺序（triage），且 correlation 会过滤空摘要。`tests/test_event_field_signal_contract.py` 中两条 xfail 用例可稳定复现串位 | 证据归属错标，直接影响原始证据引用与门禁文本判定 | 改为 `ref_id → summary` 映射后按 ID 拼串；空摘要只保留 ID |
+| D1 | `supporting_evidence_refs` 与 `evidence_summaries` 的对应关系 | **已实现（v1.1 关闭）**：`SecurityEvent.alert_summaries / evidence_summaries` 改为以引用 ID 为键的映射，桥接按 ID 查表拼串，无摘要证据保留裸 ID（`38cee87 fix: address PR50 review findings`）。验证：`tests/test_event_field_signal_contract.py::TestEvidencePairingById` 两条用例覆盖“新的在前”入参顺序与空摘要两种错位场景，v1.0 时为 xfail，v1.1 转为通过 | 已消除证据串位风险 | 无（后续若改变映射结构需升版本号） |
 | D2 | 真实 XDR 路径的 `evidence` 摘要语义 | XDR/JSONL 适配器的证据摘要为 `"XDR 字段引用: xxx"` / `"标准化字段引用: xxx"`，无语义内容；实测真实 XDR 形态事件只能到 `weak_signal` | 企业真实告警链路上知识库不返回确认性知识 | 在适配器证据摘要中带 `alert_name` / `threatTypeDesc` / `description`，或明确接受该限制并写入文档 |
 | D3 | 桥接与门禁测试的环境隔离 | 部分测试直接调用真实 `load_config()`，`KNOWLEDGE_MODE` 被设置为非法值时会失败 | 开发机环境不同会导致非确定性失败 | 统一用 `mock.patch.dict(os.environ, ...)` 固定环境 |
 | D4 | `w3wp.exe` 单独出现仍是强确认 | `WEBSHELL_STRONG_CONFIRM_KEYWORDS` 保留 `w3wp.exe`（IIS 工作进程），其余通用进程名已降为弱信号 | 单独一条 “w3wp.exe” 文本即可判 `in_scope` | 由双方确认保留或一并降级，需在 v1.1 记录结论 |
@@ -99,3 +100,4 @@
 | 版本 | 日期 | 登记（陈敏） | 冻结（杨嘉琪） | 变更内容 |
 |---|---|---|---|---|
 | v1.0 | 2026-09-13 | 已登记 | 待确认 | 首版：字段来源表、信号来源与强度、三档判定组合、空/缺失/冲突处理、待冻结项 D1—D4 |
+| v1.1 | 2026-09-13 | 已登记 | D1 已确认实现 | 对齐 `main@0001bbd`：`alert_summaries` / `evidence_summaries` 改为按引用 ID 建映射（D1 关闭），合同测试由 2 条 xfail 转为通过；D2—D4 仍待杨嘉琪确认 |
