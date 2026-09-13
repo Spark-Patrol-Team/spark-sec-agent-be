@@ -14,7 +14,7 @@
 - 知识正文：`src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`
 - 查询入口：`src/sec_agent/deep_agent/tools/knowledge.py::knowledge_query`
 - 本目录不复制PR #8中的第二份知识正文。
-- PR #8的5个问答样本不重复复制；其当前覆盖关系由`tests/test_knowledge_tool.py::TestKnowledgeQaCoverage`验证。
+- PR #8的5个历史问答样本不重复复制；当前正式验收以15张`KnowledgeCard`及case1—10为准。仍适用的受控查询别名和“攻击组织未覆盖”知识缺口由`tests/test_knowledge_tool.py::TestKnowledgeCards`验证。
 
 ## 文件
 

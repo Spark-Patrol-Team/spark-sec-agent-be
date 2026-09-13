@@ -168,6 +168,12 @@ class SecurityEvent(BaseModel):
     alert_count_before: int
     event_count_after: int
     summary: str
+    # 关联服务已校验同一 SecurityEvent 内的告警类型一致；这里显式保留类型，
+    # 避免下游从面向人的 summary 文本反推机器契约字段。
+    event_type: str = ""
+    # ID 用于审计定位，摘要用于门禁和 Agent 的语义判断；两者不能互相替代。
+    alert_summaries: dict[str, str] = Field(default_factory=dict)
+    evidence_summaries: dict[str, str] = Field(default_factory=dict)
 
 
 class TriageResult(BaseModel):

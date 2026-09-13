@@ -20,7 +20,7 @@
 ### 1.1 目标
 
 - 对**高风险、疑似真实攻击或现有证据不足**的安全事件，在风险研判基础上开展自动化深度调查：主动识别证据缺口 → 调用工具补证 → 更新结论与置信度 → 输出结构化调查报告。
-- **知识包驱动**：Agent 可通过 `knowledge_query`（语义等价 `knowledge.query`）按关键词检索内置《最小 WebShell 知识包》，获得攻击原理 / 攻击特征 / 管理工具流量特征 / 证据检查清单 / 处置建议模板，返回 `evidence_refs` 直接填入调查报告。
+- **门禁约束的知识包驱动**：Agent仅在`KNOWLEDGE_MODE=guarded`且事件为`in_scope/weak_signal`时注册`knowledge_query`；`in_scope`可返回结构化知识，`weak_signal`只返回限制，`out_of_scope`不暴露该工具，门禁缺失/异常时也不注册；工具层仍保留二次拒绝。
 - 与主链 `Orchestrator` 集成：`INVESTIGATING` 阶段经 `DeepAgentBridge` 桥接，支持 `auto` / `deep_agent` / `tool_mock` 三后端。
 
 ### 1.2 非目标
@@ -149,7 +149,7 @@
 | FastGPT 编排迁移（目标路线） | 不阻塞（本地实现已可用） | 待 FastGPT 编排能力确认 |
 | 知识包为最小集：问答样本 2（攻击组织）、样本 3（DET0394 细节）未覆盖 | 不阻塞 | 扩充知识包章节即可提升检索覆盖 |
 | dbproxy 等真实 MCP 查询本轮返回合法空集（样例虚构实体在真实库无命中） | 不阻塞（工具链路真实连通） | 真实平台事件数据接入后复验 |
-| Windows Python 缺 `tzdata` 时主链 import 报 `ZoneInfoNotFoundError` | 阻塞主链 | 需 `pip install tzdata`（本机已装；依赖清单待补） |
+| Windows Python缺时区数据时主链import报`ZoneInfoNotFoundError` | 已关闭 | `tzdata`已加入项目依赖和锁文件，并在Windows Python 3.11.11完成全仓回归 |
 | 正式交付章节编号未对齐《系统设计说明书》 | 待确认 | 后续对齐章节编号 |
 
 ## 10. 变更记录

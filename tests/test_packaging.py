@@ -45,7 +45,8 @@ class TestKnowledgePackageData(unittest.TestCase):
         """安装后读取路径：importlib.resources 应能从包内读到知识全文。"""
         text = _default_knowledge_text()
         self.assertIn("WebShell", text)
-        self.assertIn("攻击原理", text)
+        self.assertIn("## 知识ID：WSK-001", text)
+        self.assertIn("## 知识ID：WSK-015", text)
 
     def test_knowledge_resource_resolvable_from_package(self):
         """包内资源可直接定位，且是真实文件（非空）。"""

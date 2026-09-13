@@ -8,9 +8,9 @@
   "alerts": [
     "检测到WordPress服务器上PHP脚本异常访问",
     "检测到加密通信流量伪装为JSON API",
-    "WebShell文件包含RSA解密函数",
-    "文件时间戳被篡改",
-    "攻击目标为政府相关网站"
+    "WebShell文件使用openssl_private_decrypt处理加密命令",
+    "文件修改时间被回拨至6-12个月前",
+    "目标资产托管了WordPress/cPanel服务"
   ],
   "evidence": [],
   "initial_verdict": "疑似真实攻击",

@@ -6,7 +6,8 @@
 |---|---|
 | 工具实现 | `src/sec_agent/deep_agent/tools/knowledge.py` |
 | 唯一知识正文 | `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` |
-| 工具注册 | `src/sec_agent/deep_agent/main.py::build_tools` |
+| 门禁实现 | `src/sec_agent/services/gatekeeper.py` |
+| 工具注册 | `src/sec_agent/deep_agent/main.py::build_tools`与`src/sec_agent/services/deep_agent_bridge.py::_build_tools` |
 | 包数据声明 | `pyproject.toml` 的 `[tool.setuptools.package-data]` |
 | 工具单元测试 | `tests/test_knowledge_tool.py` |
 | 案例输入边界测试 | `tests/test_knowledge_case_inputs.py` |
@@ -16,26 +17,28 @@
 
 ## 2. 实现结构
 
-`load_knowledge_entries()` 使用 `importlib.resources` 读取包内 Markdown，并按标题构建 `KnowledgeEntry`。每个条目包含：
+当前运行时使用`parse_knowledge_cards()`通过`importlib.resources`读取包内Markdown，并按`## 知识ID：WSK-*`解析15张`KnowledgeCard`。每张卡至少包含：
 
-- `name`：条目名；
-- `keywords`：可匹配查询词；
-- `content`：对应章节正文；
-- `evidence_refs`：知识来源引用。
+- `knowledge_id`与`topic`；
+- `applicability`与`required_evidence`；
+- `investigation_steps`、`false_positives`和`prohibited_inference`；
+- `source_urls`、`source_levels`与`related_cases`。
 
-`match_keyword()` 的优先级为完全匹配、条目关键词被查询包含、查询被条目关键词包含。无有效得分时返回 `None`。
+`match_knowledge_card()`按知识ID精确匹配、受控别名、主题精确匹配和主题包含匹配依次查找。无确定命中时返回`None`。禁止恢复旧`KnowledgeEntry/_ENTRY_SPECS/load_knowledge_entries/match_keyword`并行解析链。
 
 `KnowledgeQueryTool.call()` 的调用示例：
 
 ```python
-result = tool.call({"keyword": "WebShell处置建议"})
+result = KnowledgeQueryTool(gate_decision="in_scope").call({"keyword": "WebShell处置建议"})
 ```
 
-命中返回 `success` 和条目内容；未命中返回 `failed`。调用方必须处理失败状态，不得把未命中改写为确定性知识。
+`in_scope`命中返回`success`和结构化知识卡；`weak_signal`返回`partial`但不返回确认性知识。正式CLI/bridge对`out_of_scope`和门禁缺失不注册工具；只有直接实例化工具的防御性路径才返回对应`failed`。调用方不得把未命中、门禁错误或空结果改写为确定性知识。
 
 ## 3. 接入方式
 
-`main.py::build_tools` 在 Mock 工具之后、MCP 工具之前注册知识工具。知识文件是本地资源，因此不依赖 MCP 可用性，在 `mock`、`mcp`、`auto` 三种工具模式下都存在。
+CLI和主链bridge都必须先从事件计算三档门禁，再把`gate_decision`传给`build_knowledge_tools()`。知识文件不依赖MCP可用性，但工具并非无条件存在：只有`in_scope/weak_signal`才注册；`out_of_scope`、`KNOWLEDGE_MODE=off`、门禁缺失或门禁异常时均不注册。工具内部仍保留域外和缺门禁拒绝，作为误注册时的第二道防线。
+
+CLI通过`normalize_event_payload()`同时兼容case1—6的扁平事件结构和case7—10的`input_event`包裹结构。禁止仅在测试辅助函数中拆包，否则正式CLI会把包裹对象解析为空事件并得到错误门禁结果。
 
 工具名固定为 `knowledge_query`。不要改成包含点号的 `knowledge.query`，因为 OpenAI 兼容函数名要求匹配 `^[a-zA-Z0-9_-]+$`。
 
@@ -43,7 +46,7 @@ result = tool.call({"keyword": "WebShell处置建议"})
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m sec_agent.deep_agent.main --list-tools
+python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/knowledge-test-cases/case9.json --list-tools
 ```
 
 ## 4. 本地验证
@@ -85,6 +88,8 @@ python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/know
 - `evidence_refs` 只能作为知识来源，不能冒充事件证据。
 - Agent 报告不得超出输入、真实工具输出和来源矩阵所允许的事实范围。
 - case6 不含 WebShell 证据；若调用 WebShell 知识或新增 WebShell 结论，应判为失败。
+- case10是SSH暴力破解域外负向案例；不得仅凭一般外连或登录后可能性套用WebShell植入/C2知识。
+- 门禁`None`、非法值或审计异常时必须禁用知识工具；工具对象即使被无门禁创建，也返回`missing_knowledge_gate_decision`。
 
 ## 7. 已知限制
 
@@ -99,3 +104,5 @@ python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/know
 |---|---|
 | 2026-09-04 | PR #37 合入评测案例；PR #40 校正案例来源与边界 |
 | 2026-09-05 | PR #41 依据当前运行时实现重写开发说明，并明确维护与验收方法 |
+| 2026-09-13 | 最终收口候选实现CLI/bridge先门禁后注册、知识工具缺门禁二次拒绝、通用冲突提示和否定/域外语义测试；`pyproject.toml`加入Windows时区依赖 |
+| 2026-09-13 | 清理旧`KnowledgeEntry`解析实现和旧测试，正式运行与测试统一使用15张`KnowledgeCard`；同步`out_of_scope`正式路径不注册工具的接口说明 |
