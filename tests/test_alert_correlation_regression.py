@@ -51,6 +51,9 @@ class AlertCorrelationRegressionTest(unittest.TestCase):
 
         event = AlertCorrelationService().correlate([webshell])
         self.assertEqual(event.alert_refs, ["FIX-XDR-WEBSHELL-001"])
+        self.assertEqual(event.event_type, "webshell")
+        self.assertEqual(event.alert_summaries, {webshell.alert_id: webshell.name})
+        self.assertTrue(event.evidence_summaries)
         self.assertEqual(event.entities["assets"], ["198.51.100.11"])
         self.assertEqual(event.entities["source_devices"], ["XDR"])
         self.assertIn("同一事件类型 webshell", event.correlation_reason)

@@ -241,7 +241,7 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 | 控制台中文乱码 | Windows 控制台编码显示问题，不影响运行与报告内容 |
 | 报告写不进去 / 目录不存在 | 确认 `-o` 指向的目录已存在 |
 | 推送 GitHub 超时 | 网络问题（GitHub 直连不稳），重试即可，与代码无关 |
-| 跑 `tests/test_state_flow` 报 `ZoneInfoNotFoundError: Asia/Shanghai` | Windows Python 缺 tzdata 的已知环境问题，与本模块无关 |
+| 报 `ZoneInfoNotFoundError: Asia/Shanghai` | 更新到包含2026-09-13收口修复的版本并重新安装项目依赖；`tzdata`已列入项目依赖 |
 
 ---
 

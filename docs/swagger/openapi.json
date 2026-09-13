@@ -1675,6 +1675,25 @@
           "summary": {
             "type": "string",
             "title": "Summary"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type",
+            "default": ""
+          },
+          "alert_summaries": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Alert Summaries"
+          },
+          "evidence_summaries": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Evidence Summaries"
           }
         },
         "type": "object",

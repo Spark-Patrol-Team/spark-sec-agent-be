@@ -1,0 +1,24 @@
+{
+  "case_id": "TC-KNOWLEDGE-009",
+  "category": "正向变体",
+  "description": "IIS异常POST + 文件修改 + 进程创建组合",
+  "input_event": {
+    "event_id": "EVT-IIS-2025-009",
+    "event_type": "WebShell",
+    "severity": "CRITICAL",
+    "timestamp": "2025-08-20T14:20:00Z",
+    "source_ip": "45.33.22.189",
+    "target_ip": "192.168.5.50",
+    "initial_verdict": "疑似真实攻击",
+    "confidence": 0.82,
+    "evidence": [
+      "IIS日志中检测到异常POST请求: /orders/UpdateStatus.aspx，时间 14:20:03",
+      "请求参数包含Base64编码的长字符串，长度约2048字符",
+      "同一时间窗口内（14:20:05），/orders/UpdateStatus.aspx 对应物理文件被修改",
+      "文件内容新增了 System.Runtime.InteropServices 和 Process.Start 相关代码",
+      "IIS工作进程 w3wp.exe (PID 2844) 在 14:20:10 创建了子进程 cmd.exe /c whoami",
+      "子进程执行结果通过HTTP 200响应返回，响应体包含Base64编码的系统信息",
+      "源IP 45.33.22.189 在14:20:00至14:22:00期间仅访问了 /orders/ 路径下的资源"
+    ]
+  }
+}

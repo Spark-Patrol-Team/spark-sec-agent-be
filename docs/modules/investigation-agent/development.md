@@ -24,7 +24,7 @@
 - Mock 工具 6 个（`tools/mock.py`，WebShell 主场景人工构造数据）。
 - 深信服 MCP 客户端（`tools/mcp_client.py`，JSON-RPC over HTTP，兼容 SSE；5 服务 19 工具，地址走 gitignore 本地配置）。
 - MCP 空结果识别：dbproxy 系列工具返回 `{"code":0,"msg":"","data":[]}` 时，`MCPTool.call` 判定为 `partial`（「查询成功但无数据」），与 `success`（有数据）/ `failed`（业务错误 `code!=0` 或异常）区分，供 Agent 按「数据为空」触发停止条件而非静默成功。
-- 知识包检索工具 `knowledge_query`（`tools/knowledge.py` + `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` 权威版），关键词匹配返回条目 + `evidence_refs`；CLI 与主链 bridge 均已注册。
+- 知识包检索工具`knowledge_query`（`tools/knowledge.py`＋唯一结构化知识正文）；CLI与主链bridge仅在`guarded`模式取得合法三档门禁后注册，门禁缺失或异常时安全禁用。
 - 主链集成：`auto` / `deep_agent` 后端经 `services/deep_agent_bridge.py` 桥接；`tool_mock` 后端走内部子链。
 - CLI 入口 `main.py`（`--event` / `-o` 时间戳 / `--list-tools`）、API 可视化配置 `config_gui.py`。
 
@@ -47,13 +47,13 @@
 | `src/sec_agent/deep_agent/config_gui.py` | tkinter GUI | LLM API 本地配置可视化界面 |
 | `src/sec_agent/deep_agent/tools/base.py` | `Tool` / `ToolResult` / `ToolRegistry` / `ALIAS_MAP` | 工具抽象 + 内部别名层 |
 | `src/sec_agent/deep_agent/tools/mock.py` | `build_mock_tools` | 6 个 Mock 兜底工具 |
-| `src/sec_agent/deep_agent/tools/knowledge.py` | `build_knowledge_tools` / `KnowledgeQueryTool` / `load_knowledge_entries` | 知识包解析 + `knowledge_query` 检索（`evidence_refs`） |
+| `src/sec_agent/deep_agent/tools/knowledge.py` | `parse_knowledge_cards` / `match_knowledge_card` / `build_knowledge_tools` / `KnowledgeQueryTool` | 唯一`KnowledgeCard`解析链 + `knowledge_query`检索 |
 | `src/sec_agent/deep_agent/tools/mcp_client.py` | `MCPClient` / `MCPTool` / `build_mcp_tools` | 深信服 MCP 客户端 |
 | `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` | 《最小 WebShell 知识包》 | 知识包检索源（沈洪旭维护的权威版） |
 | `src/sec_agent/services/deep_agent_bridge.py` | `DeepAgentBridge` | 主链桥接（`auto`/`deep_agent` 后端，含 knowledge 工具注册） |
 | `src/sec_agent/services/investigation.py` | `DeepInvestigationAgent` | 主链调查服务（三后端分派） |
 | `tests/test_investigation_agent.py` | 单元/集成测试 | 16 用例 + 1 集成 |
-| `tests/test_knowledge_tool.py` | 知识包检索测试 | 19 用例（含问答样本覆盖） |
+| `tests/test_knowledge_tool.py` | 知识包检索测试 | 12用例，统一覆盖`KnowledgeCard`正式解析、匹配、知识缺口、来源和注册 |
 | `tests/test_investigation_and_dispatcher_integration.py` | bridge 集成测试 | 5 用例 |
 
 ## 3. 依赖与配置
@@ -67,7 +67,7 @@
 | `TOOL_MODE` | 可选 | 环境变量 | 默认 `auto`（Mock + 连上的 MCP 并存） |
 | `MCP_URLS` / `mcp_servers.local.json` | 可选 | 环境变量 / gitignore 本地文件 | 未配置/不可达 → 跳过真实 MCP，仅 Mock + 知识包 |
 | `MCP_API_KEY` / `MCP_VERIFY_SSL` | 可选 | 环境变量 | 默认空 / 关闭证书校验 |
-| `tzdata` | 可选（Windows 必需） | `pip install tzdata` | Windows 主链 import 报 `ZoneInfoNotFoundError`（本机已装，依赖清单待补） |
+| `tzdata` | 项目依赖（Windows时区数据） | 随项目依赖安装 | `pyproject.toml`与`uv.lock`已声明，避免`ZoneInfoNotFoundError` |
 
 - 支持的运行环境：Python 3.11+（实测 Windows 11 + Python 3.14.3）；Linux/macOS 理论兼容。
 - 敏感配置（LLM key、真实 MCP 地址）只通过环境变量或受控本地文件注入，不在文档、代码和样例中填写真实值。
@@ -77,7 +77,7 @@
 ```text
 # ① 知识包工具清单（无需 LLM key）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json --list-tools
-#   预期：26 个工具（6 Mock + knowledge_query + 19 MCP，MCP 依赖本地配置）
+#   工具数量取决于事件三档门禁和实际MCP tools/list；不得固定宣称26个
 
 # ② 完整调查（需配置 LLM；-o 自动加时间戳）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
@@ -89,7 +89,7 @@ PYTHONPATH=src python -m sec_agent.deep_agent.config_gui
 $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-- 成功判据：`--list-tools` 输出含 `knowledge_query`；完整调查退出码 0 并输出结构化报告（含 `tool_call_records`）。
+- 成功判据：`in_scope/weak_signal`事件在`guarded`模式可看到受相应门禁绑定的`knowledge_query`；`out_of_scope`、门禁缺失/异常和`off`模式不得出现该工具。完整调查还须输出含`tool_call_records`的结构化报告。
 - 常见失败及排查：
   - `LLM 未配置`：未设 `LLM_*` / 未保存 `llm_config.local.json`。
   - `Invalid function.name 400`：旧版中文工具名问题，已由别名层修复；确认在最新代码。
@@ -115,14 +115,14 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 
 # knowledge_query 检索调用（脱敏）
 {"keyword":"WebShell处置建议"}
-# → status=success；summary 含条目正文 + evidence_refs；data={"entry":"处置建议模板","evidence_refs":["CISA ..."]}
+# → status=success；summary含知识卡ID与主题；data含knowledge_id、必要证据、调查步骤、禁止推断和source_citations
 ```
 
 ### 5.3 上下游接入注意事项
 
 - 主链桥接契约：`DeepInvestigationAgent(config, llm, tools).investigate(event)` 返回 `InvestigationReport`；`_to_domain_report` 把 `verdict`/`confidence`/`tool_call_records`/`disposal_suggestions`/`need_manual_takeover` 等映射为主链领域模型。
 - `auto` 后端：bridge 不可用/异常时**回退内部工具子链**（`evidence_lookup` + `xdr_log_query`，无 LLM）；`deep_agent` 后端则置不可用报告。
-- `knowledge_query` 返回的 `evidence_refs` 供 Agent 填入报告 `evidence_source`；匹配未命中返回 `failed`，Agent 不得编造条目内容。
+- `knowledge_query` 返回的`source_citations`是知识来源，不是当前事件证据；匹配未命中返回`failed`，Agent不得编造条目内容或把知识来源写成事件观测。
 
 ## 6. 异常处理与安全控制
 
@@ -139,7 +139,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | LLM 推理 | **真实调用**（DeepSeek OpenAI 兼容接口，实测通过） | 配置 `LLM_*` 或本地配置 | FastGPT 编排（未实现） |
 | 深信服 MCP 工具 | **真实连通**（5 服务 19 工具注册；dbproxy 等实测调用返回） | 配置 `MCP_URLS` / `mcp_servers.local.json` 且网络可达 | 真实平台**数据**已验证（本轮查询样例虚构实体返回空集，待真实数据联调） |
 | Mock 工具（6 个） | **本地实现**（人工构造 WebShell 演示数据） | `TOOL_MODE=mock`/`auto` | 真实平台返回 |
-| 知识包检索（`knowledge_query`） | **本地实现**（解析沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md` 为条目 + `evidence_refs`） | 所有工具模式注册 | FastGPT 知识库 / 真实知识服务 |
+| 知识包检索（`knowledge_query`） | **本地实现**（解析唯一结构化知识正文） | `guarded`且门禁为`in_scope/weak_signal`时注册；域外、`off`或门禁失败时不注册 | FastGPT知识库/真实知识服务 |
 | 内部回退子链 | **fallback**（`evidence_lookup` + `xdr_log_query`，无 LLM） | `auto` 后端 bridge 不可用/异常 | 真实 LLM 已运行 |
 | FastGPT 目标路线 | 未实现 | — | 已接入 FastGPT |
 
@@ -147,7 +147,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 
 | 优先级 | 事项 | 是否影响主链 | 负责人/完成条件 |
 |---|---|---|---|
-| P1 | Windows 缺 `tzdata` 依赖（建议补入 `pyproject.toml`） | 是（主链 import 即挂） | 补依赖 + 跨平台验证 |
+| 已关闭 | Windows缺`tzdata`依赖 | 曾阻塞主链导入 | 2026-09-13已加入`pyproject.toml`和`uv.lock`并在Windows Python 3.11.11全仓复验 |
 | P1 | 真实平台事件数据联调（dbproxy 空数据问题） | 是（真实场景证据采集） | 真实 XDR 数据接入后复验 |
 | P2 | 知识包最小集缺口（攻击组织、DET0394 细节等） | 否 | 扩充知识包章节 |
 | P2 | 仅覆盖 WebShell 主场景 | 否 | 扩展场景数据 |
@@ -158,7 +158,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 - 日志与关键指标位置：`tool_call_records`（报告字段）、`investigation_steps`（报告字段）、CLI 工具清单、主链 `GET /events/{id}/timeline`。
 - 健康检查或运行状态判断：主链 `GET /health`；CLI 退出码 0 为成功。
 - 兼容的接口/Schema/平台版本：OpenAI 兼容 `chat/completions`；MCP JSON-RPC 2.0 over HTTP（SSE 兼容）；深信服 MCP 函数名以 `ALIAS_MAP` 为契约。
-- 升级、迁移或回退注意事项：`ALIAS_MAP` 与深信服侧函数名需同步更新；bridge 双包名兼容已可容忍包位置变化；知识包 md 结构变化需同步 `_ENTRY_SPECS`。
+- 升级、迁移或回退注意事项：`ALIAS_MAP`与深信服侧函数名需同步更新；bridge双包名兼容已可容忍包位置变化；知识包Markdown结构变化需同步`KnowledgeCard`必填字段、解析测试和受控查询别名，不得新增第二套解析器。
 
 ## 10. 变更记录
 

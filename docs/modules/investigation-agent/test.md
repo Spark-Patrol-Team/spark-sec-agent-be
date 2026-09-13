@@ -88,15 +88,14 @@
 
 | 用例 | 验证点 |
 |------|--------|
-| `test_entries_loaded` | 知识包解析出核心条目（攻击原理 / 特征速查 / 工具流量 / 检查清单 / 处置建议） |
-| `test_attack_principle_content_not_empty` | 条目正文非空 |
-| `test_match_attack_principle` 等 6 例 | 关键词命中：攻击原理 / 处置建议 / 工具流量 / 检查清单 / 人工接管 / 无关词未命中 |
+| `test_all_structured_cards_are_loaded` | 唯一解析器读取15张`KnowledgeCard`，ID唯一且必填内容非空 |
+| `test_match_by_*` 4例 | 按知识ID、主题、受控别名和主题包含匹配正式知识卡 |
+| `test_no_match` / `test_unsupported_attack_group_query_remains_a_gap` | 空白、无关词和未覆盖攻击组织问题保持知识缺口 |
 | `test_schema_ascii_and_name` | schema 名 `knowledge_query` 符合 `^[a-zA-Z0-9_-]+$` |
-| `test_hit_returns_evidence_refs` | 命中返回 `evidence_refs`，summary 同步携带供 LLM 阅读 |
-| `test_attack_principle_evidence_ref` | 攻击原理条目含 T1505.003 引用 |
+| `test_hit_returns_structured_card` | 命中返回知识ID、必要证据、禁止推断和结构化来源 |
+| `test_attack_principle_source_citation` | 攻击原理卡包含MITRE来源URL |
 | `test_miss_returns_failed` | 无关关键词返回 `failed` |
 | `test_registered_in_registry` | 注册进 `ToolRegistry`，schema 名唯一 |
-| `test_sample1..5` | 问答样本覆盖：样本 1/3/4/5 命中对应条目；样本 2（攻击组织）为知识缺口（如实标记） |
 
 ### 5.3 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
 
@@ -158,7 +157,7 @@ PYTHONPATH=src python -m unittest tests.test_knowledge_tool -v
 
 # 工具清单（无需 LLM key；MCP 依赖本地配置）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json --list-tools
-#   预期：26 个工具（6 Mock + knowledge_query + 19 MCP）
+#   实际数量取决于事件门禁和MCP tools/list；不得固定宣称26个
 
 # 完整调查（需配置 LLM key；-o 自动加时间戳）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
@@ -173,7 +172,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 
 - 单元测试（`test_investigation_agent.py`）16 项通过 / 1 项跳过（合计 17，均不依赖 LLM）。
 - bridge 集成测试（`test_investigation_and_dispatcher_integration.py`）5 项通过（含真实模块加载回归）。
-- 知识包检索（`test_knowledge_tool.py`）19 项全部通过；`knowledge_query` 已注册（CLI 与主链 bridge，6 mock + 1 knowledge + 19 mcp = 26）；问答样本 5 题中 4 题命中，样本 2（攻击组织）如实标记为知识缺口。
+- 历史知识检索测试曾验证问答样本5题中4题命中；2026-09-13收口后，`knowledge_query`改为仅在`guarded`且取得合法三档门禁结果时注册，不再使用固定“26个工具”作为验收判据。
 - 完整调查（真实 LLM，独立运行）：7 次 Mock 工具调用、完整结构化报告、未内部 fallback。
 - 主链实测（`auto` 后端，真实 LLM）：8 次工具调用（4 Mock failed + 4 dbproxy MCP 空）→ `need_manual_takeover=true` → 停在 `HUMAN_REQUIRED`，不自动处置；未发生内部 fallback。
 - 主链实测（`tool_mock` 后端，内部子链）：2 次工具调用（`evidence_lookup` + `xdr_log_query`）→ 处置方案 → `APPROVAL_REQUIRED` → 审批 → `EXECUTING` → `VERIFYING` → `COMPLETED`；`GET /events/{id}/timeline` 9 步完整、`GET /metrics` 完成计数 +1。
