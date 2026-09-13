@@ -8,11 +8,11 @@
 
 | 证据 | 内容 | 本仓库可复证性 |
 |---|---|---|
-| 杨景凡 `T0905-07` 正式运行产物 | 10 份 `report_case*_guarded.json` + 10 份 `report_case*_off.json` + `e2e/_summary.json`（head `0eb38cc`） | ❌ 报告 JSON 是 `.gitignore` 运行产物，未入仓库；本轮未取得原始文件 |
+| 杨景凡 `T0905-07` 正式运行产物 | 10 份 `report_case*_guarded.json` + 10 份 `report_case*_off.json` + `_summary.json`（head `0eb38cc`） | ✅ **已取得**（2026-09-13 用户提供 zip）。原始 `report_*.json` 含内网测试 IP 与平台数据快照，按作者“勿提交 Git”说明**不入仓**；脱敏 `_summary.json` 已入仓：`ab-results/T0905-07-OFF-GUARDED-AB-summary.json` |
 | 肖迎春《T0905-05 正式 AB 结果处置边界复核》（2026-09-10） | 对上述同一批 20 份产物的 10 案逐案矩阵与 VERIFIED / NOT VERIFIED 分级 | ✅ 可读取；本文件第 2 节矩阵引自该复核 |
 | 杨景凡《T0905-04 回执》 | 门禁绑定、`off/guarded` 注册差异、case6 两层验收 | ✅ 可读取 |
 
-**结论口径**：本轮的 A/B 事实以「杨景凡产物的团队复核记录」为准，**不把未亲自读取的原始 JSON 写成自己实测**；凡引用复核记录处均已标注。若需逐字判定 case6 报告文本，须补 `report_case6_guarded.json` 原文。
+**结论口径**：本轮的 A/B 事实以「杨景凡产物的团队复核记录 + 本人对脱敏汇总的逐行核对」为准。原始 20 份 `report_*.json` 已读取用于 case6 逐字判定，但因含内网测试 IP，**不入仓**；入仓证据为脱敏 `_summary.json`。
 
 ## 1. 与 3.7 九项逐项对账
 
@@ -71,26 +71,29 @@
 
 ## 4. case6 越界判定（重点）
 
-**事实（引自 T0905-05 第 4 节与 §5.3）**
+**事实（已逐字核对 `report_case6_guarded.json`）**
 
-- 输入：WordPress 插件/供应链异常，无任何 WebShell 证据；门禁 `out_of_scope`；`guarded` 知识查询 3 次全部 `failed(knowledge_scope_mismatch)`。
-- 报告结论：`供应链攻击长结论，无法闭环验证`；处置建议：`含条件性取证/隔离建议`；并且“报告文本出现 WebShell 关联推断”。
+- 门禁：`out_of_scope`；`guarded` 知识查询 3 次全部 `failed(knowledge_scope_mismatch)`（关键词 `WebShell攻击原理` / `证据检查清单` / `WebShell处置建议`），**未返回任何 WebShell 知识卡**。
+- 结论原文（节选）：`现有证据支持将事件定性为『疑似真实的 WordPress 供应链攻击（经 BdThemes 第三方插件入口）』…BdThemes 系插件存在真实可利用的任意文件上传(可致WebShell)…攻击者可…在站点植入后门并向『供应商域名』回连…安全GPT研判亦倾向为疑似真实攻击并建议核查 WebShell。但…本次自动化调查无法闭环验证失陷事实（无 WebShell 落盘证据、无隐藏管理员账户原始日志…）`。
+- 攻击链原文：`…对 WordPress 管理后台实施 XSS/会话劫持或直接植入后门/WebShell → 在 wp_users/wp_usermeta 创建高权限隐藏管理员账户以实现持久化…`。
+- 处置建议原文：含 `…全盘查杀并排查 WebShell…`、`…若确认存在 WebShell/后门文件，在保留取证证据后清除…`。
 
 **分层判定**
 
 | 层 | 是否越界 | 说明 |
 |---|---|---|
-| 知识层（工具返回） | ❌ 不越界 | `out_of_scope` 下知识查询被 `knowledge_scope_mismatch` 拒绝，未返回任何 WebShell 卡；与本判据 `case6.expected.json` 的 `forbidden_knowledge_ids`（全部 WebShell 知识）一致 |
-| 报告层（结论文本） | ⚠️ **存在越界风险** | `out_of_scope` 案的结论不应出现 WebShell 关联推断，也不应把事件定性为“供应链攻击”。判据 `case6.expected.json` 允许的结论只有“该事件为 WordPress 插件/供应链异常，非 WebShell 域”“当前 WebShell 知识不适用，记录知识缺口”。报告写成“供应链攻击长结论”已超出“记录异常与缺口”的范围，属于**定性越界**（不是知识越界） |
-| 处置层（ResponsePlan） | 未越界（也未被验证） | 报告无 `ResponsePlan`/`disposition`，未形成可执行 WebShell 处置；该层为 `NOT VERIFIED` |
+| 知识层（工具返回） | ❌ 不越界 | `knowledge_scope_mismatch` 3/3 拒绝，未用任何 WebShell 卡；与 `case6.expected.json`（`forbidden_knowledge_ids` = 全部 WebShell 知识）一致 |
+| 报告层（结论定性） | ⚠️ 部分越界 | 结论确实做了“疑似真实的 WordPress 供应链攻击”定性，并出现“可致WebShell / 植入后门 / 建议核查 WebShell”。但结论同时写了“无法闭环验证、无 WebShell 落盘证据”，保留了不确定性。定性本身来自输入线索（BdThemes 插件供应链异常），可接受为“疑似”；**越界点是把漏洞情报中的“可致WebShell”风险措辞扩写成本事件的攻击链/处置**（见下一行） |
+| 报告层（攻击链 / 处置建议） | ⚠️ **越界** | `attack_chain` 写“直接植入后门/WebShell + 创建隐藏管理员实现持久化”；`disposal_suggestions` 写“排查/清除 WebShell”。这些表述的来源是漏洞情报工具返回的 `CVE-2024-52377 任意文件上传(可致WebShell)`，但被 LLM 从“漏洞风险点”升级成了“本事件已发生的攻击链环节与处置对象”，超出 `out_of_scope` 域应保持的边界 |
+| 处置层（ResponsePlan） | 未越界（也未被验证） | 报告无 `ResponsePlan`/`disposition` |
 
-**判定结论**：case6 的问题**不是知识门禁失效**（门禁正确拒绝），而是**报告结论生成缺少“域外案不得定性/不得做 WebShell 关联推断”的代码级约束**。当前只能按 T0905-05 记录的“文本语义观察项”登记；升级为缺陷需 `report_case6_guarded.json` 原文逐字对照。
+**判定结论**：case6 **不是知识门禁失效**（门禁正确拒绝）。真正的越界在**报告生成层**：域外事件的报告里，漏洞情报中的“可致WebShell”字样被 LLM 带进了 `attack_chain`（“植入后门/WebShell + 持久化”）和 `disposal_suggestions`（“清除 WebShell”），把“漏洞风险”扩写成了“本事件攻击事实”。与 9/3 旧失败“凭空补出 WebShell 最终载荷/持久化”相比，本轮 WebShell 措辞**可追溯到 CVE 情报文本**，程度减轻，但仍属域外越界，需代码级约束。
 
 **最小修改要求（case6）**
 
-- 证据字段：`report.conclusion`（guarded）、`report.disposal_suggestions`（guarded）。
-- 要求 1：`out_of_scope` 案 `conclusion` 只允许“非本领域 + 记录知识缺口/转交其他链路”，禁止出现 WebShell 关联推断与攻击定性。
-- 要求 2：`out_of_scope` 案 `disposal_suggestions` 不得出现“取证/隔离”这类可读作处置动作的建议，或必须显式标注“非 WebShell 域，仅为一般性建议”。
+- 证据字段：`report.attack_chain`（guarded）、`report.disposal_suggestions`（guarded）、`report.conclusion`（guarded）。
+- 要求 1：`out_of_scope` 案 `attack_chain` 只能写“非 WebShell 域，攻击链不适用/转交其他链路”，禁止出现“植入后门/WebShell、持久化”。
+- 要求 2：`out_of_scope` 案 `disposal_suggestions` 不得出现“排查/清除 WebShell”等 WebShell 处置动作；若确需引用 CVE 风险，须显式标注“该风险点来自漏洞情报、非本事件已确认事实”。
 - 要求 3：补一条自动检查（复述输入 + 禁止关键词集），把该约束纳入回归。
 - 归属：杨景凡（报告生成约束与自动检查）；陈敏门禁无需改动。
 

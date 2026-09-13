@@ -66,5 +66,5 @@ $env:PYTHONPATH = "src"
 - ✅ 交付物 #5（一致性 Review）已完成；已记录陈敏 `feat/case-quality-check-and-tests` 对 triage / case3 RSA / benign / alerts+evidence 统一抽取的修复，以及 case2（已收敛为 PassiveNeuron 部署尝试被阻断）、case10（门禁以 `input_quality_issues` 保守标注误标）的闭环；
 - ✅ 交付物 #6（≥6 案 A/B 研判影响结论）预演：见 `一致性review.md` 第 5.1-5.4 节（8/10 案，确定性 mock 行为对照，含限制与缺陷点）。
 - ⛔ **旧「正式 A/B 已完成」结论已删除**（2026-09-13，3.7 Review 第 4 项）：该结论形成时未取得 actual 运行包，不再作为交付物 #6 的正式结论（原 5.5 节内容已迁移）。
-- ✅ **交付物 #6 正式 Review（重做）**：见 `T0913-闫昱硕-正式ABReview与不通过项.md`，基于杨景凡 `T0905-07` 正式 10 案 guarded/off 运行产物的团队复核记录。结论：知识工具行为符合三档门禁、未观察到报告级越界升级；但 case6 报告文本存在越界风险、20/20 `need_manual_takeover` 无区分度、处置链 NOT VERIFIED——已登记不通过项与最小修改要求。
-- ⚠️ 证据边界：原始 20 份报告 JSON 为 `.gitignore` 运行产物、未入仓库；case6 逐字判定需补 `report_case6_guarded.json` 原文。
+- ✅ **交付物 #6 正式 Review（重做）**：见 `T0913-闫昱硕-正式ABReview与不通过项.md`，基于杨景凡 `T0905-07` 正式 10 案 guarded/off 运行产物（脱敏汇总已入仓 `ab-results/T0905-07-OFF-GUARDED-AB-summary.json`，case6 已逐字核对原始报告）。结论：知识工具行为符合三档门禁、未观察到知识门禁越界；但 case6 报告攻击链/处置建议出现 WebShell 越界、20/20 `need_manual_takeover` 无区分度、处置链 NOT VERIFIED——已登记不通过项与最小修改要求。
+- ⚠️ 证据边界：原始 20 份 `report_*.json` 含内网测试 IP 与平台数据快照，按作者“勿提交 Git”说明**不入仓**；仅脱敏 `_summary.json` 入仓。
