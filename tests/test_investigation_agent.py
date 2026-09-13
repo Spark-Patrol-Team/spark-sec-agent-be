@@ -177,8 +177,8 @@ class TestAgentHelpers(unittest.TestCase):
         self.assertTrue(r.need_manual_takeover)
         self.assertIn("证据不足", r.conclusion)
 
-    def test_fallback_report_extracts_knowledge_refs(self):
-        """降级报告应提炼已采集证据：knowledge_query 的 evidence_refs + 成功工具返回。"""
+    def test_fallback_report_keeps_knowledge_citations_out_of_event_evidence(self):
+        """知识来源只留在工具记录中，不能污染降级报告的事件证据。"""
         ev = SecurityEventInput(
             event_id="E1", severity="HIGH", target_ip="1.1.1.1",
             confidence=0.7, evidence=["原始证据"],
@@ -187,12 +187,21 @@ class TestAgentHelpers(unittest.TestCase):
             {"tool": "query_alerts", "input": {"ip": "1.1.1.1"}, "output": "告警列表：[WebShell通信行为告警]", "status": "success"},
             {"tool": "knowledge_query", "input": {"keyword": "WebShell攻击原理"},
              "output": "[知识包·攻击原理]...", "status": "success",
-             "evidence_refs": ["MITRE ATT&CK T1505.003 - Server Software Component: Web Shell"]},
+             "knowledge_citations": {
+                 "urls": ["https://attack.mitre.org/techniques/T1505/003/"],
+                 "levels": ["Level 1"],
+             }},
             {"tool": "query_asset", "input": {"ip": "2.2.2.2"}, "output": "[失败] 数据不可得", "status": "failed"},
         ]
         r = DeepInvestigationAgent._fallback_report(ev, records, reason="达到最大工具调用次数，证据仍不足")
-        # 知识引用进入证据来源
-        self.assertIn("知识包引用: MITRE ATT&CK T1505.003 - Server Software Component: Web Shell", r.evidence_source)
+        # 知识来源仍可审计，但不得进入当前事件证据或证据来源。
+        self.assertEqual(
+            r.tool_call_records[1]["knowledge_citations"]["urls"],
+            ["https://attack.mitre.org/techniques/T1505/003/"],
+        )
+        self.assertFalse(any("attack.mitre.org" in item for item in r.evidence_source))
+        self.assertNotIn("来源工具: knowledge_query", r.evidence_source)
+        self.assertFalse(any("知识包" in item for item in r.key_evidence))
         # 成功工具名进入证据来源，失败工具不进入
         self.assertIn("来源工具: query_alerts", r.evidence_source)
         self.assertNotIn("来源工具: query_asset", r.evidence_source)
@@ -201,6 +210,77 @@ class TestAgentHelpers(unittest.TestCase):
         self.assertIn("原始证据", r.key_evidence)
         self.assertTrue(r.need_manual_takeover)
         self.assertEqual(r.tool_call_records, records)
+
+    def test_agent_records_source_citations_as_knowledge_citations(self):
+        class _KnowledgeTool(Tool):
+            name = "knowledge_query"
+            description = "test"
+            parameters = {"type": "object", "properties": {}}
+
+            def call(self, params):
+                return ToolResult(
+                    status="success",
+                    summary="[知识卡·WSK-001] WebShell攻击原理",
+                    data={
+                        "source_citations": {
+                            "urls": ["https://example.invalid/knowledge-source"],
+                            "levels": ["Level 1"],
+                        }
+                    },
+                )
+
+        class _LLM:
+            available = True
+
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, messages, tools=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "call-1",
+                            "function": {"name": "knowledge_query", "arguments": "{}"},
+                        }],
+                    }
+                return {
+                    "content": json.dumps({
+                        "conclusion": "证据不足",
+                        "risk_level": "HIGH",
+                        "attack_type": "webshell",
+                        "key_evidence": [],
+                        "evidence_source": [],
+                        "investigation_steps": [],
+                        "attack_chain": "未知",
+                        "confidence": 0.2,
+                        "disposal_suggestions": [],
+                        "need_manual_takeover": True,
+                        "manual_takeover_reason": "仅有知识参考，没有事件证据",
+                        "unresolved_issues": ["缺少事件证据"],
+                        "affected_objects": [],
+                    }, ensure_ascii=False),
+                    "tool_calls": [],
+                }
+
+        registry = ToolRegistry()
+        registry.register(_KnowledgeTool())
+        config = type("Config", (), {
+            "agent": type("Agent", (), {"max_tool_calls": 2})(),
+        })()
+        report = DeepInvestigationAgent(config, _LLM(), registry).investigate(
+            SecurityEventInput(event_id="E1", event_type="webshell")
+        )
+
+        record = report.tool_call_records[0]
+        self.assertNotIn("evidence_refs", record)
+        self.assertEqual(
+            record["knowledge_citations"]["urls"],
+            ["https://example.invalid/knowledge-source"],
+        )
+        self.assertEqual(report.key_evidence, [])
+        self.assertEqual(report.evidence_source, [])
 
 
 class TestAgentConfig(unittest.TestCase):

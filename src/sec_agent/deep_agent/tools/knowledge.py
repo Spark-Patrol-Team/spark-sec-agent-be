@@ -204,7 +204,7 @@ def match_knowledge_card(
     candidates.sort(key=lambda item: item[0], reverse=True)
     return candidates[0][1]
 class KnowledgeQueryTool(Tool):
-    """`knowledge.query` 检索工具：按关键词返回知识包条目 + evidence_refs。"""
+    """按关键词返回结构化知识卡及其来源；来源不等于当前事件证据。"""
 
     name = "knowledge_query"
     description = (

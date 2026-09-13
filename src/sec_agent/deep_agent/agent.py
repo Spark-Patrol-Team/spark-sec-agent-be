@@ -34,7 +34,7 @@ SYSTEM_PROMPT = """你是「深度调查安全分析 Agent」，运行在深信�
 # 可用工具
 工具清单见系统提供的 tools 定义，你可自主决定调用哪些工具、调用几次（可多轮组合）。
 WebShell 类事件典型调查路径：先查目标资产信息，再查相关告警与漏洞，必要时做攻击检测、调用安全GPT研判、查询漏洞情报。
-需要攻击原理 / 攻击特征 / 证据检查清单 / 处置建议等参考知识时，调用 knowledge_query（关键词示例：WebShell攻击原理、WebShell证据检查清单、WebShell处置建议）；其返回内容带 evidence_refs（证据引用），应填入报告的 evidence_source。
+需要攻击原理 / 攻击特征 / 证据检查清单 / 处置建议等参考知识时，调用 knowledge_query（关键词示例：WebShell攻击原理、WebShell证据检查清单、WebShell处置建议）。其 source_citations 仅表示知识卡来源，不是当前事件的观测证据，不得写入报告的 key_evidence 或 evidence_source，也不得据此把攻击判定为已发生。
 
 # 收尾原则（重要）
 工具调用次数有限，不要为「多查一点」耗尽步数。证据足以支撑结论时，立即停止调用工具，直接输出最终调查报告 JSON；始终为「直接输出报告」保留至少一次收尾（只输出 JSON、不调用工具的轮次）。工具返回为空或失败时，如实记录「数据不可得」，不要反复调用同一工具。
@@ -127,11 +127,14 @@ class DeepInvestigationAgent:
                     "output": result.to_str(),
                     "status": result.status,
                 }
-                # 知识包命中：结构化保留 evidence_refs，供降级报告提炼进证据来源
+                # 知识卡来源单独留在工具调用记录中，不能混入当前事件证据。
                 if real_name == "knowledge_query" and isinstance(result.data, dict):
-                    refs = result.data.get("evidence_refs") or []
-                    if refs:
-                        record["evidence_refs"] = list(refs)
+                    citations = result.data.get("source_citations")
+                    if isinstance(citations, dict):
+                        record["knowledge_citations"] = {
+                            "urls": list(citations.get("urls") or []),
+                            "levels": list(citations.get("levels") or []),
+                        }
                 tool_records.append(record)
                 messages.append({
                     "role": "tool",
@@ -257,10 +260,10 @@ class DeepInvestigationAgent:
     def _fallback_report(event: SecurityEventInput, tool_records: list[dict], reason: str = "") -> InvestigationReport:
         """LLM 未给出有效报告或调查无法继续时的降级报告（证据不足 → 人工接管）。
 
-        尽力提炼已采集的证据，避免降级报告完全为空：
-        - knowledge_query 命中的 evidence_refs → evidence_source（"知识包引用: ..."）；
-        - 成功工具的调用名 → evidence_source（"来源工具: ..."）；
-        - 成功工具的返回摘要 → key_evidence（截断 200 字符）。
+        尽力提炼已采集的事件证据，避免降级报告完全为空：
+        - knowledge_query 的 source_citations 只保留在 tool_call_records，绝不进入事件证据；
+        - 其他成功工具的调用名 → evidence_source（"来源工具: ..."）；
+        - 其他成功工具的返回摘要 → key_evidence（截断 200 字符）。
         """
         key_evidence = [e for e in event.evidence if e]
         evidence_source = ["上游风险研判"]
@@ -271,11 +274,10 @@ class DeepInvestigationAgent:
                 continue
             tool = rec.get("tool", "")
             output = (rec.get("output") or "").strip()
-            for ref in (rec.get("evidence_refs") or []):
-                label = f"知识包引用: {ref}"
-                if label not in seen_src:
-                    seen_src.add(label)
-                    evidence_source.append(label)
+            if tool == "knowledge_query":
+                # 知识卡解释调查方法，但不证明当前事件事实；完整引用仍可从
+                # tool_call_records[].knowledge_citations 审计。
+                continue
             if tool and f"来源工具: {tool}" not in seen_src:
                 seen_src.add(f"来源工具: {tool}")
                 evidence_source.append(f"来源工具: {tool}")

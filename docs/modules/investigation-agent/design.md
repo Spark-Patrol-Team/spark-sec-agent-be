@@ -81,8 +81,8 @@
 | 字段/对象 | 类型 | 去向 | 含义与约束 |
 |---|---|---|---|
 | `conclusion` / `risk_level` / `attack_type` | str | 下游决策/报告 | 调查结论、风险等级、攻击类型 |
-| `key_evidence` / `evidence_source` | list[str] | 下游决策/报告 | 关键证据与来源；知识包检索到的 `evidence_refs` 可填入来源 |
-| `investigation_steps` / `tool_call_records` | list | 报告/审计 | 调查步骤与工具调用记录（代码侧真实采集，可审计） |
+| `key_evidence` / `evidence_source` | list[str] | 下游决策/报告 | 当前事件的关键观测证据与来源；不得混入知识卡来源 |
+| `investigation_steps` / `tool_call_records` | list | 报告/审计 | 调查步骤与工具调用记录（代码侧真实采集，可审计）；知识卡来源仅保存在`tool_call_records[].knowledge_citations` |
 | `attack_chain` | str | 报告 | 攻击链 / 攻击过程 |
 | `confidence` | float | 下游决策 | 调查置信度 0~1 |
 | `disposal_suggestions` | list[str] | 下游决策 | 处置建议（不自动执行） |
@@ -95,10 +95,10 @@
 
 1. 接收事件（`_build_messages` 构造 system + user 消息）。
 2. LLM 推理：分析已有证据 → 识别证据缺口 → 规划下一步（可能触发工具调用）。
-3. 若 LLM 请求工具：`resolve()` 还原真实工具名 → `call()` 执行 → 记录 `tool_call_records` → 结果回填对话，循环；`knowledge_query` 命中的 `evidence_refs` 结构化保留在调用记录中。
+3. 若 LLM 请求工具：`resolve()` 还原真实工具名 → `call()` 执行 → 记录 `tool_call_records` → 结果回填对话，循环；`knowledge_query` 命中的`source_citations`以`knowledge_citations`独立保留在调用记录中，不写入当前事件证据。
 4. 接近上限（剩余 ≤2 次）时注入收尾提醒，促使 LLM 及时输出报告（避免耗尽步数降级）。
 5. 停止条件（满足任一即输出报告）：证据足够 / 达到最大步数（`max_tool_calls=12` 硬上限） / 工具无法获得数据。
-6. 输出结构化报告（`_parse_report` 严格 JSON）；解析失败或超步数 → `_fallback_report`（证据不足 → 人工接管，且尽力提炼已采集的工具证据与知识包引用写入报告）。
+6. 输出结构化报告（`_parse_report` 严格 JSON）；解析失败或超步数 → `_fallback_report`（证据不足 → 人工接管，只提炼事件调查工具证据；知识引用仍留在工具记录中供审计）。
 
 主链状态影响：`INVESTIGATING` →（`needs_human=false` 且有处置方案）→ `DECISION_READY` →（高风险）→ `APPROVAL_REQUIRED`；`needs_human=true` → `HUMAN_REQUIRED`。本模块自身不直接修改状态机，状态迁移由 `Orchestrator` 驱动。
 
@@ -162,7 +162,8 @@
 | 2026-08-26 | 随本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具（`tools/knowledge.py` + 知识包），CLI 与主链 bridge 注册 | 是（单测与检索验证通过，真实 LLM 轮待跑） |
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`，「Agent 输入输出约定」章节迁至本文第 3 节 | 是 |
 | 2026-08-27 | 本次（打包修复） | 知识包迁入 `sec_agent.deep_agent` 包内并声明 `[tool.setuptools.package-data]`，`knowledge.py` 改用 `importlib.resources` 读取（`pip install` 后仍可用）；`-o` 报告时间戳改微秒级 + 存在检测唯一序号 | 是（打包回归测试新增） |
-| 2026-08-26 | 本次（方案 C 提交） | 步数上限 `max_tool_calls` 8→12（可 `AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限注入收尾提醒；降级报告提炼已采证据与知识包引用 | 是（47 passed / 1 skipped） |
+| 2026-08-26 | 本次（方案 C 提交） | 步数上限 `max_tool_calls` 8→12（可 `AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限注入收尾提醒；降级报告曾提炼已采证据与知识包引用（历史行为，2026-09-13已废止知识引用进入事件证据） | 是（47 passed / 1 skipped） |
+| 2026-09-13 | `fix/knowledge-citation-contract-v1`候选 | `source_citations`独立记录为`tool_call_records[].knowledge_citations`；禁止进入`key_evidence/evidence_source` | 待本分支回归 |
 
 ---
 
