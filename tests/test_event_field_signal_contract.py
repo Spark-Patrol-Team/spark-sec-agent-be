@@ -19,19 +19,54 @@
 """
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timedelta
 
 from sec_agent.deep_agent.models import SecurityEventInput
 from sec_agent.platforms.fixed_sample import FixedSampleAdapter
 from sec_agent.services.correlation import AlertCorrelationService
 from sec_agent.services.deep_agent_bridge import DeepAgentBridge
-from sec_agent.services.gatekeeper import GateDecision, WebShellGatekeeper
+from sec_agent.services.gatekeeper import (
+    GATEKEEPER_WHITELIST_FIELDS,
+    GateDecision,
+    WebShellGatekeeper,
+)
 from sec_agent.services.triage import RiskTriageService
 
 
 CONTRACT_VERSION = "v1.1"
 KNOWN_TYPES = {"webshell", "sql_injection", "lateral_movement", "unauthorized_access", "other"}
 REF_SEPARATOR = ": "
+
+# 合同 §1 声明的两套字段面，必须与代码一致（含 summary 不在任何一侧）。
+CONTRACT_AGENT_INPUT_FIELDS = {
+    "event_id",
+    "event_type",
+    "severity",
+    "timestamp",
+    "source_ip",
+    "target_ip",
+    "alerts",
+    "evidence",
+    "initial_verdict",
+    "confidence",
+    "triage",
+    "trace_id",
+    "run_id",
+}
+CONTRACT_GATE_WHITELIST_FIELDS = {
+    "event_id",
+    "event_type",
+    "severity",
+    "timestamp",
+    "source_ip",
+    "target_ip",
+    "alerts",
+    "evidence",
+    "triage",
+    "initial_verdict",
+}
+FORBIDDEN_GATE_FIELDS = {"confidence", "trace_id", "run_id"}
 
 
 def _fixed_sample_alerts():
@@ -114,6 +149,44 @@ class TestContractVersionAndFields:
 
 
 class TestGateFieldProvenance:
+    def test_agent_input_field_surface_matches_contract(self) -> None:
+        """SecurityEventInput 必须恰好是合同 §1 声明的 13 字段，且不含 summary。"""
+        fields = {f.name for f in dataclasses.fields(SecurityEventInput)}
+
+        assert fields == CONTRACT_AGENT_INPUT_FIELDS
+        assert "summary" not in fields, "summary 是 SecurityEvent 字段，不进入 Agent 输入"
+
+    def test_gate_whitelist_surface_matches_contract(self) -> None:
+        """门禁白名单必须恰好是合同 §1 声明的 10 字段，且 summary 不在其中。"""
+        whitelist = set(GATEKEEPER_WHITELIST_FIELDS)
+        fields = {f.name for f in dataclasses.fields(SecurityEventInput)}
+
+        assert whitelist == CONTRACT_GATE_WHITELIST_FIELDS
+        assert "summary" not in whitelist, "门禁白名单不得包含 summary"
+        assert whitelist <= fields, "白名单不得出现 Agent 输入之外的字段"
+        assert fields - whitelist == FORBIDDEN_GATE_FIELDS
+
+    def test_bridge_output_matches_agent_input_contract(self) -> None:
+        """bridge 产出的 payload 键集合必须等于 13 字段契约，不得夹带 summary 等域模型字段。"""
+        _, _, payload = _chain(_fixed_sample_alerts())
+        fields = {f.name for f in dataclasses.fields(SecurityEventInput)}
+
+        assert set(payload) == fields
+        assert "summary" not in payload
+        assert "alert_refs" not in payload and "evidence_summaries" not in payload
+
+    def test_gate_cannot_read_summary_even_when_present_in_payload(self) -> None:
+        """即便调用方硬塞 summary，门禁也拿不到它（不在白名单即被 filter_input 丢弃）。"""
+        gate = WebShellGatekeeper()
+        raw = dict.fromkeys(CONTRACT_AGENT_INPUT_FIELDS, "")
+        raw["summary"] = "已将 1 条 webshell 告警压缩为 1 个安全事件"
+        raw["alerts"] = []
+        raw["evidence"] = []
+
+        assert gate.filter_input(raw).get("summary") is None
+        result = gate.audit(SecurityEventInput.from_dict(raw))
+        assert not any("webshell" in str(signal.description).lower() for signal in result.signals)
+
     def test_gate_decision_uses_machine_event_type_on_main_chain(self) -> None:
         _, _, payload = _chain(_fixed_sample_alerts())
         result = WebShellGatekeeper().audit(SecurityEventInput.from_dict(payload))
