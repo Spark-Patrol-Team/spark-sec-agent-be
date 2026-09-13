@@ -72,6 +72,33 @@ class ResponseBoundaryTest(unittest.TestCase):
         )
         self.assertEqual(scope, ResponseEvidenceScope.OUT_OF_SCOPE)
 
+    def test_scope_resolver_prefers_structured_event_type_over_text_marker(self) -> None:
+        event = self._event(
+            event_type="sql_injection",
+            summary="已将 1 条 webshell 告警压缩为 1 个安全事件",
+            correlation_reason="同一事件类型 webshell",
+        )
+        scope = ResponseEvidenceScopeResolver().resolve(
+            self._confirmed_webshell_report(),
+            self._triage(response_evidence_scope=None),
+            event,
+        )
+
+        self.assertEqual(scope, ResponseEvidenceScope.OUT_OF_SCOPE)
+
+    def test_scope_resolver_uses_structured_evidence_summary_for_domain_boundary(self) -> None:
+        event = self._event(
+            event_type="webshell",
+            evidence_summaries={"evidence-domain": "SSH 暴力破解登录失败，无 WebShell 行为"},
+        )
+        scope = ResponseEvidenceScopeResolver().resolve(
+            self._confirmed_webshell_report(),
+            self._triage(response_evidence_scope=None),
+            event,
+        )
+
+        self.assertEqual(scope, ResponseEvidenceScope.OUT_OF_SCOPE)
+
     def test_scope_resolver_tool_failure_is_weak_signal(self) -> None:
         failed_step = InvestigationStep(
             step_no=1,
@@ -206,15 +233,17 @@ class ResponseBoundaryTest(unittest.TestCase):
             evidence_relations=["SSH 登录失败日志与账号锁定记录指向同一来源 IP"],
             recommended_actions=["不要执行 WebShell 清除动作，转交账号安全处置"],
         )
-        triage = self._triage(risk_score=95)
+        triage = self._triage(response_evidence_scope=None, risk_score=95)
+        event = self._event(
+            summary="已将 1 条 unauthorized_access 告警压缩为 1 个安全事件",
+            correlation_reason="同一事件类型 unauthorized_access；SSH 暴力破解证据",
+        )
+        triage.response_evidence_scope = ResponseEvidenceScopeResolver().resolve(report, triage, event)
 
         plan = ResponseDecisionService().build_plan(
             report,
             triage,
-            self._event(
-                summary="已将 1 条 unauthorized_access 告警压缩为 1 个安全事件",
-                correlation_reason="同一事件类型 unauthorized_access；SSH 暴力破解证据",
-            ),
+            event,
         )
 
         self.assertIsNone(plan)
@@ -230,15 +259,18 @@ class ResponseBoundaryTest(unittest.TestCase):
             summary="数据库凭据滥用高风险，需要继续深度调查",
             risk_score=95,
             supporting_evidence_refs=["db-login-001", "db-query-002"],
+            response_evidence_scope=None,
         )
+        event = self._event(
+            summary="已将 1 条 database_abuse 告警压缩为 1 个安全事件",
+            correlation_reason="同一事件类型 database_abuse；目标资产 db-server-01",
+        )
+        triage.response_evidence_scope = ResponseEvidenceScopeResolver().resolve(report, triage, event)
 
         plan = ResponseDecisionService().build_plan(
             report,
             triage,
-            self._event(
-                summary="已将 1 条 database_abuse 告警压缩为 1 个安全事件",
-                correlation_reason="同一事件类型 database_abuse；目标资产 db-server-01",
-            ),
+            event,
         )
 
         self.assertIsNone(plan)
@@ -288,6 +320,8 @@ class ResponseBoundaryTest(unittest.TestCase):
         )
 
         self.assertEqual(execution.effect_layer, VerificationEvidenceLayer.STATEFUL_MOCK)
+        self.assertEqual(execution.status, ToolCallStatus.SUCCESS)
+        self.assertEqual(execution.platform_status, ToolCallStatus.SUCCESS.value)
         self.assertEqual(verification.verified_effect_layer, VerificationEvidenceLayer.STATEFUL_MOCK)
         self.assertEqual(verification.status, VerificationStatus.UNKNOWN)
         self.assertEqual(verification.final_status, BusinessStatus.HUMAN_REQUIRED)
@@ -318,6 +352,19 @@ class ResponseBoundaryTest(unittest.TestCase):
         self.assertEqual(verification.verified_effect_layer, VerificationEvidenceLayer.DEVICE_EFFECT)
         self.assertEqual(verification.status, VerificationStatus.EFFECTIVE)
         self.assertEqual(verification.final_status, BusinessStatus.COMPLETED)
+
+    def test_failed_verification_tool_cannot_complete_from_device_effect_output(self) -> None:
+        verification = ResponseVerificationService(
+            _VerificationPlatform(
+                "effective",
+                VerificationEvidenceLayer.DEVICE_EFFECT,
+                tool_status=ToolCallStatus.FAILED,
+            )
+        ).verify("trace-boundary", "evt-boundary", self._real_execution(VerificationEvidenceLayer.PLATFORM_RECORD))
+
+        self.assertEqual(verification.verified_effect_layer, VerificationEvidenceLayer.DEVICE_EFFECT)
+        self.assertEqual(verification.status, VerificationStatus.UNKNOWN)
+        self.assertEqual(verification.final_status, BusinessStatus.HUMAN_REQUIRED)
 
     def _triage(
         self,
@@ -360,6 +407,8 @@ class ResponseBoundaryTest(unittest.TestCase):
         *,
         summary: str = "已将 2 条 webshell 告警压缩为 1 个安全事件",
         correlation_reason: str = "同一事件类型 webshell；目标资产 web-server-01",
+        event_type: str = "",
+        evidence_summaries: dict[str, str] | None = None,
     ) -> SecurityEvent:
         now = utc_now()
         return SecurityEvent(
@@ -372,6 +421,8 @@ class ResponseBoundaryTest(unittest.TestCase):
             alert_count_before=2,
             event_count_after=1,
             summary=summary,
+            event_type=event_type,
+            evidence_summaries=evidence_summaries or {},
         )
 
     def _real_execution(self, layer: VerificationEvidenceLayer) -> ExecutionResult:
@@ -386,9 +437,16 @@ class ResponseBoundaryTest(unittest.TestCase):
 
 
 class _VerificationPlatform:
-    def __init__(self, action_status: str, effect_layer: VerificationEvidenceLayer) -> None:
+    def __init__(
+        self,
+        action_status: str,
+        effect_layer: VerificationEvidenceLayer,
+        *,
+        tool_status: ToolCallStatus = ToolCallStatus.SUCCESS,
+    ) -> None:
         self._action_status = action_status
         self._effect_layer = effect_layer
+        self._tool_status = tool_status
 
     def fetch_alerts(self, sample_id=None, xdr_event_id=None):
         return []
@@ -396,7 +454,7 @@ class _VerificationPlatform:
     def run_tool(self, request: ToolRequest) -> ToolResult:
         return _tool_result(
             request,
-            status=ToolCallStatus.SUCCESS,
+            status=self._tool_status,
             output_preview={
                 "action_status": self._action_status,
                 "effect_layer": self._effect_layer.value,

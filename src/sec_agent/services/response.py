@@ -154,7 +154,30 @@ class ResponseEvidenceScopeResolver:
             *report.recommended_actions,
         ]
         if event is not None:
-            parts.extend([event.summary, event.correlation_reason, *event.alert_refs])
+            parts.extend(
+                [
+                    event.event_type,
+                    *event.alert_summaries.values(),
+                    *event.evidence_summaries.values(),
+                    event.summary,
+                    event.correlation_reason,
+                    *event.alert_refs,
+                ]
+            )
+        return " ".join(str(part).lower() for part in parts if part)
+
+    @staticmethod
+    def _event_type(event: SecurityEvent | None) -> str:
+        return event.event_type.strip().lower() if event and event.event_type else ""
+
+    @staticmethod
+    def _structured_event_text(event: SecurityEvent | None) -> str:
+        if event is None:
+            return ""
+        parts = [
+            *event.alert_summaries.values(),
+            *event.evidence_summaries.values(),
+        ]
         return " ".join(str(part).lower() for part in parts if part)
 
     def _has_webshell_signal(
@@ -163,6 +186,9 @@ class ResponseEvidenceScopeResolver:
         triage: TriageResult,
         event: SecurityEvent | None,
     ) -> bool:
+        event_type = self._event_type(event)
+        if event_type:
+            return event_type == "webshell"
         text = self._event_text(report, triage, event)
         return any(marker in text for marker in WEBSHELL_SCOPE_MARKERS)
 
@@ -172,6 +198,16 @@ class ResponseEvidenceScopeResolver:
         triage: TriageResult,
         event: SecurityEvent | None,
     ) -> bool:
+        event_type = self._event_type(event)
+        if event_type:
+            if event_type != "webshell":
+                return True
+            structured_text = self._structured_event_text(event)
+            if structured_text:
+                has_oos = any(marker in structured_text for marker in OUT_OF_SCOPE_MARKERS)
+                has_strong_webshell = any(marker in structured_text for marker in WEBSHELL_STRONG_MARKERS)
+                return has_oos and not has_strong_webshell
+            return False
         text = self._event_text(report, triage, event)
         return any(marker in text for marker in OUT_OF_SCOPE_MARKERS)
 
@@ -190,7 +226,7 @@ class ResponseDecisionService:
             return None
 
         boundary = self._boundary_decision(report, triage, event)
-        if boundary.requires_manual_takeover or boundary.requires_continued_investigation:
+        if boundary is None or boundary.requires_manual_takeover or boundary.requires_continued_investigation:
             return None
 
         target = report.affected_objects[0]
@@ -224,35 +260,24 @@ class ResponseDecisionService:
         report: InvestigationReport,
         triage: TriageResult,
         event: SecurityEvent | None,
-    ) -> ResponseBoundaryDecision:
+    ) -> ResponseBoundaryDecision | None:
         basis = self._decision_basis(report, triage, event)
-        has_knowledge_gap = bool(triage.evidence_gaps or report.unresolved_questions)
-        has_tool_failure = any(
-            step.tool_result is not None and step.tool_result.status != ToolCallStatus.SUCCESS
-            for step in report.steps
-        )
+        scope = triage.response_evidence_scope
+        if scope is None:
+            return None
 
-        if triage.response_evidence_scope is None:
+        if scope == ResponseEvidenceScope.OUT_OF_SCOPE:
             return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.WEAK_SIGNAL,
-                max_allowed_risk_level=ToolRiskLevel.LOW,
-                requires_continued_investigation=True,
-                reason="缺少已冻结的 response_evidence_scope，按 fail-closed 处理",
-                basis=basis,
-            )
-
-        if triage.response_evidence_scope == ResponseEvidenceScope.OUT_OF_SCOPE:
-            return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.OUT_OF_SCOPE,
+                evidence_scope=scope,
                 max_allowed_risk_level=ToolRiskLevel.LOW,
                 requires_manual_takeover=True,
                 reason="事件信号合同标记为 out_of_scope，不生成 WebShell 处置动作",
                 basis=basis,
             )
 
-        if triage.response_evidence_scope == ResponseEvidenceScope.WEAK_SIGNAL:
+        if scope == ResponseEvidenceScope.WEAK_SIGNAL:
             return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.WEAK_SIGNAL,
+                evidence_scope=scope,
                 max_allowed_risk_level=ToolRiskLevel.LOW,
                 requires_continued_investigation=True,
                 reason="事件信号合同标记为 weak_signal，只允许继续调查或人工接管",
@@ -261,53 +286,27 @@ class ResponseDecisionService:
 
         if report.conclusion != TruthVerdict.MALICIOUS or triage.verdict != TruthVerdict.MALICIOUS:
             return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.OUT_OF_SCOPE,
+                evidence_scope=scope,
                 max_allowed_risk_level=ToolRiskLevel.LOW,
                 requires_manual_takeover=True,
                 reason="调查或分诊未确认恶意 WebShell",
                 basis=basis,
             )
 
-        if self._has_out_of_scope_signal(report, triage, event):
+        # 这些是对已冻结 scope 的一致性安全校验，不会重新计算或改写 scope。
+        if triage.evidence_gaps or report.unresolved_questions or ResponseEvidenceScopeResolver._has_tool_failure(report):
             return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.OUT_OF_SCOPE,
-                max_allowed_risk_level=ToolRiskLevel.LOW,
-                requires_manual_takeover=True,
-                reason="证据指向非 WebShell 域，不生成 WebShell 处置动作",
-                basis=basis,
-            )
-
-        if has_tool_failure or has_knowledge_gap:
-            return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.WEAK_SIGNAL,
+                evidence_scope=scope,
                 max_allowed_risk_level=ToolRiskLevel.LOW,
                 requires_continued_investigation=True,
-                reason="存在工具失败、弱证据或知识缺口，只允许继续调查或人工接管",
-                basis=basis,
-            )
-
-        if not self._has_webshell_signal(report, triage, event):
-            return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.WEAK_SIGNAL,
-                max_allowed_risk_level=ToolRiskLevel.LOW,
-                requires_continued_investigation=True,
-                reason="缺少明确 WebShell 范围信号，不能生成高风险处置",
-                basis=basis,
-            )
-
-        if not self._has_sufficient_evidence(report, triage):
-            return ResponseBoundaryDecision(
-                evidence_scope=ResponseEvidenceScope.WEAK_SIGNAL,
-                max_allowed_risk_level=ToolRiskLevel.LOW,
-                requires_continued_investigation=True,
-                reason="证据引用不足，不能生成高风险处置",
+                reason="已冻结 scope 与当前调查缺口不一致，按 fail-closed 处理",
                 basis=basis,
             )
 
         return ResponseBoundaryDecision(
-            evidence_scope=ResponseEvidenceScope.IN_SCOPE,
+            evidence_scope=scope,
             max_allowed_risk_level=ToolRiskLevel.CRITICAL,
-            reason="WebShell 范围和关键证据已满足候选处置边界",
+            reason="已冻结的 WebShell 证据范围允许候选处置",
             basis=basis,
         )
 
@@ -331,51 +330,6 @@ class ResponseDecisionService:
             basis.append(f"event.summary={event.summary}")
             basis.append(f"event.correlation_reason={event.correlation_reason}")
         return tuple(basis)
-
-    def _has_webshell_signal(
-        self,
-        report: InvestigationReport,
-        triage: TriageResult,
-        event: SecurityEvent | None,
-    ) -> bool:
-        text = self._combined_text(report, triage, event)
-        return any(marker in text for marker in WEBSHELL_SCOPE_MARKERS)
-
-    def _has_out_of_scope_signal(
-        self,
-        report: InvestigationReport,
-        triage: TriageResult,
-        event: SecurityEvent | None,
-    ) -> bool:
-        text = self._combined_text(report, triage, event)
-        has_oos = any(marker in text for marker in OUT_OF_SCOPE_MARKERS)
-        has_strong_webshell = any(marker in text for marker in WEBSHELL_STRONG_MARKERS)
-        return has_oos and not has_strong_webshell
-
-    def _has_sufficient_evidence(self, report: InvestigationReport, triage: TriageResult) -> bool:
-        evidence_refs = {ref for ref in [*triage.supporting_evidence_refs, *report.key_evidence_refs] if ref}
-        return len(evidence_refs) >= 2
-
-    def _combined_text(
-        self,
-        report: InvestigationReport,
-        triage: TriageResult,
-        event: SecurityEvent | None,
-    ) -> str:
-        parts = [
-            triage.summary,
-            *triage.supporting_evidence_refs,
-            *triage.opposing_evidence_refs,
-            *triage.evidence_gaps,
-            report.summary,
-            *report.key_evidence_refs,
-            *report.evidence_relations,
-            *report.unresolved_questions,
-            *report.recommended_actions,
-        ]
-        if event is not None:
-            parts.extend([event.summary, event.correlation_reason, *event.alert_refs])
-        return " ".join(str(part).lower() for part in parts if part)
 
     def _risk_order(self, risk_level: ToolRiskLevel) -> int:
         order = {
@@ -457,7 +411,11 @@ class ResponseVerificationService:
             result.output_preview.get("action_status") or self._platform.query_action_status(execution.idempotency_key)
         )
         effect_layer = self._verified_effect_layer(result.output_preview, execution)
-        if effect_layer == VerificationEvidenceLayer.DEVICE_EFFECT and action_status in {"effective", "executed"}:
+        if (
+            result.status == ToolCallStatus.SUCCESS
+            and effect_layer == VerificationEvidenceLayer.DEVICE_EFFECT
+            and action_status in {"effective", "executed"}
+        ):
             final_status = BusinessStatus.COMPLETED
             verification_status = VerificationStatus.EFFECTIVE
             adjustment_suggestion = None

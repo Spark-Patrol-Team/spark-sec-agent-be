@@ -10,8 +10,13 @@ from sec_agent.domain.models import (
     InvestigationReport,
     InvestigationStep,
     SecurityEvent,
+    ToolCallStatus,
+    ToolErrorType,
+    ToolResult,
+    ToolSideEffectType,
     TriageResult,
     TruthVerdict,
+    utc_now,
 )
 
 
@@ -35,7 +40,7 @@ class DeepAgentBridge:
             self._to_deep_agent_input(trace_id=trace_id, run_id=run_id, event=event, triage=triage)
         )
         deep_report = modules["DeepInvestigationAgent"](config, llm, tools).investigate(deep_event)
-        return self._to_domain_report(deep_report, triage)
+        return self._to_domain_report(deep_report, triage, trace_id=trace_id, event_id=event.event_id)
 
     def _load_modules(self) -> dict[str, Any]:
         last_error: Exception | None = None
@@ -114,7 +119,14 @@ class DeepAgentBridge:
             "run_id": run_id,
         }
 
-    def _to_domain_report(self, deep_report: Any, triage: TriageResult) -> InvestigationReport:
+    def _to_domain_report(
+        self,
+        deep_report: Any,
+        triage: TriageResult,
+        *,
+        trace_id: str = "",
+        event_id: str = "",
+    ) -> InvestigationReport:
         data = self._as_dict(deep_report)
         steps = [
             InvestigationStep(
@@ -126,6 +138,12 @@ class DeepAgentBridge:
             if isinstance(step, dict)
         ]
         tool_call_records = data.get("tool_call_records") or []
+        self._attach_tool_call_results(
+            steps,
+            tool_call_records,
+            trace_id=trace_id,
+            event_id=event_id,
+        )
         return InvestigationReport(
             conclusion=self._conclusion(data.get("verdict") or data.get("conclusion"), triage.verdict),
             final_confidence=self._confidence(data.get("confidence"), triage.confidence),
@@ -139,6 +157,93 @@ class DeepAgentBridge:
             needs_human=bool(data.get("need_manual_takeover")),
             steps=steps,
             summary=str(data.get("conclusion") or "deep_agent 子智能体调查完成"),
+        )
+
+    @classmethod
+    def _attach_tool_call_results(
+        cls,
+        steps: list[InvestigationStep],
+        records: list[Any],
+        *,
+        trace_id: str,
+        event_id: str,
+    ) -> None:
+        for index, raw_record in enumerate(records, start=1):
+            if not isinstance(raw_record, dict):
+                continue
+            tool_name = str(raw_record.get("tool") or "deep_agent_tool")
+            result = cls._tool_result_from_record(
+                raw_record,
+                tool_name=tool_name,
+                trace_id=trace_id,
+                event_id=event_id,
+                index=index,
+            )
+            step = next(
+                (
+                    item
+                    for item in steps
+                    if item.tool_result is None
+                    and tool_name.lower() in item.goal.lower()
+                ),
+                None,
+            )
+            if step is None and index <= len(steps) and steps[index - 1].tool_result is None:
+                step = steps[index - 1]
+            if step is None:
+                step = InvestigationStep(
+                    step_no=len(steps) + 1,
+                    goal=tool_name,
+                    observation=str(raw_record.get("output") or raw_record.get("tool_output") or ""),
+                )
+                steps.append(step)
+            step.tool_result = result
+            if not step.observation:
+                step.observation = result.summary
+
+    @staticmethod
+    def _tool_result_from_record(
+        record: dict[str, Any],
+        *,
+        tool_name: str,
+        trace_id: str,
+        event_id: str,
+        index: int,
+    ) -> ToolResult:
+        raw_status = str(record.get("status") or "failed").strip().lower()
+        if raw_status == ToolCallStatus.SUCCESS.value:
+            status = ToolCallStatus.SUCCESS
+            error_type = None
+        elif raw_status in {ToolCallStatus.PARTIAL_SUCCESS.value, "partial"}:
+            status = ToolCallStatus.PARTIAL_SUCCESS
+            error_type = ToolErrorType.PLATFORM_ERROR
+        else:
+            status = ToolCallStatus.FAILED
+            error_type = ToolErrorType.TIMEOUT if "timeout" in raw_status else ToolErrorType.PLATFORM_ERROR
+
+        now = utc_now()
+        output = record.get("output") or record.get("tool_output") or ""
+        return ToolResult(
+            call_id=str(record.get("call_id") or f"deep-agent-call-{index}"),
+            trace_id=trace_id,
+            event_id=event_id,
+            tool_name=tool_name,
+            action_name=tool_name,
+            idempotency_key=str(record.get("idempotency_key") or f"deep-agent:{trace_id}:{index}"),
+            status=status,
+            summary=str(output),
+            raw_result_ref=f"deep-agent://tool-call/{index}",
+            output_refs=[f"deep-agent://tool-call/{index}"],
+            output_preview={"raw_status": raw_status, "output": output},
+            retryable=False,
+            error_type=error_type,
+            error_message=str(output) if error_type else None,
+            platform_status=raw_status,
+            external_side_effect=False,
+            side_effect_type=ToolSideEffectType.NONE,
+            started_at=now,
+            ended_at=now,
+            duration_ms=0,
         )
 
     @staticmethod
