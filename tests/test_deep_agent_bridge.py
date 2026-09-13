@@ -10,6 +10,7 @@ from sec_agent.domain.models import (
     Priority,
     SecurityEvent,
     StartRunRequest,
+    ToolCallStatus,
     TriageResult,
     TruthVerdict,
 )
@@ -166,6 +167,31 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertEqual(report.affected_objects, ["198.51.100.11"])
         self.assertIn("WebShell 上传后命令执行", report.evidence_relations)
         self.assertEqual(report.steps[0].goal, "查询资产和关联告警")
+
+    def test_deep_agent_backend_maps_failed_tool_record_to_domain_step(self) -> None:
+        report = DeepAgentBridge()._to_domain_report(
+            {
+                "conclusion": "证据不足，无法得出明确调查结论",
+                "confidence": 0.6,
+                "investigation_steps": [
+                    {"step_id": 1, "goal": "query_asset", "tool_output": "资产数据不可得"}
+                ],
+                "tool_call_records": [
+                    {"tool": "query_asset", "status": "failed", "output": "[失败] 数据不可得"}
+                ],
+                "unresolved_issues": ["资产证据缺失"],
+                "need_manual_takeover": True,
+            },
+            self._triage(),
+            trace_id="trace-tool-failure",
+            event_id="evt-tool-failure",
+        )
+
+        self.assertEqual(len(report.steps), 1)
+        self.assertIsNotNone(report.steps[0].tool_result)
+        self.assertEqual(report.steps[0].tool_result.tool_name, "query_asset")
+        self.assertEqual(report.steps[0].tool_result.status, ToolCallStatus.FAILED)
+        self.assertIn("数据不可得", report.steps[0].tool_result.summary)
 
     def test_deep_agent_backend_returns_human_required_when_unavailable(self) -> None:
         service = DeepInvestigationAgent(platform=_NoopPlatform(), backend="deep_agent", bridge=_UnavailableBridge())
