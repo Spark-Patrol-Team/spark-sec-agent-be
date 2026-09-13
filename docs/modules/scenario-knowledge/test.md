@@ -98,6 +98,31 @@ manual_takeover, step_count, duration_ms, human_review
 
 `human_review` 是人工 Review 栏，必须包含 `status`、`reviewer`、`reviewed_at`、`comments`、`action_items`。待人工复核时，`status=pending`，`reviewer=null`，`reviewed_at=null`。
 
+### 3.2 门禁边界回归（2026-09-13 新增，陈敏）
+
+门禁在“容易误判”的输入下必须仍然正确，因此新增确定性回归 `tests/test_gatekeeper_boundary.py`（24 条），
+与合同一致性测试 `tests/test_event_field_signal_contract.py`（6 条通过 + 2 条记录合同 §5 D1 的 xfail）。
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m pytest tests/test_gatekeeper_boundary.py tests/test_event_field_signal_contract.py tests/test_gatekeeper_case1_10.py -q
+```
+
+| 边界类别 | 用例数 | 覆盖点（用例名前缀 `BOUNDARY-`） |
+|---|---:|---|
+| 否定语义 | 4 | `未发现/未检测到/no evidence/not detected` 不升级；`已排除/可排除` 不升级；否定不跨分句泄漏 |
+| 单一通用进程 | 3 | 仅 `cmd.exe`/`powershell.exe`/`java.exe` 时不得判 `in_scope`，且至少保留弱信号；补上 WebShell 专属证据后仍能确认 |
+| 普通反序列化 | 2 | 仅出现“反序列化调用”不升级；出现“反序列化攻击载荷 + Web 进程执行”仍确认 |
+| 内核驱动 | 2 | 驱动/内核模块/进程隐藏证据判 `out_of_scope`；与 WebShell 强证据并存时 `MIXED` → `weak_signal` |
+| 大小写 | 4 | `WebShell/webshell/WEBSHELL`、`web-shell/web_shell`、文本大写变体判定与信号一致 |
+| 空字段 | 5 | 全空字段 `INDETERMINATE → weak_signal`；空白串等同空值；缺失字段 fail-closed；`weak_signal`/缺门禁不返回知识 |
+| 冲突字段 | 3 | `event_type=WebShell` 与正文排除/域外证据冲突时按冻结规则判定并与输入顺序无关 |
+
+首轮执行 6 条失败，暴露出 3 类真实问题并已做最小修复（见 `development.md` §2 与 `design.md` §6）：
+通用进程名单独出现即判 `in_scope`、内核/驱动证据被判为 WebShell 确认级、“排除/并非”类否定语义未被识别。
+修复后：边界 24 passed、`tests/test_gatekeeper_case1_10.py` 75 passed、全量 331 passed（另 1 skipped）；
+case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scope`，case6/case10 `out_of_scope`）。
+
 ## 4. Agent 运行判据
 
 | 类别 | 通过条件 | 失败示例 |
@@ -142,3 +167,4 @@ manual_takeover, step_count, duration_ms, human_review
 | 2026-09-06 | 冻结评测汇总 Schema，新增最小 fixture 与结构守护测试 |
 | 2026-09-13 | 最终收口候选新增fail-closed、正式样例输入归一化、否定语义、域外优先级和bridge门禁绑定回归；目标测试127项通过，全仓312项通过、1项跳过；CLI实测case9注册知识工具、case10不注册 |
 | 2026-09-13 | 按杨嘉琪Review修复证据ID/摘要错配，新增空摘要错位复现；删除旧`KnowledgeEntry`测试链并迁移至唯一`KnowledgeCard`路径；同步域外事件不注册知识工具的接口口径 |
+| 2026-09-13 | 新增门禁边界回归 `tests/test_gatekeeper_boundary.py`（24条）与合同一致性测试 `tests/test_event_field_signal_contract.py`；边界测试暴露并最小修复通用进程误升级、内核/驱动误归类、“排除/并非”否定语义缺失三类问题；边界24 passed、全量331 passed / 1 skipped，case1-10 与固定样例主链判定无回归 |
