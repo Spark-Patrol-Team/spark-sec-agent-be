@@ -42,9 +42,31 @@ ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
 - 不直接执行处置，不直接修改业务状态。
 - 修改阈值/权重时同步更新 `design.md` 与 `test.md`，并跑通 `tests/test_triage.py`。
 
+## 本轮核对与回归（2026-09-13）
+
+基线 `origin/main@0001bbd`，核对分支 `docs/risk-triage-field-rule-mainchain-sync`（从最新 main 干净重建）。
+
+```bash
+PYTHONPATH=src python -m pytest tests/test_triage.py -q                            # 20 passed
+PYTHONPATH=src python -m pytest tests/test_state_flow.py tests/test_run_flow.py -q  # 9 passed
+PYTHONPATH=src python -m pytest -q -rs                                              # 309 passed, 1 skipped
+PYTHONPATH=src python -m sec_agent.scripts.run_flow                                  # 主流程跑到 COMPLETED
+```
+
+- 跳过项为 `tests/test_investigation_agent.py:232`（未配置 `LLM_API_KEY` 的深度调查可选用例），与研判无关。
+- 逐字段值与边界探针结果见 `test.md`「本轮回归结果（2026-09-13）」与 `design.md`「本轮字段与规则核对（2026-09-13）」。
+
+近期合并影响评估：
+
+- `triage.py` 最后改动为 2026-08-23（`3c4cd6f`），主链调用点 `orchestrator.py` 最后改动为 2026-09-05。
+- 2026-09-06 之后 main 上的合并（调查桥接装配、深度调查后端切换、知识门禁 PR#50 fail-open 修复、case3 输入来源对齐）均未触及研判评分逻辑，也未改动「研判→调查」交接字段；门禁信号在调查主链的透传修复属于调查侧改动。
+- 同一批固定样例字段值与本文件 2026-08-26 记录完全一致（85 / 80 / 95 / 65），`normalized` / `raw` 两种输入模式一致，未观察到字段或规则回归。
+- `tool_mock` 后端下横向移动样例终点为 `HUMAN_REQUIRED`（调查侧判定证据不足需人工接管），属下游行为，不是研判回归。
+
 ## 待补充
 
-- 用真实 STA/XDR 样本校准权重与阈值。
-- 反对证据规则。
-- 规则命中明细与因子拆分的展示模型。
+- 用真实 STA/XDR 样本校准权重与阈值（当前仅有 1 次真实事件观察，不构成校准）。
+- 反对证据规则：`opposing_evidence_refs` 仍固定为空，尚无反对证据模型。
+- `confidence` 仍为按结论的固定档位（0.85 / 0.65 / 0.70），未与证据强弱挂钩。
+- 规则命中明细与因子拆分的展示模型（需先扩展 `TriageResult`，再同步三处消费点）。
 

@@ -90,3 +90,49 @@ PYTHONPATH=src python -m pytest tests/test_triage.py tests/test_state_flow.py -v
 PYTHONPATH=src python -m sec_agent.scripts.run_flow
 ```
 
+## 本轮回归结果（2026-09-13，main@0001bbd）
+
+核对分支 `docs/risk-triage-field-rule-mainchain-sync`（从最新 main 干净重建），`investigation_backend=tool_mock`。
+
+命令与计数：
+
+```bash
+PYTHONPATH=src python -m pytest tests/test_triage.py -q                            # 20 passed
+PYTHONPATH=src python -m pytest tests/test_state_flow.py tests/test_run_flow.py -q  # 9 passed
+PYTHONPATH=src python -m pytest -q -rs                                              # 309 passed, 1 skipped
+PYTHONPATH=src python -m sec_agent.scripts.run_flow                                  # 主流程跑到 COMPLETED
+```
+
+跳过项：`tests/test_investigation_agent.py:232`（未配置 `LLM_API_KEY` 的深度调查可选用例），与研判无关。
+
+字段核对（直连 `RiskTriageService` + 主链 `Orchestrator` 实跑）：
+
+| 样例 | 输入模式 | verdict | confidence | risk_score | priority | should_investigate | support | oppose | gaps | 主链终点 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `webshell-001` | fixed_sample | malicious | 0.85 | 85 | high | True | 2 | 0 | 0 | APPROVAL_REQUIRED |
+| `FIX-STA-SQLI-001` | normalized | malicious | 0.85 | 80 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
+| `FIX-XDR-WEBSHELL-001` | normalized | malicious | 0.85 | 95 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
+| `FIX-STA-LATERAL-001` | normalized | uncertain | 0.65 | 65 | medium | True | 7 | 0 | 1 | HUMAN_REQUIRED |
+| `FIX-STA-SQLI-001` | raw | malicious | 0.85 | 80 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
+| `FIX-XDR-WEBSHELL-001` | raw | malicious | 0.85 | 95 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
+| `FIX-STA-LATERAL-001` | raw | uncertain | 0.65 | 65 | medium | True | 7 | 0 | 1 | HUMAN_REQUIRED |
+
+规则边界探针（`RiskTriageService` 直连）：
+
+| 输入 | verdict | risk_score | priority | should_investigate | evidence_gaps |
+| --- | --- | --- | --- | --- | --- |
+| `low` + `other`（无 seed） | benign | 10 | low | False | 0 |
+| `medium` + `other`，seed=39 | benign | 39 | low | False | 0 |
+| `medium` + `other`，seed=40 | uncertain | 40 | medium | True | 1 |
+| `critical` + `other`，2 条告警（60+15） | malicious | 75 | high | True | 0 |
+| 缺严重度 + 未知类型 + 无证据 | benign | 0 | low | False | 1 |
+
+主链接入回归：
+
+- 高风险与弱信号样例均实际进入调查且 `ctx.investigation` 非空：`RECEIVED → CORRELATING → TRIAGED → INVESTIGATING → DECISION_READY → APPROVAL_REQUIRED`（弱信号样例为 `… → INVESTIGATING → HUMAN_REQUIRED`）。
+- 低风险路径（`low` + `other`，`risk_score=10`）实测 `RECEIVED → CORRELATING → TRIAGED → COMPLETED`，`ctx.investigation` 为空，未进入调查阶段。
+- `run_flow.py` 演示主流程：`RECEIVED → CORRELATING → TRIAGED → INVESTIGATING → DECISION_READY → APPROVAL_REQUIRED →（审批）→ EXECUTING → VERIFYING → COMPLETED`。
+- 调查侧消费的研判字段映射见 `design.md`「研判到调查的交接契约」；本轮未改动该映射，也未改动 `TriageResult`。
+
+结论：本轮未观察到字段或规则回归；`opposing_evidence_refs` 恒空、`confidence` 为按结论固定档位属已知限制（见 `design.md`「当前固定规则限制」），不作为回归判定依据。
+

@@ -88,3 +88,49 @@
 - `source_device_name` 可非 `"XDR"`（`devSourceName[]` 优先，可回退回退至 `"XDR"`）；真实列表可混入 STA 来源告警。
 - 单条真实事件（`evt-9b6df22d-…`）结论为 `malicious / 0.85 / 80 / high / 应调查`，仅为一次研判观察，不构成统计校准或阈值优化。
 
+## 本轮字段与规则核对（2026-09-13）
+
+基线：`origin/main@0001bbd`（`triage.py` 自 2026-08-23 未改动，主链调用点 `orchestrator.py` 自 2026-09-05 未改动）。核对方式：直连 `RiskTriageService` + 主链 `Orchestrator` 实跑 `tests/fixtures/fixed_alerts/` 固定样例，`investigation_backend=tool_mock`。
+
+`TriageResult` 九个字段逐项核对（全部正常填充）：
+
+| 样例 | verdict | confidence | risk_score | priority | supporting | opposing | gaps | should_investigate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fixed_sample `webshell-001`（2 条 high WebShell） | malicious | 0.85 | 85 | high | 2 | 0 | 0 | True |
+| JSONL `FIX-STA-SQLI-001`（high/seed 80） | malicious | 0.85 | 80 | high | 7 | 0 | 0 | True |
+| JSONL `FIX-XDR-WEBSHELL-001`（critical/seed 95） | malicious | 0.85 | 95 | high | 7 | 0 | 0 | True |
+| JSONL `FIX-STA-LATERAL-001`（medium/seed 65） | uncertain | 0.65 | 65 | medium | 7 | 0 | 1 | True |
+
+`normalized` 与 `raw` 两种 JSONL 输入模式逐字段完全一致；与 2026-08-26 记录的同批样例数值一致（85 / 80 / 95 / 65），未观察到字段漂移。
+
+规则边界探针（`RiskTriageService` 直连）：
+
+| 输入 | verdict | confidence | risk_score | priority | should_investigate | evidence_gaps |
+| --- | --- | --- | --- | --- | --- | --- |
+| `low` + `other`（无 seed） | benign | 0.70 | 10 | low | False | 0 |
+| `medium` + `other`，seed=39 | benign | 0.70 | 39 | low | False | 0 |
+| `medium` + `other`，seed=40 | uncertain | 0.65 | 40 | medium | True | 1 |
+| `critical` + `other`，2 条告警（60+15） | malicious | 0.85 | 75 | high | True | 0 |
+| 缺严重度 + 未知类型 + 无证据 | benign | 0.70 | 0 | low | False | 1（缺少可定位的原始证据引用） |
+
+结论：输出字段语义与本文档一致，无新增、无缺失字段，阈值含等号语义（`>=70` high、`>=40` medium）保持不变；`opposing_evidence_refs` 恒空与 `confidence` 固定档位属「当前固定规则限制」，不是回归。
+
+## 研判到调查的交接契约（2026-09-13 复核）
+
+主链在 `TRIAGED` 之后按 `should_investigate` 分流：
+
+- `True` → `INVESTIGATING`，并把 `TriageResult` 对象原样传入调查服务：`self._investigation.investigate(ctx.trace_id, event, ctx.triage, run_id=ctx.run_id)`。研判结果不需要二次转换即可直接进入调查阶段。
+- `False` → `COMPLETED`，分诊结束、不进入调查，`ctx.investigation` 保持为空。
+
+调查侧实际消费的研判字段（`DeepAgentBridge._to_deep_agent_input`）：
+
+| 调查入口字段 | 取自研判 |
+| --- | --- |
+| `severity` | `triage.priority.value.upper()` |
+| `evidence` | `triage.supporting_evidence_refs`（与 `event.evidence_summaries` 组合为描述） |
+| `initial_verdict` | `triage.verdict.value` |
+| `confidence` | `triage.confidence` |
+| `triage` | `TriageResult.model_dump(mode="json")` 全量透传 |
+
+`tool_mock` 调查后端同样消费 `verdict`、`confidence`（+0.12，上限 0.9）、`supporting_evidence_refs`、`evidence_gaps`。因此改 `TriageResult` 字段名或语义前，必须先同步三处消费点：`services/orchestrator.py`、`services/deep_agent_bridge.py`、`services/investigation.py`。
+
