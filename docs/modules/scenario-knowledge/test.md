@@ -115,6 +115,7 @@ manual_takeover, step_count, duration_ms, human_review
 | 2026-09-03 | case1、case2 | 成员回执；基线为旧提交 `42a51ed`，原始报告未进入 PR | 只能作为历史观察，待最终提交复验 |
 | 2026-09-03 | case6 | 回执显示调用了 WebShell 知识，并在无输入证据时补出 WebShell 最终载荷/持久化 | 失败 |
 | 2026-09-04 | case1、case2、case6 重跑 | PR #40 评论回执称退出码为 0、报告已另存；case6 仅记录“知识调用/命中”，未提供可检查报告 | 进程完成已回执，但 case6 行为验收不能据此判通过 |
+| 2026-09-13 | case6（guarded/off 各一次） | 收口后代码（本地 commit `5a5507e`，核心代码与 upstream/main 一致）实测：guarded 门禁判定 `out_of_scope`、`knowledge_query` 0 次调用，报告结论「证据不足、无法确认、需人工复核」、攻击链「无法构建可信攻击链」；off 为降级报告「证据不足」；两模式均未新增 WebShell 植入/持久化/最终载荷等事实 | 负向判据通过（本地复验，正式 Review 待确认） |
 
 上述内容是9月6日前的历史证据状态。9月11日团队已在受控位置收到10案×OFF/GUARDED共20份实际报告；是否按最终候选统一通过，仍需完成运行Commit绑定及闫昱硕、肖迎春的正式Review，不能仅凭收件或退出码判通过。
 
@@ -125,7 +126,8 @@ manual_takeover, step_count, duration_ms, human_review
 - [x] PR #50安全P0代码及状态文档头`6f59e59`的仓库CI通过：`312 passed, 1 skipped`。
 - [x] 杨嘉琪Review提出的证据ID/摘要错配已改为按ID映射；旧`KnowledgeEntry`解析链已删除；域外工具注册口径已同步。
 - [ ] case1、case2 在最终提交上完成报告复验，知识引用与事件证据分开。
-- [ ] case6 在最终提交上完成负向复验，未调用 WebShell 知识且未新增 WebShell 事实。
+- [x] case6 在最终提交上完成负向复验，未调用 WebShell 知识且未新增 WebShell 事实（2026-09-13 本地复验：guarded 门禁 `out_of_scope`、`knowledge_query` 0 次调用、报告未新增 WebShell 事实，运行基线 commit `5a5507e` 核心代码与 main 一致；正式 Review 待确认）。
+- [x] out_of_scope 报告措辞约束已落地：攻击链不写「植入/持久化」、处置不写「清除/排查 WebShell」，含提示词约束 + 报告解析兜底清洗 + 确定性自动检查（2026-09-13）。
 - [ ] Agent 报告、运行元数据和回执保存到团队指定受控位置，仓库只保留判据和结论索引。
 - [ ] 不把 Mock/synthetic 成功写成真实 MCP/XDR 联调完成。
 
@@ -142,3 +144,4 @@ manual_takeover, step_count, duration_ms, human_review
 | 2026-09-06 | 冻结评测汇总 Schema，新增最小 fixture 与结构守护测试 |
 | 2026-09-13 | 最终收口候选新增fail-closed、正式样例输入归一化、否定语义、域外优先级和bridge门禁绑定回归；目标测试127项通过，全仓312项通过、1项跳过；CLI实测case9注册知识工具、case10不注册 |
 | 2026-09-13 | 按杨嘉琪Review修复证据ID/摘要错配，新增空摘要错位复现；删除旧`KnowledgeEntry`测试链并迁移至唯一`KnowledgeCard`路径；同步域外事件不注册知识工具的接口口径 |
+| 2026-09-13 | 补 case6 报告措辞越界约束（评审 finding #1，归杨景凡）：out_of_scope 报告 `attack_chain` 不得写「植入/持久化」、`disposal_suggestions` 不得写「清除/排查 WebShell」，新增 `_OUT_OF_SCOPE_REPORT_CONSTRAINT` 提示词约束 + `sanitize_out_of_scope_report` 兜底清洗 + `tests/test_out_of_scope_report_constraint.py` 确定性自动检查 |

@@ -35,7 +35,7 @@ class DeepAgentBridge:
         )
         gate_decision = self._knowledge_gate_decision(deep_event, config)
         tools = self._build_tools(modules, config, gate_decision=gate_decision)
-        deep_report = modules["DeepInvestigationAgent"](config, llm, tools).investigate(deep_event)
+        deep_report = modules["DeepInvestigationAgent"](config, llm, tools).investigate(deep_event, gate_decision=gate_decision)
         return self._to_domain_report(deep_report, triage)
 
     def _load_modules(self) -> dict[str, Any]:

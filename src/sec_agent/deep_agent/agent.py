@@ -82,6 +82,51 @@ _WRAPUP_REMINDER = (
 )
 
 
+# --------------------------------------------------------------------------- #
+# 域外事件（out_of_scope）报告措辞约束
+# --------------------------------------------------------------------------- #
+# 评审结论（2026-09-13）：知识门禁本身正确，但 out_of_scope 报告的措辞仍会越界——
+# attack_chain 不得写「植入/持久化」等 WebShell 攻击链特征，disposal_suggestions
+# 不得写「清除/排查 WebShell」等 WebShell 专属处置。这里做两层兜底：
+#   1. SYSTEM_PROMPT 追加约束（_OUT_OF_SCOPE_REPORT_CONSTRAINT），从源头约束 LLM；
+#   2. 报告解析层清洗（sanitize_out_of_scope_report），防止 LLM 不遵守提示词时仍越界。
+_OUT_OF_SCOPE_REPORT_CONSTRAINT = """
+
+# 域外事件报告约束（门禁判定 out_of_scope）
+本事件经知识门禁判定为域外（非 WebShell 场景）。生成报告时必须遵守：
+- attack_chain 不得写入「植入后门 / 植入木马 / 持久化 / 最终载荷」等 WebShell 攻击链特征；
+- disposal_suggestions 不得写入「清除 WebShell / 排查 WebShell 文件 / 查杀后门」等 WebShell 专属处置动作；
+- 结论聚焦「证据不足 / 无法按 WebShell 定性」，如实记录数据不可得，不臆造 WebShell 事实。"""
+
+# 报告清洗兜底的越界词表：命中即判定为 WebShell 攻击链 / 专属处置措辞。
+_OUT_OF_SCOPE_ATTACK_CHAIN_TERMS = ("植入", "持久化", "后门", "木马")
+_OUT_OF_SCOPE_DISPOSAL_TERMS = ("webshell", "后门", "木马", "查杀")
+
+_OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER = (
+    "域外事件（门禁判定为非 WebShell 场景），不适用 WebShell 攻击链，无法构建相关攻击链。"
+)
+_OUT_OF_SCOPE_DISPOSAL_PLACEHOLDER = "建议人工介入复核，域外事件不套用 WebShell 处置。"
+
+
+def sanitize_out_of_scope_report(data: dict) -> dict:
+    """清洗 out_of_scope 报告的越界措辞（返回新字典，不修改入参）。"""
+    cleaned = dict(data)
+
+    attack_chain = str(cleaned.get("attack_chain") or "")
+    if any(term in attack_chain for term in _OUT_OF_SCOPE_ATTACK_CHAIN_TERMS):
+        cleaned["attack_chain"] = _OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER
+
+    suggestions = cleaned.get("disposal_suggestions") or []
+    kept = [
+        str(item)
+        for item in suggestions
+        if not any(term in str(item).lower() for term in _OUT_OF_SCOPE_DISPOSAL_TERMS)
+    ]
+    cleaned["disposal_suggestions"] = kept or [_OUT_OF_SCOPE_DISPOSAL_PLACEHOLDER]
+
+    return cleaned
+
+
 class DeepInvestigationAgent:
     def __init__(self, config: Config, llm: LLMClient, tools: ToolRegistry):
         self.config = config
@@ -89,11 +134,15 @@ class DeepInvestigationAgent:
         self.tools = tools
 
     # ------------------------------------------------------------------
-    def investigate(self, event: SecurityEventInput) -> InvestigationReport:
+    def investigate(
+        self,
+        event: SecurityEventInput,
+        gate_decision: str | None = None,
+    ) -> InvestigationReport:
         if not self.llm.available:
             raise RuntimeError("LLM 未配置，无法运行深度调查。请设置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。")
 
-        messages = self._build_messages(event)
+        messages = self._build_messages(event, gate_decision)
         schemas = self.tools.schemas()
         tool_records: list[dict] = []
         max_calls = self.config.agent.max_tool_calls
@@ -112,7 +161,7 @@ class DeepInvestigationAgent:
 
             # 无工具调用 → LLM 已给出最终报告
             if not assistant["tool_calls"]:
-                return self._parse_report(assistant["content"], event, tool_records)
+                return self._parse_report(assistant["content"], event, tool_records, gate_decision)
 
             for tc in assistant["tool_calls"]:
                 if tool_call_count >= max_calls:
@@ -144,7 +193,7 @@ class DeepInvestigationAgent:
         return self._fallback_report(event, tool_records, reason="达到最大工具调用次数，证据仍不足")
 
     # ------------------------------------------------------------------
-    def _build_messages(self, event: SecurityEventInput) -> list[dict]:
+    def _build_messages(self, event: SecurityEventInput, gate_decision: str | None = None) -> list[dict]:
         payload = {
             "event_id": event.event_id,
             "event_type": event.event_type,
@@ -159,8 +208,11 @@ class DeepInvestigationAgent:
             "triage": event.triage or {},
         }
         user_content = "以下是待调查的安全事件，请开始深度调查：\n" + json.dumps(payload, ensure_ascii=False, indent=2)
+        system_content = SYSTEM_PROMPT
+        if gate_decision == "out_of_scope":
+            system_content += _OUT_OF_SCOPE_REPORT_CONSTRAINT
         return [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
 
@@ -170,6 +222,7 @@ class DeepInvestigationAgent:
         content: str,
         event: SecurityEventInput,
         tool_records: list[dict],
+        gate_decision: str | None = None,
     ) -> InvestigationReport:
         try:
             data = self._extract_json(content)
@@ -226,6 +279,8 @@ class DeepInvestigationAgent:
         }
 
         data["trace_id"] = event.trace_id
+        if gate_decision == "out_of_scope":
+            data = sanitize_out_of_scope_report(data)
         return InvestigationReport.from_dict(data)
     # ------------------------------------------------------------------
     @staticmethod
