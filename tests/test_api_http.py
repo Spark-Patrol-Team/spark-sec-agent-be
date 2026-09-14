@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -115,6 +120,8 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(view["response"]["execution_status"], "success")
         self.assertEqual(view["response"]["final_status"], "HUMAN_REQUIRED")
         self.assertEqual(view["investigation"]["tool_result_count"], 2)
+        self.assertIn("evidence_sources", view["investigation"])
+        self.assertIn("manual_takeover_reason", view["investigation"])
         self.assertNotIn("tool_results", view["investigation"])
         self.assertEqual(
             [item["status_label"] for item in view["timeline"]],
@@ -206,6 +213,208 @@ class ApiHttpTest(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["status"], "FAILED")
         self.assertIn("不匹配", payload["errors"][0]["message"])
+
+    def test_eval_comparisons_returns_off_guarded_mock_payload(self) -> None:
+        response = self.client.get("/eval/comparisons")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["schema_version"], "2026-09-07.eval-comparison.v1")
+        self.assertEqual(payload["data_source"], "mock_fixture")
+        self.assertEqual(payload["suite"]["baseline"], "OFF")
+        self.assertEqual(payload["suite"]["candidate"], "GUARDED")
+        self.assertEqual(payload["summary"]["total_cases"], len(payload["results"]))
+        self.assertGreaterEqual(payload["summary"]["guarded_wins"], 1)
+
+        first = payload["results"][0]
+        self.assertEqual(first["case_id"], "case1")
+        self.assertIn("off", first)
+        self.assertIn("guarded", first)
+        self.assertIn("comparison", first)
+        self.assertEqual(first["comparison"]["winner"], "GUARDED")
+        self.assertIn("WSK-001", first["guarded"]["matched_knowledge_ids"])
+        self.assertEqual(first["guarded"]["evidence_breakdown"]["event_evidence_refs"], ["case1:alert"])
+        self.assertEqual(first["guarded"]["evidence_breakdown"]["tool_result_refs"], ["tool:knowledge_query:case1"])
+        self.assertEqual(
+            first["guarded"]["evidence_breakdown"]["knowledge_refs"],
+            ["knowledge:WSK-001", "knowledge:WSK-010"],
+        )
+
+    def test_eval_comparisons_reads_actual_result_package_and_builds_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "actual-result-package"
+            path.mkdir()
+            (path / "README.md").write_text("生成时间：2026-09-11\n模型：deepseek 系列\n", encoding="utf-8")
+            (path / "运行元数据与脱敏摘要.md").write_text(
+                "\n".join(
+                    [
+                        "| 项 | 值 |",
+                        "|---|---|",
+                        "| 运行 Commit | `0eb38cc`（merge feature/t0905-07-agent-binding） |",
+                        "| 代码基线 | `7e4aad6` feat(agent): 正式接入三档 gate_decision |",
+                        "| LLM 模型 | `deepseek-v4-flash`（temperature=0.0） |",
+                        "| 工具模式 | `TOOL_MODE=auto`（真实 MCP 与 Mock 兜底并存） |",
+                        "| 知识模式 | `KNOWLEDGE_MODE = off / guarded` |",
+                        "| 运行时间 | 2026-09-09 22:21:27 — 22:34:52 |",
+                        "| 调查步数上限 | `AGENT_MAX_STEPS=5` |",
+                        "| 工具调用硬上限 | `AGENT_MAX_TOOL_CALLS=12` |",
+                        "| MCP 单次超时 | 20s |",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            rows = []
+            for case_no in range(1, 7):
+                case_id = f"TC-KNOWLEDGE-{case_no:03d}"
+                gate_decision = "in_scope" if case_no == 1 else "weak_signal"
+                guarded_statuses = (
+                    [{"status": "success", "error": "[知识卡·WSK-001] WebShell 正向调查"}]
+                    if case_no == 1
+                    else [{"status": "partial", "error": "[部分成功] 当前仅为弱信号"}]
+                )
+                rows.append(
+                    {
+                        "case_no": case_no,
+                        "case_id": case_id,
+                        "category": "正向变体",
+                        "mode": "guarded",
+                        "gate_decision": gate_decision,
+                        "tools_called": ["query_asset", "knowledge_query", "dbproxy_告警数据查询工具"],
+                        "knowledge_called": True,
+                        "knowledge_call_count": len(guarded_statuses),
+                        "knowledge_statuses": guarded_statuses,
+                        "knowledge_refs_in_report": [],
+                        "need_manual_takeover": True,
+                        "risk_level": "HIGH",
+                        "conclusion": "证据不足，无法得出明确调查结论",
+                    }
+                )
+                rows.append(
+                    {
+                        "case_no": case_no,
+                        "case_id": case_id,
+                        "category": "正向变体",
+                        "mode": "off",
+                        "gate_decision": gate_decision,
+                        "tools_called": ["query_asset", "dbproxy_告警数据查询工具"],
+                        "knowledge_called": False,
+                        "knowledge_call_count": 0,
+                        "knowledge_statuses": [],
+                        "knowledge_refs_in_report": [],
+                        "need_manual_takeover": True,
+                        "risk_level": "HIGH",
+                        "conclusion": "证据不足，无法得出明确调查结论",
+                    }
+                )
+            (path / "_summary.json").write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+            (path / "report_case1_guarded.json").write_text(
+                json.dumps(
+                    {
+                        "confidence": 0.91,
+                        "need_manual_takeover": True,
+                        "tool_call_records": [
+                            {"tool": "query_asset", "status": "failed"},
+                            {"tool": "knowledge_query", "status": "success"},
+                            {"tool": "dbproxy_告警数据查询工具", "status": "partial"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (path / "report_case1_off.json").write_text(
+                json.dumps(
+                    {
+                        "confidence": 0.72,
+                        "need_manual_takeover": True,
+                        "tool_call_records": [
+                            {"tool": "query_asset", "status": "failed"},
+                            {"tool": "dbproxy_告警数据查询工具", "status": "partial"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"EVAL_COMPARISON_FIXTURE_PATH": str(path)}):
+                pending_response = self.client.get("/eval/comparisons")
+                (path / "_human_review.json").write_text(
+                    json.dumps(
+                        {
+                            "reviews": [
+                                {
+                                    "case_id": "TC-KNOWLEDGE-001",
+                                    "status": "passed",
+                                    "winner": "GUARDED",
+                                    "reviewer": "reviewer-a",
+                                    "reviewed_at": "2026-09-14T18:00:00+08:00",
+                                    "comments": "确认知识引用受控且未替代事件证据。",
+                                    "reason": "采用人工 Review 的成对案例结论。",
+                                    "action_items": [],
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                reviewed_response = self.client.get("/eval/comparisons")
+
+        self.assertEqual(pending_response.status_code, 200)
+        payload = pending_response.json()
+        self.assertEqual(payload["data_source"], "actual")
+        self.assertEqual(payload["comparison_id"], "cmp-20260911-yjf-off-guarded-ab")
+        self.assertEqual(payload["suite"]["case_count"], 6)
+        self.assertEqual(payload["summary"]["total_cases"], 6)
+        self.assertEqual(payload["summary"]["guarded_wins"], 0)
+        self.assertEqual(payload["summary"]["ties"], 6)
+        self.assertEqual(
+            payload["summary"]["guarded_wins"] + payload["summary"]["off_wins"] + payload["summary"]["ties"],
+            6,
+        )
+        self.assertEqual(payload["run_metadata"]["result_package_generated_at"], "2026-09-11T00:00:00+08:00")
+        self.assertEqual(payload["run_metadata"]["run_commit"], "0eb38cc")
+        self.assertEqual(payload["run_metadata"]["model"], "deepseek-v4-flash")
+        self.assertEqual(payload["run_metadata"]["tool_mode"], "TOOL_MODE=auto")
+        guarded = payload["results"][0]["guarded"]
+        self.assertEqual(guarded["matched_knowledge_ids"], ["WSK-001"])
+        self.assertEqual(guarded["evidence_refs"], [])
+        self.assertEqual(guarded["evidence_breakdown"]["event_evidence_refs"], ["TC-KNOWLEDGE-001:event_basic_info"])
+        self.assertIn("tool:knowledge_query:guarded:TC-KNOWLEDGE-001", guarded["evidence_breakdown"]["tool_result_refs"])
+        self.assertEqual(guarded["evidence_breakdown"]["knowledge_refs"], ["knowledge:WSK-001"])
+        self.assertEqual(payload["results"][0]["human_review"]["status"], "pending")
+
+        self.assertEqual(reviewed_response.status_code, 200)
+        reviewed_payload = reviewed_response.json()
+        self.assertEqual(reviewed_payload["summary"]["guarded_wins"], 1)
+        reviewed_case = reviewed_payload["results"][0]
+        self.assertEqual(reviewed_case["comparison"]["winner"], "GUARDED")
+        self.assertEqual(reviewed_case["human_review"]["status"], "passed")
+        self.assertEqual(reviewed_case["human_review"]["reviewer"], "reviewer-a")
+
+    def test_eval_comparisons_rejects_incomplete_actual_fixture(self) -> None:
+        incomplete_payload = {
+            "schema_version": "2026-09-07.eval-comparison.v1",
+            "comparison_id": "cmp-actual-incomplete",
+            "generated_at": "2026-09-09T00:00:00+08:00",
+            "suite": {
+                "name": "scenario-knowledge-formal-ab",
+                "case_count": 1,
+                "baseline": "OFF",
+                "candidate": "GUARDED",
+                "knowledge_base": "formal-result-package",
+            },
+            "results": [self.client.get("/eval/comparisons").json()["results"][0]],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "incomplete_formal_comparison.json"
+            path.write_text(json.dumps(incomplete_payload, ensure_ascii=False), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"EVAL_COMPARISON_FIXTURE_PATH": str(path)}):
+                response = self.client.get("/eval/comparisons")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("至少需要 6 案", response.json()["detail"])
 
 
 if __name__ == "__main__":

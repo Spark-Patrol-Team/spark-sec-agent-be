@@ -103,6 +103,26 @@ _OUT_OF_SCOPE_ATTACK_CHAIN_TERMS = (
     "webshell payload",
     "web shell payload",
 )
+_OUT_OF_SCOPE_CONCLUSION_TERMS = (
+    "植入",
+    "持久化",
+    "后门",
+    "木马",
+    "最终载荷",
+    "可致webshell",
+    "核查webshell",
+    "核查 webshell",
+    "排查webshell",
+    "排查 webshell",
+    "清除webshell",
+    "清除 webshell",
+    "persistence",
+    "backdoor",
+    "trojan",
+    "final payload",
+    "webshell payload",
+    "web shell payload",
+)
 _OUT_OF_SCOPE_DISPOSAL_TERMS = (
     "webshell",
     "web shell",
@@ -113,6 +133,9 @@ _OUT_OF_SCOPE_DISPOSAL_TERMS = (
     "trojan",
 )
 _OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER = "域外事件，不适用当前场景攻击链；请转交匹配场景继续调查。"
+_OUT_OF_SCOPE_CONCLUSION_PLACEHOLDER = (
+    "该事件属于非 WebShell 场景，当前知识不适用；现有证据不足，请转交匹配场景继续调查。"
+)
 _OUT_OF_SCOPE_DISPOSAL_PLACEHOLDER = "建议人工复核并转交匹配场景，不执行当前场景专属处置。"
 
 
@@ -124,6 +147,9 @@ def _contains_term(text: Any, terms: tuple[str, ...]) -> bool:
 def sanitize_out_of_scope_report(data: dict[str, Any]) -> dict[str, Any]:
     """确定性清洗域外报告中的当前场景专属攻击链与处置措辞。"""
     cleaned = dict(data)
+
+    if _contains_term(cleaned.get("conclusion"), _OUT_OF_SCOPE_CONCLUSION_TERMS):
+        cleaned["conclusion"] = _OUT_OF_SCOPE_CONCLUSION_PLACEHOLDER
 
     if _contains_term(cleaned.get("attack_chain"), _OUT_OF_SCOPE_ATTACK_CHAIN_TERMS):
         cleaned["attack_chain"] = _OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER

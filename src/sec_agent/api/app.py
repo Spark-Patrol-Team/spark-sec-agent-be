@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from sec_agent.api.routes import events, health, metrics
+from sec_agent.api.routes import evals, events, health, metrics
 from sec_agent.bootstrap.container import AppContainer, build_container
 from sec_agent.core.config import Settings
 
@@ -16,6 +16,7 @@ def create_app(container: AppContainer | None = None, *, build_runtime_container
         openapi_tags=[
             {"name": "health", "description": "服务健康检查接口。"},
             {"name": "events", "description": "安全事件主流程、查询和审批接口。"},
+            {"name": "evaluations", "description": "评测结果和 OFF/GUARDED 对比接口。"},
             {"name": "metrics", "description": "MVP 基础统计指标接口。"},
         ],
     )
@@ -27,6 +28,7 @@ def create_app(container: AppContainer | None = None, *, build_runtime_container
         app.state.container = runtime_container
     app.include_router(health.router)
     app.include_router(events.router)
+    app.include_router(evals.router)
     app.include_router(metrics.router)
     return app
 

@@ -10,6 +10,7 @@ import sec_agent.deep_agent.agent as agent_module
 from sec_agent.deep_agent.agent import (
     DeepInvestigationAgent,
     _OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER,
+    _OUT_OF_SCOPE_CONCLUSION_PLACEHOLDER,
     _OUT_OF_SCOPE_DISPOSAL_PLACEHOLDER,
     _OUT_OF_SCOPE_REPORT_CONSTRAINT,
     sanitize_out_of_scope_report,
@@ -32,6 +33,35 @@ def test_sanitize_rewrites_attack_chain_variants(attack_chain: str) -> None:
     )
 
     assert cleaned["attack_chain"] == _OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER
+
+
+def test_sanitize_rewrites_case6_style_conclusion_overreach() -> None:
+    cleaned = sanitize_out_of_scope_report(
+        {
+            "conclusion": (
+                "漏洞情报显示任意文件上传可致WebShell，攻击者可能在站点植入后门，"
+                "建议进一步核查 WebShell。"
+            ),
+            "attack_chain": "未知",
+            "disposal_suggestions": ["转交供应链安全场景"],
+        }
+    )
+
+    assert cleaned["conclusion"] == _OUT_OF_SCOPE_CONCLUSION_PLACEHOLDER
+
+
+def test_sanitize_preserves_safe_out_of_scope_conclusion() -> None:
+    conclusion = "该事件为 WordPress 插件供应链异常，非 WebShell 域；当前知识不适用。"
+
+    cleaned = sanitize_out_of_scope_report(
+        {
+            "conclusion": conclusion,
+            "attack_chain": "未知",
+            "disposal_suggestions": ["转交供应链安全场景"],
+        }
+    )
+
+    assert cleaned["conclusion"] == conclusion
 
 
 def test_sanitize_filters_scope_specific_disposal() -> None:
@@ -104,7 +134,7 @@ class _HostileLLM:
         return {
             "content": json.dumps(
                 {
-                    "conclusion": "证据不足，需转交身份安全场景",
+                    "conclusion": "漏洞可能导致植入 WebShell 后门，需转交身份安全场景",
                     "risk_level": "HIGH",
                     "attack_type": "other",
                     "key_evidence": ["LLM伪造的知识结论"],
@@ -137,6 +167,7 @@ def test_hostile_normal_report_is_sanitized_without_breaking_evidence_isolation(
         gate_decision="out_of_scope",
     )
 
+    assert report.conclusion == _OUT_OF_SCOPE_CONCLUSION_PLACEHOLDER
     assert report.attack_chain == _OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER
     assert report.disposal_suggestions == ["保留认证日志"]
     assert report.key_evidence == ["evt-ref: SSH 登录失败", "事件观测：SSH 连续登录失败"]

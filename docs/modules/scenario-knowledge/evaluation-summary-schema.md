@@ -10,6 +10,10 @@
 
 该 Schema 用于记录每个评测案例的知识使用情况、适用性、命中知识、工具状态、证据引用、禁止结论、人工接管、执行步数、耗时和人工 Review 栏。
 
+项目组依据本轮20份实际报告形成逐案人工质量评分草案：GUARDED质量优胜3案、OFF优胜1案、同分6案，平均分5.8/8对5.7/8；可确认知识门禁行为10/10符合预期及case9引用增益，但旧结果包不支持通用准确率或显著提升结论。评分草案与接口的结构化逐案`winner`是两个层级，项目负责人确认并转换前不得据此补造接口胜场。
+正式评测汇总尚未生成前，测试入口默认使用最小 fixture；正式汇总形成后，通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向正式结果文件即可复用同一套结构守护测试。
+前端 OFF/GUARDED 对比页面可先对接 `GET /eval/comparisons`。未配置正式包时，接口返回 `data_source=mock_fixture` 的后端 Mock 对比数据；配置 `EVAL_COMPARISON_FIXTURE_PATH` 后，接口读取至少6案的正式结果包并生成actual事实汇总。自动转换不以知识命中或置信度变化替代人工业务判定；没有结构化Review时保持`pending/TIE`。
+
 ## 2. 顶层结构
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -79,12 +83,12 @@
 
 | 知识 ID | 对应条目 |
 |---|---|
-| `K-WEBSHELL-PRINCIPLE` | 攻击原理 |
-| `K-WEBSHELL-FEATURES` | 攻击特征速查表 |
-| `K-WEBSHELL-TOOLS-TRAFFIC` | 主流管理工具与流量特征 |
-| `K-WEBSHELL-EVIDENCE-CHECKLIST` | 证据检查清单 |
-| `K-WEBSHELL-RESPONSE-TEMPLATE` | 处置建议模板 |
-| `K-WEBSHELL-MANUAL-TAKEOVER` | 停止条件与人工接管规则 |
+| `WSK-001` | 攻击原理 |
+| `WSK-001` | 攻击特征速查表 |
+| `WSK-001` | 主流管理工具与流量特征 |
+| `WSK-010` | 证据检查清单 |
+| `WSK-015` | 处置建议模板 |
+| `WSK-015` | 停止条件与人工接管规则 |
 
 ## 6. 最小 fixture 覆盖
 
@@ -100,8 +104,17 @@
 
 ## 7. 验证命令
 
+验证默认最小 fixture：
+
 ```text
 uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
+```
+
+验证正式评测汇总：
+
+```text
+KNOWLEDGE_EVALUATION_SUMMARY_PATH=/path/to/knowledge_evaluation_summary.json \
+  uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
 ```
 
 如需连同知识工具和案例输入一起验证：
@@ -109,3 +122,65 @@ uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
 ```text
 uv run pytest tests/test_knowledge_evaluation_summary_schema.py tests/test_knowledge_case_inputs.py tests/test_knowledge_tool.py -q
 ```
+
+入口框架要求失败信息可定位到：
+
+```text
+case_id, knowledge_mode, stage
+```
+
+其中 `stage` 是校验阶段，例如 `result_contract`、`tool_status`、`evidence_refs`、`human_review` 或 `failure_locator`。
+
+## 8. 前端对比接口
+
+接口路径：
+
+```text
+GET /eval/comparisons
+```
+
+当前响应顶层字段：
+
+```text
+schema_version, comparison_id, generated_at, data_source, suite, run_metadata, summary, results
+```
+
+逐案例字段：
+
+```text
+case_id, knowledge_mode, applicability, off, guarded, comparison, human_review
+```
+
+其中 `off` 和 `guarded` 均包含：
+
+```text
+verdict, confidence, matched_knowledge_ids, tool_status, evidence_refs,
+evidence_breakdown, forbidden_conclusion_hit, manual_takeover, step_count, duration_ms
+```
+
+`evidence_breakdown` 用于区分不同来源：
+
+```text
+event_evidence_refs   事件证据
+tool_result_refs      工具查询结果
+knowledge_refs        知识引用
+```
+
+读取正式 OFF/GUARDED 结果包：
+
+```text
+EVAL_COMPARISON_FIXTURE_PATH=/path/to/T0905-07-杨景凡-OFF-GUARDED-AB结果包 \
+  uv run uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
+```
+
+正式结果包必须至少包含6案。接口支持直接读取结果包目录、`_summary.json`或已整理JSON；目录模式下会把杨景凡20行OFF/GUARDED运行汇总合并为10案对比结果，并返回`data_source=actual`。如果目录包含`运行元数据与脱敏摘要.md`，接口会读取运行Commit、精确模型、工具模式、代码基线和关键配置，不读取或外发原始敏感平台结果。
+
+结构化人工Review为可选独立输入：
+
+```text
+EVAL_COMPARISON_REVIEW_PATH=/path/to/_human_review.json
+```
+
+也可将文件命名为`_human_review.json`放在结果包目录。每条Review至少包含`case_id`和`status`，可提供`winner`、`reviewer`、`reviewed_at`、`comments`、`reason`和`action_items`。`status=pending`时禁止预先填写`winner`；没有结构化Review时，接口不会因`in_scope`命中知识而自动判定GUARDED胜出。
+
+`evidence_breakdown` 是权威分层字段：`event_evidence_refs` 表示事件证据，`tool_result_refs` 表示工具查询结果，`knowledge_refs` 表示知识引用。`evidence_refs` 仅作为兼容字段保留，不再作为三类证据的合并来源。知识 ID 统一使用正式 `WSK-*` 口径。

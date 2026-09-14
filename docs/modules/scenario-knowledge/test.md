@@ -44,7 +44,8 @@
 3. **评测汇总契约**：逐案例结果必须按冻结 Schema 记录案例 ID、知识模式、适用性、命中知识 ID、工具状态、证据引用、禁止结论命中、人工接管、步骤数、耗时和人工 Review 栏。
 4. **Agent 报告行为**：知识是否被适当消费，是否把通用知识扩写成事件事实，负向案例是否被错误套用 WebShell 知识。
 
-前三层可由仓库自动化测试确认；Agent 报告行为必须检查实际报告，不能只凭退出码或口头回执判定。
+前三层可由仓库自动化测试确认；Agent 报告行为必须检查实际报告，不能只凭退出码或口头回执判定。正式评测汇总形成后，使用 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向汇总文件复用同一套入口检查。
+评测对比页面可对接`GET /eval/comparisons`；当前接口默认返回OFF/GUARDED Mock对比数据，配置`EVAL_COMPARISON_FIXTURE_PATH`后可读取actual结果包，并区分事件证据、工具查询结果和知识引用。运行元数据来自脱敏摘要。项目组逐案人工质量评分草案见`OFF-GUARDED人工评分表-2026-09-14.md`：可确认知识门禁行为10/10符合预期及case9引用增益，但旧结果包的最终报告平均质量仅小幅变化，不宣称通用准确率或显著提升。
 
 ## 2. 测试数据边界
 
@@ -68,15 +69,15 @@ python -m unittest tests.test_knowledge_case_inputs -v
 python -m unittest tests.test_knowledge_evaluation_summary_schema -v
 ```
 
-当前三类基础相关测试共18条：
+下列三类基础测试与门禁边界回归共同构成当前知识模块测试面；最终数量以合并后全量回归为准：
 
 | 文件 | 数量 | 覆盖内容 |
 |---|---:|---|
 | `tests/test_knowledge_tool.py` | 12 | 15张结构化卡加载、ID/主题/受控别名匹配、未命中与知识缺口、来源、工具名及注册 |
 | `tests/test_knowledge_case_inputs.py` | 3 | 六案加载与唯一性、case6 纯负向边界、case1/2 来源限制 |
-| `tests/test_knowledge_evaluation_summary_schema.py` | 3 | 评测汇总 Schema 必填字段、枚举、最小 fixture 和核心路径覆盖 |
+| `tests/test_knowledge_evaluation_summary_schema.py` | 4 | 评测汇总 Schema 必填字段、枚举、最小 fixture、正式汇总入口和核心路径覆盖 |
 
-PR #41 冲突解决提交前的本地复验结果为 `21 passed`（2026-09-05）；评测汇总 Schema 冻结后新增 3 条结构守护测试，远端结果仍以最新 CI 为准。
+表中数量为测试函数数量，不展开参数化用例数量。历史复验数字只用于追溯，最终以本次最新主干集成后的全量回归和CI为准。
 
 ## 3.1 评测汇总 Schema
 
@@ -97,6 +98,21 @@ manual_takeover, step_count, duration_ms, human_review
 ```
 
 `human_review` 是人工 Review 栏，必须包含 `status`、`reviewer`、`reviewed_at`、`comments`、`action_items`。待人工复核时，`status=pending`，`reviewer=null`，`reviewed_at=null`。
+
+正式汇总入口：
+
+```text
+KNOWLEDGE_EVALUATION_SUMMARY_PATH=/path/to/knowledge_evaluation_summary.json \
+  uv run pytest tests/test_knowledge_evaluation_summary_schema.py -q
+```
+
+失败定位要求：
+
+```text
+case_id, knowledge_mode, stage
+```
+
+其中 `stage` 用于定位失败发生在字段集合、工具状态、证据引用、人工 Review 或入口定位检查。
 
 ### 3.2 门禁边界回归（2026-09-13 新增，陈敏）
 
@@ -122,7 +138,7 @@ python -m pytest tests/test_gatekeeper_boundary.py tests/test_event_field_signal
 通用进程名单独出现即判 `in_scope`、内核/驱动证据被判为 WebShell 确认级、“排除/并非”类否定语义未被识别。
 PR55原分支修复后：边界 24 passed、合同 14 passed、`tests/test_gatekeeper_case1_10.py` 75 passed、全量 340 passed（另 1 skipped；
 该数字为本地实跑，不含 `tests/test_api_http.py`、`tests/test_openapi_generation.py` —— 本机 pydantic 2.5.2 与 `pyproject.toml` 固定的 2.13.3 不一致导致这两项在收集阶段即失败，与本次改动无关，最终以 CI 数字为准）；
-case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scope`，case6/case10 `out_of_scope`）。
+case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scope`，case6/case10 `out_of_scope`）。上述数字均为历史分支记录，不替代本次最新主干集成回归。
 
 ## 4. Agent 运行判据
 
@@ -148,8 +164,12 @@ case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scop
 
 - [x] PR 冲突解决工作树的 21 条相关自动化测试通过（2026-09-05）。
 - [x] 评测汇总 Schema 与最小 fixture 已冻结并加入结构守护测试（2026-09-06）。
+- [x] 评测汇总正式入口框架已就绪，可用 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 替换正式汇总文件，并将失败定位到案例、知识模式和阶段（2026-09-06）。
+- [x] OFF/GUARDED 对比接口已就绪，`GET /eval/comparisons`支持内置Mock与受控actual结果包两种明确数据源。
+- [x] OFF/GUARDED 接口已支持事件证据、工具记录和知识引用分层，以及至少6案完整性校验。
 - [x] PR #50安全P0代码及状态文档头`6f59e59`的仓库CI通过：`312 passed, 1 skipped`。
 - [x] 杨嘉琪Review提出的证据ID/摘要错配已改为按ID映射；旧`KnowledgeEntry`解析链已删除；域外工具注册口径已同步。
+- [ ] 最新主干集成提交的仓库CI通过。
 - [ ] case1、case2 在最终提交上完成报告复验，知识引用与事件证据分开。
 - [ ] case6 在最终提交上完成负向复验，未调用 WebShell 知识且未新增 WebShell 事实。
 - [x] `out_of_scope`报告代码边界：正常LLM与fallback出口统一清洗当前场景专属攻击链/处置措辞，并与事件证据确定性重建做组合回归；真实case6报告仍按上一条单独复验。
@@ -158,7 +178,7 @@ case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scop
 
 ## 7. 当前结论
 
-代码层已经具备唯一知识源、结构化检索入口、三档受控注册和自动化边界测试。2026-09-13提交`6d363df`已关闭门禁`None/异常`fail-open、通过全仓回归并追加到PR #50；最终验收仍需确认该PR最新CI和Review，并完成A/B报告与最终Commit的一致性复验。
+代码层已经具备唯一知识源、结构化检索入口、三档受控注册和自动化边界测试。PR #50及后续#58/#59已进入主干；本次PR #49集成候选在此基础上增加actual评测转换、脱敏运行元数据读取和结构化人工Review入口。最终验收仍需以推送后的GitHub CI及最终main复验为准。
 
 ## 8. 变更记录
 
@@ -167,7 +187,11 @@ case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scop
 | 2026-09-04 | PR #40 增加案例输入与来源边界测试，纠正 case6 判据 |
 | 2026-09-05 | PR #41 重写测试说明，区分自动化测试、成员回执和 Agent 报告证据 |
 | 2026-09-06 | 冻结评测汇总 Schema，新增最小 fixture 与结构守护测试 |
+| 2026-09-06 | 补齐正式评测汇总入口框架，支持通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 验证正式结果并定位到案例、知识模式和阶段 |
+| 2026-09-07 | 新增 `GET /eval/comparisons` 前端对比接口说明；当前为 Mock 数据源，等待正式 fixture 稳定后替换 |
+| 2026-09-09 | 补充 `GET /eval/comparisons` 正式结果包读取说明：`EVAL_COMPARISON_FIXTURE_PATH`、至少 6 案、证据三分和 actual summary |
 | 2026-09-13 | 最终收口候选新增fail-closed、正式样例输入归一化、否定语义、域外优先级和bridge门禁绑定回归；目标测试127项通过，全仓312项通过、1项跳过；CLI实测case9注册知识工具、case10不注册 |
 | 2026-09-13 | 按杨嘉琪Review修复证据ID/摘要错配，新增空摘要错位复现；删除旧`KnowledgeEntry`测试链并迁移至唯一`KnowledgeCard`路径；同步域外事件不注册知识工具的接口口径 |
 | 2026-09-13 | 新增门禁边界回归 `tests/test_gatekeeper_boundary.py`（24条）与合同一致性测试 `tests/test_event_field_signal_contract.py`（14条，合同v1.1）；补13字段输入面/10字段白名单和`summary`不可读的机械校验；PR55原分支边界24 passed、合同14 passed、全量340 passed / 1 skipped，case1-10与固定样例主链判定无回归 |
 | 2026-09-14 | 基于PR58合并后main重做PR53域外报告边界：正常LLM/fallback统一确定性清洗，补“最终载荷”及常见英文变体，并验证不破坏知识引用与事件证据隔离；此项是代码自动化边界，不替代真实case6报告复验 |
+| 2026-09-14 | 将PR #49评测接口与最新main合同集成；结果包元数据和人工Review口径以后续集成提交为准 |
