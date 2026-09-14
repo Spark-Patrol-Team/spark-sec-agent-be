@@ -34,7 +34,7 @@ SYSTEM_PROMPT = """你是「深度调查安全分析 Agent」，运行在深信�
 # 可用工具
 工具清单见系统提供的 tools 定义，你可自主决定调用哪些工具、调用几次（可多轮组合）。
 WebShell 类事件典型调查路径：先查目标资产信息，再查相关告警与漏洞，必要时做攻击检测、调用安全GPT研判、查询漏洞情报。
-需要攻击原理 / 攻击特征 / 证据检查清单 / 处置建议等参考知识时，调用 knowledge_query（关键词示例：WebShell攻击原理、WebShell证据检查清单、WebShell处置建议）；其返回内容带 evidence_refs（证据引用），应填入报告的 evidence_source。
+需要攻击原理 / 攻击特征 / 证据检查清单 / 处置建议等参考知识时，调用 knowledge_query（关键词示例：WebShell攻击原理、WebShell证据检查清单、WebShell处置建议）。其 source_citations 仅表示知识卡来源，不是当前事件的观测证据，不得写入报告的 key_evidence 或 evidence_source，也不得据此把攻击判定为已发生。
 
 # 收尾原则（重要）
 工具调用次数有限，不要为「多查一点」耗尽步数。证据足以支撑结论时，立即停止调用工具，直接输出最终调查报告 JSON；始终为「直接输出报告」保留至少一次收尾（只输出 JSON、不调用工具的轮次）。工具返回为空或失败时，如实记录「数据不可得」，不要反复调用同一工具。
@@ -82,6 +82,90 @@ _WRAPUP_REMINDER = (
 )
 
 
+_OUT_OF_SCOPE_REPORT_CONSTRAINT = """
+
+# 域外事件报告约束（门禁判定 out_of_scope）
+本事件不属于当前 WebShell 场景。生成报告时必须遵守：
+- attack_chain 不得写入植入、持久化、后门、木马、最终载荷等 WebShell 攻击链特征；
+- disposal_suggestions 不得写入清除/排查 WebShell、查杀后门等当前场景专属动作；
+- 如实说明当前场景证据不足并建议转交匹配场景，禁止臆造 WebShell 事实。"""
+
+_OUT_OF_SCOPE_ATTACK_CHAIN_TERMS = (
+    "植入",
+    "持久化",
+    "后门",
+    "木马",
+    "最终载荷",
+    "persistence",
+    "backdoor",
+    "trojan",
+    "final payload",
+    "webshell payload",
+    "web shell payload",
+)
+_OUT_OF_SCOPE_CONCLUSION_TERMS = (
+    "植入",
+    "持久化",
+    "后门",
+    "木马",
+    "最终载荷",
+    "可致webshell",
+    "核查webshell",
+    "核查 webshell",
+    "排查webshell",
+    "排查 webshell",
+    "清除webshell",
+    "清除 webshell",
+    "persistence",
+    "backdoor",
+    "trojan",
+    "final payload",
+    "webshell payload",
+    "web shell payload",
+)
+_OUT_OF_SCOPE_DISPOSAL_TERMS = (
+    "webshell",
+    "web shell",
+    "后门",
+    "木马",
+    "查杀",
+    "backdoor",
+    "trojan",
+)
+_OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER = "域外事件，不适用当前场景攻击链；请转交匹配场景继续调查。"
+_OUT_OF_SCOPE_CONCLUSION_PLACEHOLDER = (
+    "该事件属于非 WebShell 场景，当前知识不适用；现有证据不足，请转交匹配场景继续调查。"
+)
+_OUT_OF_SCOPE_DISPOSAL_PLACEHOLDER = "建议人工复核并转交匹配场景，不执行当前场景专属处置。"
+
+
+def _contains_term(text: Any, terms: tuple[str, ...]) -> bool:
+    lowered = str(text or "").lower()
+    return any(term.lower() in lowered for term in terms)
+
+
+def sanitize_out_of_scope_report(data: dict[str, Any]) -> dict[str, Any]:
+    """确定性清洗域外报告中的当前场景专属攻击链与处置措辞。"""
+    cleaned = dict(data)
+
+    if _contains_term(cleaned.get("conclusion"), _OUT_OF_SCOPE_CONCLUSION_TERMS):
+        cleaned["conclusion"] = _OUT_OF_SCOPE_CONCLUSION_PLACEHOLDER
+
+    if _contains_term(cleaned.get("attack_chain"), _OUT_OF_SCOPE_ATTACK_CHAIN_TERMS):
+        cleaned["attack_chain"] = _OUT_OF_SCOPE_ATTACK_CHAIN_PLACEHOLDER
+
+    suggestions = cleaned.get("disposal_suggestions") or []
+    if not isinstance(suggestions, list):
+        suggestions = [suggestions]
+    kept = [
+        str(item)
+        for item in suggestions
+        if not _contains_term(item, _OUT_OF_SCOPE_DISPOSAL_TERMS)
+    ]
+    cleaned["disposal_suggestions"] = kept or [_OUT_OF_SCOPE_DISPOSAL_PLACEHOLDER]
+    return cleaned
+
+
 class DeepInvestigationAgent:
     def __init__(self, config: Config, llm: LLMClient, tools: ToolRegistry):
         self.config = config
@@ -89,11 +173,15 @@ class DeepInvestigationAgent:
         self.tools = tools
 
     # ------------------------------------------------------------------
-    def investigate(self, event: SecurityEventInput) -> InvestigationReport:
+    def investigate(
+        self,
+        event: SecurityEventInput,
+        gate_decision: str | None = None,
+    ) -> InvestigationReport:
         if not self.llm.available:
             raise RuntimeError("LLM 未配置，无法运行深度调查。请设置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。")
 
-        messages = self._build_messages(event)
+        messages = self._build_messages(event, gate_decision=gate_decision)
         schemas = self.tools.schemas()
         tool_records: list[dict] = []
         max_calls = self.config.agent.max_tool_calls
@@ -112,7 +200,12 @@ class DeepInvestigationAgent:
 
             # 无工具调用 → LLM 已给出最终报告
             if not assistant["tool_calls"]:
-                return self._parse_report(assistant["content"], event, tool_records)
+                return self._parse_report(
+                    assistant["content"],
+                    event,
+                    tool_records,
+                    gate_decision=gate_decision,
+                )
 
             for tc in assistant["tool_calls"]:
                 if tool_call_count >= max_calls:
@@ -127,11 +220,14 @@ class DeepInvestigationAgent:
                     "output": result.to_str(),
                     "status": result.status,
                 }
-                # 知识包命中：结构化保留 evidence_refs，供降级报告提炼进证据来源
+                # 知识卡来源单独留在工具调用记录中，不能混入当前事件证据。
                 if real_name == "knowledge_query" and isinstance(result.data, dict):
-                    refs = result.data.get("evidence_refs") or []
-                    if refs:
-                        record["evidence_refs"] = list(refs)
+                    citations = result.data.get("source_citations")
+                    if isinstance(citations, dict):
+                        record["knowledge_citations"] = {
+                            "urls": list(citations.get("urls") or []),
+                            "levels": list(citations.get("levels") or []),
+                        }
                 tool_records.append(record)
                 messages.append({
                     "role": "tool",
@@ -141,10 +237,19 @@ class DeepInvestigationAgent:
                 tool_call_count += 1
 
         # 达到最大工具调用次数仍未得到报告
-        return self._fallback_report(event, tool_records, reason="达到最大工具调用次数，证据仍不足")
+        return self._fallback_report(
+            event,
+            tool_records,
+            reason="达到最大工具调用次数，证据仍不足",
+            gate_decision=gate_decision,
+        )
 
     # ------------------------------------------------------------------
-    def _build_messages(self, event: SecurityEventInput) -> list[dict]:
+    def _build_messages(
+        self,
+        event: SecurityEventInput,
+        gate_decision: str | None = None,
+    ) -> list[dict]:
         payload = {
             "event_id": event.event_id,
             "event_type": event.event_type,
@@ -159,8 +264,11 @@ class DeepInvestigationAgent:
             "triage": event.triage or {},
         }
         user_content = "以下是待调查的安全事件，请开始深度调查：\n" + json.dumps(payload, ensure_ascii=False, indent=2)
+        system_content = SYSTEM_PROMPT
+        if gate_decision == "out_of_scope":
+            system_content += _OUT_OF_SCOPE_REPORT_CONSTRAINT
         return [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
 
@@ -170,6 +278,7 @@ class DeepInvestigationAgent:
         content: str,
         event: SecurityEventInput,
         tool_records: list[dict],
+        gate_decision: str | None = None,
     ) -> InvestigationReport:
         try:
             data = self._extract_json(content)
@@ -178,21 +287,24 @@ class DeepInvestigationAgent:
                 event,
                 tool_records,
                 reason=f"报告解析失败：{e}",
+                gate_decision=gate_decision,
             )
 
         # 没有任何真实成功/部分成功工具记录时，
         # 不允许 LLM 生成未经验证的调查步骤或证据。
-        successful_records = [
+        successful_event_records = [
             record
             for record in tool_records
             if record.get("status") in {"success", "partial"}
+            and record.get("tool") != "knowledge_query"
         ]
 
-        if not successful_records:
+        if not successful_event_records:
             return self._fallback_report(
                 event,
                 tool_records,
-                reason="关键调查工具不可用或未成功返回数据，禁止基于未验证信息生成调查结论",
+                reason="没有成功返回事件观测的调查工具；知识结果不能单独支撑事件结论",
+                gate_decision=gate_decision,
             )
         # investigation_steps 只能引用代码侧真实执行过的工具，防止 LLM 虚构工具调用步骤。
         # LLM 使用 ASCII 别名，tool_records 保存 resolve 后的真实工具名，
@@ -211,10 +323,14 @@ class DeepInvestigationAgent:
             and step.get("tool") in executed_tools
         ]
 
-       
-
         # 用代码侧真实采集记录覆盖 LLM 输出，保证可审计。
         data["tool_call_records"] = tool_records
+
+        # key_evidence/evidence_source 只由上游事件证据和非知识工具结果生成。
+        # 不信任 LLM 对知识来源与当前事件证据的自行分类。
+        key_evidence, evidence_source = self._derive_event_evidence(event, tool_records)
+        data["key_evidence"] = key_evidence
+        data["evidence_source"] = evidence_source
 
         data["event_basic_info"] = data.get("event_basic_info") or {
             "event_id": event.event_id,
@@ -226,7 +342,10 @@ class DeepInvestigationAgent:
         }
 
         data["trace_id"] = event.trace_id
+        if gate_decision == "out_of_scope":
+            data = sanitize_out_of_scope_report(data)
         return InvestigationReport.from_dict(data)
+
     # ------------------------------------------------------------------
     @staticmethod
     def _extract_json(text: str) -> dict:
@@ -252,38 +371,56 @@ class DeepInvestigationAgent:
         except json.JSONDecodeError:
             return {}
 
-    # ------------------------------------------------------------------
     @staticmethod
-    def _fallback_report(event: SecurityEventInput, tool_records: list[dict], reason: str = "") -> InvestigationReport:
-        """LLM 未给出有效报告或调查无法继续时的降级报告（证据不足 → 人工接管）。
+    def _derive_event_evidence(
+        event: SecurityEventInput,
+        tool_records: list[dict],
+    ) -> tuple[list[str], list[str]]:
+        """从可信运行记录派生事件证据；知识工具只保留在调用审计中。"""
 
-        尽力提炼已采集的证据，避免降级报告完全为空：
-        - knowledge_query 命中的 evidence_refs → evidence_source（"知识包引用: ..."）；
-        - 成功工具的调用名 → evidence_source（"来源工具: ..."）；
-        - 成功工具的返回摘要 → key_evidence（截断 200 字符）。
-        """
-        key_evidence = [e for e in event.evidence if e]
+        key_evidence = [str(item) for item in event.evidence if str(item).strip()]
         evidence_source = ["上游风险研判"]
-        seen_ev, seen_src = set(key_evidence), set(evidence_source)
+        seen_ev = set(key_evidence)
+        seen_src = set(evidence_source)
 
-        for rec in tool_records:
-            if rec.get("status") not in {"success", "partial"}:
+        for record in tool_records:
+            if record.get("status") not in {"success", "partial"}:
                 continue
-            tool = rec.get("tool", "")
-            output = (rec.get("output") or "").strip()
-            for ref in (rec.get("evidence_refs") or []):
-                label = f"知识包引用: {ref}"
-                if label not in seen_src:
-                    seen_src.add(label)
-                    evidence_source.append(label)
-            if tool and f"来源工具: {tool}" not in seen_src:
-                seen_src.add(f"来源工具: {tool}")
-                evidence_source.append(f"来源工具: {tool}")
+            tool = str(record.get("tool") or "")
+            if tool == "knowledge_query":
+                continue
+            source = f"来源工具: {tool}" if tool else ""
+            if source and source not in seen_src:
+                seen_src.add(source)
+                evidence_source.append(source)
+            output = str(record.get("output") or "").strip()[:200]
             if output and output not in seen_ev:
                 seen_ev.add(output)
-                key_evidence.append(output[:200])
+                key_evidence.append(output)
 
-        return InvestigationReport(
+        return key_evidence, evidence_source
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _fallback_report(
+        event: SecurityEventInput,
+        tool_records: list[dict],
+        reason: str = "",
+        gate_decision: str | None = None,
+    ) -> InvestigationReport:
+        """LLM 未给出有效报告或调查无法继续时的降级报告（证据不足 → 人工接管）。
+
+        尽力提炼已采集的事件证据，避免降级报告完全为空：
+        - knowledge_query 的 source_citations 只保留在 tool_call_records，绝不进入事件证据；
+        - 其他成功工具的调用名 → evidence_source（"来源工具: ..."）；
+        - 其他成功工具的返回摘要 → key_evidence（截断 200 字符）。
+        """
+        key_evidence, evidence_source = DeepInvestigationAgent._derive_event_evidence(
+            event,
+            tool_records,
+        )
+
+        report = InvestigationReport(
             event_basic_info={
                 "event_id": event.event_id,
                 "event_type": event.event_type,
@@ -308,3 +445,8 @@ class DeepInvestigationAgent:
             affected_objects=[event.target_ip] if event.target_ip else [],
             trace_id=event.trace_id,
         )
+        if gate_decision == "out_of_scope":
+            return InvestigationReport.from_dict(
+                sanitize_out_of_scope_report(report.to_dict())
+            )
+        return report

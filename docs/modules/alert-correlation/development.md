@@ -55,6 +55,8 @@
 | `tests/test_t0903_06_contract_regression.py` | `T090306DesensitizedRealConversionTest`（8）+ `FixedSampleRegression`（2）+ `MissingFieldTest`（5）+ `EmptyResultTest`（2）+ `DeduplicationTest`（4） | T0903-06 新增：21 条契约回归（5 类场景）。 |
 | `tests/test_xdr_input_contract.py` | `XdrInputContractTest` | PR#22 升级迁入：4 条契约结构测试（请求/响应/适配器/脱敏约束）。 |
 | `tests/test_xdr_openapi_platform.py` | `XdrOpenApiPlatformTest` | XDR OpenAPI 适配器的单独专项回归（签名/分页/去重/字段映射/错误分级）。 |
+| `tests/test_event_field_signal_contract.py` | `TestContractVersionAndFields`（6）+ `TestGateFieldProvenance`（2）+ `TestEvidencePairingById`（2） | 2026-09-13 新增：验证主链按统一合同v1.1理解字段（`event_type`机器契约、摘要按引用ID映射）。 |
+| `docs/modules/alert-correlation/event-field-signal-contract.md` | 字段—来源—信号强度登记附件v1.1 | 2026-09-13新增，后在整合候选中明确降级为非独立合同；正式语义见调查模块唯一合同。 |
 
 ## 3. 依赖与配置
 
@@ -143,10 +145,15 @@ event = AlertCorrelationService(window_minutes=15).correlate(alerts)
 ```text
 SecurityEvent：
 - alert_refs: ["FIX-XDR-WEBSHELL-001"]
+- event_type: "webshell"
+- alert_summaries: {"FIX-XDR-WEBSHELL-001": "WebShell蚁剑工具文件管理"}
+- evidence_summaries: {"FIX-XDR-WEBSHELL-001:alert_name": "..."}
 - entities.assets: ["198.51.100.11"]
 - event_count_after: 1
 - correlation_reason: 包含事件类型、资产、设备和时间窗口
 ```
+
+`alert_summaries`和`evidence_summaries`均按稳定引用ID建映射；无摘要证据不进入映射，bridge仍保留其原始ID。禁止把“全部ID列表”和“仅非空摘要列表”按数组下标拼接，否则会污染门禁判断和审计追踪。
 
 ### 5.3 上下游接入注意事项
 
@@ -208,3 +215,5 @@ SecurityEvent：
 | 2026-08-25 | PR #17 后续提交 | 对齐团队开发说明模板：补运行/配置/调用/异常/安全/边界/限制/兼容性。 | 文档事实对照 GitHub main 基线复核。 |
 | 2026-08-26 | `95defad` + PR #17 重放 | 最新 main 复验固定 JSONL 接入/关联/主链调用。 | 专项 17 项、全量 79 项通过，框架 skipped 1；raw WebShell 主链到 `COMPLETED`。 |
 | 2026-09-04（T0903-06 新增） | `main@e154343` → 分支 `chenmin/t0903-6-origin-main-clean` → 提交 `9c6f00d` | **真实 XDR 只读接入与契约迁移补齐**：① 从 origin/main 建干净分支，迁入 PR#22 4 个契约资产（CSV 20 条/契约 MD/xdr_contract 2 fixture + 4 条升级后契约测试）并升级占位符字段为官方 camelCase；② 新增 T0903-06 21 条契约回归（脱敏转换 8/固定样例 2/缺字段 5/空结果 2/去重 4）；③ 修复 3 条非 hermetic 测试（主链两条 + deep_agent 桥接一条）传 `investigation_backend="tool_mock"` / 打 `os.environ` patch；④ 补 2 份下游摘要（给闫昱硕研判/给杨景凡调查）+ 前三步存档 MD。 | 最终基线 **175 passed, 1 skipped**；其中：`test_t0903_06_contract_regression.py` = 21，`test_xdr_input_contract.py` = 4，两项合计 25 条新增且全绿；恶劣环境（LLM 伪配置 + DEEP_AGENT_TOOL_MODE=mcp）下 3 条敏感测试 ≤3 秒通过（之前 26.5 秒且偶发失败）。 |
+| 2026-09-08 | `feat/case-quality-check-and-tests`（PR#43） | **新增 WebShell 门禁并修订为三档判定**：新增 `src/sec_agent/services/gatekeeper.py`（WebShellGatekeeper / GatekeeperResult / 6 级 SignalStrength / 信号来源 SignalSource（event_type/alerts/evidence/triage/initial_verdict）/ 白名单 10 字段含 `triage`，禁读 confidence/trace_id/run_id）。仅输出三档判定 in_scope / weak_signal / out_of_scope，已移除 95/75 风险评分与 CRITICAL/HIGH 升级；测试改为读取正式案例 `docs/modules/scenario-knowledge/knowledge-test-cases/case1-10`，删除第二套案例 `tests/fixtures/gatekeeper_cases/`。 | 新增 `tests/test_gatekeeper_case1_10.py` 专项测试 62 passed（case7-10 由 PR#44 提供，文件缺失时跳过），结合既有契约/知识测试无回归。 |
+| 2026-09-13 | `codex/gate-boundary-tests-and-field-contract`（基线`main@0001bbd`） | 新增门禁边界与字段合同测试，并登记字段来源附件；正式语义后续统一进入调查模块唯一合同v1.1。 | 原PR #55专项24项通过；整合候选另补单独`w3wp.exe`弱信号用例，最终数字以本候选重跑结果为准。 |

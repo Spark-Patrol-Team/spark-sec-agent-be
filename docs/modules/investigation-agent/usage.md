@@ -212,7 +212,7 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 
 **1 个知识包检索（`knowledge.query`，代码名 `knowledge_query`）**：
 
-按关键词检索内置《最小 WebShell 知识包》（`src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，沈洪旭维护的权威版），返回攻击原理、攻击特征速查表、主流管理工具流量特征、证据检查清单或处置建议模板，结果带 `evidence_refs` 可直接填入调查报告。示例关键词：`WebShell攻击原理` / `WebShell处置建议` / `中国菜刀 流量特征` / `证据检查清单`。
+按关键词检索内置《最小 WebShell 知识包》（`src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，沈洪旭维护的权威版），返回攻击原理、攻击特征速查表、主流管理工具流量特征、证据检查清单或处置建议模板。结果中的`source_citations`仅用于追溯知识卡来源，独立记录为`tool_call_records[].knowledge_citations`，不得填入当前事件的`key_evidence/evidence_source`。示例关键词：`WebShell攻击原理` / `WebShell处置建议` / `中国菜刀 流量特征` / `证据检查清单`。
 
 > 命名说明：OpenAI 兼容接口不允许函数名含 `.`，代码层工具名为 `knowledge_query`（语义等价于需求中的 `knowledge.query`）。
 
@@ -241,7 +241,7 @@ $env:PYTHONPATH = "src"; python -m sec_agent.deep_agent.main --event tests/fixtu
 | 控制台中文乱码 | Windows 控制台编码显示问题，不影响运行与报告内容 |
 | 报告写不进去 / 目录不存在 | 确认 `-o` 指向的目录已存在 |
 | 推送 GitHub 超时 | 网络问题（GitHub 直连不稳），重试即可，与代码无关 |
-| 跑 `tests/test_state_flow` 报 `ZoneInfoNotFoundError: Asia/Shanghai` | Windows Python 缺 tzdata 的已知环境问题，与本模块无关 |
+| 报 `ZoneInfoNotFoundError: Asia/Shanghai` | 更新到包含2026-09-13收口修复的版本并重新安装项目依赖；`tzdata`已列入项目依赖 |
 
 ---
 

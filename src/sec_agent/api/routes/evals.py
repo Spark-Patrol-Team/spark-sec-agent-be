@@ -16,6 +16,9 @@ FORMAL_COMPARISON_PATH_ENV = "EVAL_COMPARISON_FIXTURE_PATH"
 MOCK_SCHEMA_VERSION = "2026-09-07.eval-comparison.v1"
 MIN_FORMAL_CASE_COUNT = 6
 ACTUAL_COMPARISON_ID = "cmp-20260911-yjf-off-guarded-ab"
+RUN_METADATA_FILENAME = "运行元数据与脱敏摘要.md"
+HUMAN_REVIEW_FILENAME = "_human_review.json"
+HUMAN_REVIEW_PATH_ENV = "EVAL_COMPARISON_REVIEW_PATH"
 LEGACY_KNOWLEDGE_ID_PREFIX = "K-" + "WEBSHELL-"
 
 LEGACY_KNOWLEDGE_ID_MAP = {
@@ -119,6 +122,7 @@ def _build_actual_payload_from_summary_rows(rows: list[dict[str, Any]], package_
         case_numbers[case_id] = int(row.get("case_no") or len(case_numbers) + 1)
         categories[case_id] = str(row.get("category") or "unknown")
 
+    human_reviews = _load_human_reviews(package_dir)
     results: list[dict[str, Any]] = []
     for case_id in sorted(grouped, key=lambda item: case_numbers.get(item, 0)):
         pair = grouped[case_id]
@@ -131,6 +135,16 @@ def _build_actual_payload_from_summary_rows(rows: list[dict[str, Any]], package_
         off = _summary_row_to_run_result(pair["off"], off_report)
         guarded = _summary_row_to_run_result(pair["guarded"], guarded_report)
         comparison = _actual_comparison(pair["guarded"], off, guarded)
+        human_review, reviewed_winner, reviewed_reason = _human_review(
+            case_id,
+            pair["guarded"],
+            off_report,
+            guarded_report,
+            human_reviews.get(case_id),
+        )
+        if reviewed_winner is not None:
+            comparison["winner"] = reviewed_winner
+            comparison["reason"] = reviewed_reason or "采用结构化人工 Review 结论。"
         results.append(
             {
                 "case_id": case_id,
@@ -139,13 +153,7 @@ def _build_actual_payload_from_summary_rows(rows: list[dict[str, Any]], package_
                 "off": off,
                 "guarded": guarded,
                 "comparison": comparison,
-                "human_review": {
-                    "status": "pending",
-                    "reviewer": None,
-                    "reviewed_at": None,
-                    "comments": "待双方按正式评测 Schema 复核。",
-                    "action_items": _actual_action_items(pair["guarded"], off_report, guarded_report),
-                },
+                "human_review": human_review,
                 "_category": categories[case_id],
             }
         )
@@ -162,20 +170,7 @@ def _build_actual_payload_from_summary_rows(rows: list[dict[str, Any]], package_
             "candidate": "GUARDED",
             "knowledge_base": "src/sec_agent/deep_agent/knowledge/webshell-knowledge.md",
         },
-        "run_metadata": {
-            "result_package_name": package_dir.name if package_dir else "_summary.json",
-            "result_package_generated_at": _result_package_generated_at(package_dir),
-            "run_commit": None,
-            "model": "deepseek 系列，结果包 README 未提供精确模型版本",
-            "tool_mode": "真实 LLM 深度调查 + MCP/平台工具调用；完整工具输出仅内部流转",
-            "knowledge_modes": ["off", "guarded"],
-            "key_config_notes": [
-                "结果包 README 声明由 scripts/e2e_ab_gatekeeper.py 生成，10 个正式知识测试用例 x OFF/GUARDED 共 20 份报告。",
-                "结果包未提供运行 commit，当前只能在接口元信息中标记为空，不能补造。",
-                "结果包未提供逐案例耗时，duration_ms 保持 0。",
-                "完整 report_*.json 包含测试环境平台数据快照，不提交仓库，不在接口中原样暴露工具输出。",
-            ],
-        },
+        "run_metadata": _load_run_metadata(package_dir),
         "results": results,
     }
 
@@ -312,13 +307,10 @@ def _actual_comparison(guarded_row: dict[str, Any], off: dict[str, Any], guarded
     step_delta = int(guarded["step_count"]) - int(off["step_count"])
     duration_delta_ms = int(guarded["duration_ms"]) - int(off["duration_ms"])
     winner = "TIE"
-    reason = "GUARDED 未输出越界知识引用，OFF/GUARDED 在当前汇总口径下持平。"
+    reason = "自动转换只整理事实字段，不以知识命中自动判定优胜；当前等待结构化人工 Review。"
     if guarded["forbidden_conclusion_hit"]:
         winner = "OFF"
         reason = "GUARDED 命中禁止结论或越界知识引用，按回归处理。"
-    elif str(guarded_row.get("gate_decision")) == "in_scope" and guarded["matched_knowledge_ids"]:
-        winner = "GUARDED"
-        reason = "GUARDED 在 in_scope 案例中命中 WSK 知识并带出知识引用，OFF 未调用知识工具。"
     return {
         "winner": winner,
         "confidence_delta": confidence_delta,
@@ -326,6 +318,83 @@ def _actual_comparison(guarded_row: dict[str, Any], off: dict[str, Any], guarded
         "duration_delta_ms": duration_delta_ms,
         "reason": reason,
     }
+
+
+def _load_human_reviews(package_dir: Path | None) -> dict[str, dict[str, Any]]:
+    configured_path = os.getenv(HUMAN_REVIEW_PATH_ENV)
+    if configured_path:
+        path = Path(configured_path).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+    elif package_dir is not None:
+        path = package_dir / HUMAN_REVIEW_FILENAME
+    else:
+        return {}
+    if not path.exists():
+        if configured_path:
+            raise HTTPException(status_code=500, detail=f"结构化人工 Review 不存在: {path}")
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"结构化人工 Review 不是合法 JSON: {path}") from exc
+    rows = payload.get("reviews") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=500, detail="结构化人工 Review 顶层必须是数组或包含 reviews 数组")
+    reviews: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict) or not str(row.get("case_id") or "").strip():
+            raise HTTPException(status_code=500, detail="结构化人工 Review 每项必须包含 case_id")
+        case_id = str(row["case_id"]).strip()
+        if case_id in reviews:
+            raise HTTPException(status_code=500, detail=f"结构化人工 Review 存在重复案例: {case_id}")
+        reviews[case_id] = row
+    return reviews
+
+
+def _human_review(
+    case_id: str,
+    guarded_row: dict[str, Any],
+    off_report: dict[str, Any],
+    guarded_report: dict[str, Any],
+    supplied: dict[str, Any] | None,
+) -> tuple[dict[str, Any], str | None, str]:
+    if supplied is None:
+        return (
+            {
+                "status": "pending",
+                "reviewer": None,
+                "reviewed_at": None,
+                "comments": "尚未加载结构化人工 Review；自动转换不替代业务判定。",
+                "action_items": _actual_action_items(guarded_row, off_report, guarded_report),
+            },
+            None,
+            "",
+        )
+
+    status = str(supplied.get("status") or "").strip()
+    if status not in {"pending", "passed", "failed", "needs_follow_up"}:
+        raise HTTPException(status_code=500, detail=f"结构化人工 Review 状态非法: {case_id}")
+    winner_value = supplied.get("winner")
+    winner = str(winner_value).upper() if winner_value is not None else None
+    if winner not in {None, "OFF", "GUARDED", "TIE"}:
+        raise HTTPException(status_code=500, detail=f"结构化人工 Review winner 非法: {case_id}")
+    if status == "pending" and winner is not None:
+        raise HTTPException(status_code=500, detail=f"待复核案例不能预先指定 winner: {case_id}")
+    action_items = supplied.get("action_items") or []
+    if not isinstance(action_items, list):
+        raise HTTPException(status_code=500, detail=f"结构化人工 Review action_items 必须是数组: {case_id}")
+    return (
+        {
+            "status": status,
+            "reviewer": supplied.get("reviewer"),
+            "reviewed_at": supplied.get("reviewed_at"),
+            "comments": str(supplied.get("comments") or ""),
+            "action_items": _unique_strings(action_items),
+        },
+        winner,
+        str(supplied.get("reason") or ""),
+    )
 
 
 def _actual_action_items(guarded_row: dict[str, Any], off_report: dict[str, Any], guarded_report: dict[str, Any]) -> list[str]:
@@ -382,6 +451,64 @@ def _result_package_generated_at(package_dir: Path | None) -> str:
     if match:
         return f"{match.group(1)}T00:00:00+08:00"
     return "2026-09-11T00:00:00+08:00"
+
+
+def _load_run_metadata(package_dir: Path | None) -> dict[str, Any]:
+    default = {
+        "result_package_name": package_dir.name if package_dir else "_summary.json",
+        "result_package_generated_at": _result_package_generated_at(package_dir),
+        "run_commit": None,
+        "model": "",
+        "tool_mode": "",
+        "knowledge_modes": ["off", "guarded"],
+        "key_config_notes": [
+            "未找到脱敏运行元数据文件；自动转换不会补造 Commit、模型或配置。",
+            "逐案例耗时未在结果包中提供，duration_ms 保持 0。",
+            "完整 report_*.json 包含测试环境平台数据快照，不提交仓库，不在接口中原样暴露工具输出。",
+        ],
+    }
+    if package_dir is None:
+        return default
+    path = package_dir / RUN_METADATA_FILENAME
+    if not path.exists():
+        return default
+
+    text = path.read_text(encoding="utf-8")
+    run_commit = _first_code_value(_metadata_table_value(text, "运行 Commit")) or None
+    code_baseline = _metadata_table_value(text, "代码基线")
+    model = _first_code_value(_metadata_table_value(text, "LLM 模型"))
+    tool_mode = _first_code_value(_metadata_table_value(text, "工具模式"))
+    run_time = _metadata_table_value(text, "运行时间")
+    max_steps = _metadata_table_value(text, "调查步数上限")
+    max_tool_calls = _metadata_table_value(text, "工具调用硬上限")
+    mcp_timeout = _metadata_table_value(text, "MCP 单次超时")
+    notes = [
+        f"代码基线：{code_baseline}" if code_baseline else "",
+        f"运行时间：{run_time}" if run_time else "",
+        f"调查步数上限：{max_steps}" if max_steps else "",
+        f"工具调用硬上限：{max_tool_calls}" if max_tool_calls else "",
+        f"MCP 单次超时：{mcp_timeout}" if mcp_timeout else "",
+        "逐案例耗时未在结果包中提供，duration_ms 保持 0。",
+        "完整 report_*.json 包含测试环境平台数据快照，不提交仓库，不在接口中原样暴露工具输出。",
+    ]
+    return {
+        **default,
+        "run_commit": run_commit,
+        "model": model,
+        "tool_mode": tool_mode,
+        "key_config_notes": [note for note in notes if note],
+    }
+
+
+def _metadata_table_value(text: str, label: str) -> str:
+    pattern = re.compile(rf"^\|\s*{re.escape(label)}\s*\|\s*(.*?)\s*\|\s*$", re.MULTILINE)
+    match = pattern.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def _first_code_value(value: str) -> str:
+    match = re.search(r"`([^`]+)`", value)
+    return match.group(1).strip() if match else value.strip()
 
 
 def _mock_payload() -> dict[str, Any]:

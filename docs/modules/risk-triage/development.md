@@ -42,9 +42,29 @@ ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
 - 不直接执行处置，不直接修改业务状态。
 - 修改阈值/权重时同步更新 `design.md` 与 `test.md`，并跑通 `tests/test_triage.py`。
 
+## 本轮核对与回归（2026-09-14主线复核）
+
+基线`origin/main@787e737`，核对分支已合入该主线；该基线包含PR #50/#51/#58/#59/#60。
+
+```bash
+PYTHONPATH=src python -m pytest tests/test_triage.py tests/test_state_flow.py tests/test_run_flow.py tests/test_gatekeeper_boundary.py tests/test_response_boundaries.py -q  # 78 passed
+PYTHONPATH=src python -m pytest -q -rs                                                                                                                   # 383 passed, 1 skipped, 1 warning
+```
+
+- 跳过项为`tests/test_investigation_agent.py:403`（未配置`LLM_API_KEY`的深度调查可选用例），与研判无关；1条warning来自Starlette TestClient依赖的弃用提示。
+- 逐字段值、边界探针和最终状态见`test.md`“本轮回归结果（2026-09-14）”与`design.md`“本轮字段与规则核对（2026-09-14主线复核）”。
+
+近期合并影响评估：
+
+- `triage.py`最后改动仍为2026-08-23（`3c4cd6f`），研判评分值本轮未改变。
+- PR #58/#59/#60更新了事件合同、知识门禁、域外报告约束和处置边界；`orchestrator.py`及`response.py`已在PR #60调整。它们没有修改研判分数，但会改变调查后的`response_evidence_scope`和主链终态。
+- 同一批固定样例字段值与本文件 2026-08-26 记录完全一致（85 / 80 / 95 / 65），`normalized` / `raw` 两种输入模式一致，未观察到字段或规则回归。
+- `tool_mock`后端实跑结果为：确认级固定WebShell样例进入`APPROVAL_REQUIRED`；仅有名称/类型线索的WebShell样例为`weak_signal → HUMAN_REQUIRED`；SQL注入和横向移动样例为`out_of_scope → HUMAN_REQUIRED`。这些是下游门禁/处置边界，不是研判评分回归。
+
 ## 待补充
 
-- 用真实 STA/XDR 样本校准权重与阈值。
-- 反对证据规则。
-- 规则命中明细与因子拆分的展示模型。
+- 用真实 STA/XDR 样本校准权重与阈值（当前仅有 1 次真实事件观察，不构成校准）。
+- 反对证据规则：`opposing_evidence_refs` 仍固定为空，尚无反对证据模型。
+- `confidence` 仍为按结论的固定档位（0.85 / 0.65 / 0.70），未与证据强弱挂钩。
+- 规则命中明细与因子拆分的展示模型（需先扩展 `TriageResult`，再同步三处消费点）。
 

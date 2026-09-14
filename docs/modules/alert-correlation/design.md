@@ -56,7 +56,7 @@
 | 字段/对象 | 类型 | 去向 | 含义与约束 |
 |---|---|---|---|
 | `AlertRecord` | `AlertRecord` | `AlertIngestService`、`Orchestrator` | 保留告警 ID（uuId）、时间（lastTime 优先）、类型、严重性、资产、样例性质、字段级证据和原始记录引用。真实路径下 scenario_fields 含 30 个 xdr_* 前缀原始字段 + evidence_refs 追加 traceBackId（`kind=xdr_traceback`）。 |
-| `SecurityEvent` | `SecurityEvent` | `EventContext.event_summary`、`RiskTriageService`、DeepInvestigationAgent | 包含 `alert_refs`（真实 uuId）、时间范围 `first_seen_at/last_seen_at`（occurred_at 排序两端）、`entities`（`src_ips/dst_ips/assets/source_devices` 四个 set 去重集合，给 MCP 查询用）、`correlation_reason`、`alert_count_before`、`event_count_after` 和摘要。 |
+| `SecurityEvent` | `SecurityEvent` | `EventContext.event_summary`、`RiskTriageService`、DeepInvestigationAgent | 包含结构化`event_type`、`alert_refs`（真实uuId）、`alert_summaries`（alert_id→名称）、`evidence_summaries`（evidence ref_id→非空摘要）、时间范围、实体、关联依据、压缩计数和摘要。引用ID与摘要按键关联，禁止依赖两个列表的位置对齐。 |
 | 关联异常 | `ValueError` | `Orchestrator` 错误处理与上层拆分逻辑 | 空输入、事件类型/资产/设备不一致或超过 15 分钟窗口时拒绝合并。真实 XDR uuId 跨页重复不会产生此异常（fetch 阶段已按 seen_ids 去重）。 |
 
 ## 4. 核心流程与状态变化
@@ -146,3 +146,5 @@
 | 2026-08-25 | PR #17 后续提交 | 对齐团队统一模块文档模板，补充文档信息、契约、证据、限制和变更记录。 | 文档事实与同一代码基线复核。 |
 | 2026-08-26 | PR #17 后续联调提交 | 在最新 `main@95defad` 上重放 PR #17 内容，复测固定 JSONL、关联和风险研判衔接。 | 是，专项 17 项、全量 79 项测试均通过，框架 skipped 1；raw 主链到 `COMPLETED`。 |
 | 2026-09-04 | `main@e154343` + `9c6f00d`（T0903-06） | 真实 XDR 适配：补充 uuId 跨页去重 + 官方分页/签名/错误分类；字段核对 58 项（57 通过 1 待决策）；175 passed 基线；为研判（闫昱硕）和调查（杨景凡）提供带 Commit 的下游摘要 2 份。 | 是（175 passed 全量 + 恶劣环境 3 项隔离复测通过）。 |
+| 2026-09-08 | `feat/case-quality-check-and-tests`（PR#43） | **WebShell 门禁（WebShellGatekeeper）落地并修订**：位于 `services/gatekeeper.py`，只读 `SecurityEventInput` 白名单字段（含 `triage`，禁读 confidence/trace_id/run_id），信号按 event_type/alerts/evidence/triage/initial_verdict 标注来源；聚合后仅输出三档判定 in_scope / weak_signal / out_of_scope（已移除 95/75 风险评分与 CRITICAL/HIGH 升级）；测试直接读取正式案例 `docs/modules/scenario-knowledge/knowledge-test-cases/case1-10`，不再维护第二套案例，并删除 `tests/fixtures/gatekeeper_cases/`。 | 是。`tests/test_gatekeeper_case1_10.py` 62 passed（case7-10 由 PR#44 提供，文件缺失时跳过）。 |
+| 2026-09-13 | `codex/gate-boundary-tests-and-field-contract`（基线`main@0001bbd`） | 登记字段来源附件并补充门禁边界测试；统一规范性语义由调查模块唯一合同v1.1维护。修复通用进程、内核/驱动及否定语义误判。 | 原PR #55独立CI通过；整合候选需与PR #54代码共同复验。 |

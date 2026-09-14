@@ -38,7 +38,7 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(payload["storage_backend"], "memory")
         self.assertEqual(payload["platform_backend"], "fixed_sample")
 
-    def test_event_http_flow_reaches_completed_after_approval(self) -> None:
+    def test_event_http_flow_requires_human_after_mock_verification(self) -> None:
         start_response = self.client.post(
             "/runs",
             json={"source": "fixed_sample", "sample_id": "webshell-001"},
@@ -82,9 +82,10 @@ class ApiHttpTest(unittest.TestCase):
 
         self.assertEqual(approval_response.status_code, 200)
         approved = approval_response.json()
-        self.assertEqual(approved["status"], "COMPLETED")
+        self.assertEqual(approved["status"], "HUMAN_REQUIRED")
         self.assertEqual(approved["response"]["execution"]["status"], "success")
-        self.assertEqual(approved["response"]["verification"]["final_status"], "COMPLETED")
+        self.assertEqual(approved["response"]["verification"]["final_status"], "HUMAN_REQUIRED")
+        self.assertEqual(approved["response"]["verification"]["status"], "unknown")
 
         list_response = self.client.get("/events")
         self.assertEqual(list_response.status_code, 200)
@@ -95,7 +96,7 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(list_item["effective_source"], "fixed_sample")
         self.assertEqual(list_item["sample_id"], "webshell-001")
         self.assertIsNone(list_item["xdr_event_id"])
-        self.assertEqual(list_item["status_label"], "已完成")
+        self.assertEqual(list_item["status_label"], "需人工处理")
         self.assertEqual(list_item["alert_count"], 2)
         self.assertEqual(list_item["risk_score"], 85)
         self.assertEqual(list_item["priority"], "high")
@@ -107,24 +108,24 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(view_response.status_code, 200)
         view = view_response.json()
         self.assertEqual(view["event_id"], event_id)
-        self.assertEqual(view["status_label"], "已完成")
+        self.assertEqual(view["status_label"], "需人工处理")
         self.assertEqual(view["source"]["sample_id"], "webshell-001")
         self.assertEqual(view["source"]["effective"], "fixed_sample")
-        self.assertEqual(view["overview"]["title"], "WebShell安全事件")
+        self.assertEqual(view["overview"]["title"], "WebShell需人工处理")
         self.assertEqual(view["overview"]["alert_count"], 2)
         self.assertEqual(view["overview"]["risk_score"], 85)
         self.assertEqual(view["overview"]["verdict"], "malicious")
         self.assertEqual(view["overview"]["priority"], "high")
         self.assertGreaterEqual(len(view["overview"]["affected_assets"]), 1)
         self.assertEqual(view["response"]["execution_status"], "success")
-        self.assertEqual(view["response"]["final_status"], "COMPLETED")
+        self.assertEqual(view["response"]["final_status"], "HUMAN_REQUIRED")
         self.assertEqual(view["investigation"]["tool_result_count"], 2)
         self.assertIn("evidence_sources", view["investigation"])
         self.assertIn("manual_takeover_reason", view["investigation"])
         self.assertNotIn("tool_results", view["investigation"])
         self.assertEqual(
             [item["status_label"] for item in view["timeline"]],
-            ["已接收", "关联中", "已研判", "调查中", "待决策", "待审批", "执行中", "验证中", "已完成"],
+            ["已接收", "关联中", "已研判", "调查中", "待决策", "待审批", "执行中", "验证中", "需人工处理"],
         )
 
         update_response = self.client.patch(
@@ -244,6 +245,24 @@ class ApiHttpTest(unittest.TestCase):
             path = Path(tmpdir) / "actual-result-package"
             path.mkdir()
             (path / "README.md").write_text("生成时间：2026-09-11\n模型：deepseek 系列\n", encoding="utf-8")
+            (path / "运行元数据与脱敏摘要.md").write_text(
+                "\n".join(
+                    [
+                        "| 项 | 值 |",
+                        "|---|---|",
+                        "| 运行 Commit | `0eb38cc`（merge feature/t0905-07-agent-binding） |",
+                        "| 代码基线 | `7e4aad6` feat(agent): 正式接入三档 gate_decision |",
+                        "| LLM 模型 | `deepseek-v4-flash`（temperature=0.0） |",
+                        "| 工具模式 | `TOOL_MODE=auto`（真实 MCP 与 Mock 兜底并存） |",
+                        "| 知识模式 | `KNOWLEDGE_MODE = off / guarded` |",
+                        "| 运行时间 | 2026-09-09 22:21:27 — 22:34:52 |",
+                        "| 调查步数上限 | `AGENT_MAX_STEPS=5` |",
+                        "| 工具调用硬上限 | `AGENT_MAX_TOOL_CALLS=12` |",
+                        "| MCP 单次超时 | 20s |",
+                    ]
+                ),
+                encoding="utf-8",
+            )
             rows = []
             for case_no in range(1, 7):
                 case_id = f"TC-KNOWLEDGE-{case_no:03d}"
@@ -318,27 +337,60 @@ class ApiHttpTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with mock.patch.dict(os.environ, {"EVAL_COMPARISON_FIXTURE_PATH": str(path)}):
-                response = self.client.get("/eval/comparisons")
+                pending_response = self.client.get("/eval/comparisons")
+                (path / "_human_review.json").write_text(
+                    json.dumps(
+                        {
+                            "reviews": [
+                                {
+                                    "case_id": "TC-KNOWLEDGE-001",
+                                    "status": "passed",
+                                    "winner": "GUARDED",
+                                    "reviewer": "reviewer-a",
+                                    "reviewed_at": "2026-09-14T18:00:00+08:00",
+                                    "comments": "确认知识引用受控且未替代事件证据。",
+                                    "reason": "采用人工 Review 的成对案例结论。",
+                                    "action_items": [],
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                reviewed_response = self.client.get("/eval/comparisons")
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
+        self.assertEqual(pending_response.status_code, 200)
+        payload = pending_response.json()
         self.assertEqual(payload["data_source"], "actual")
         self.assertEqual(payload["comparison_id"], "cmp-20260911-yjf-off-guarded-ab")
         self.assertEqual(payload["suite"]["case_count"], 6)
         self.assertEqual(payload["summary"]["total_cases"], 6)
-        self.assertEqual(payload["summary"]["guarded_wins"], 1)
+        self.assertEqual(payload["summary"]["guarded_wins"], 0)
+        self.assertEqual(payload["summary"]["ties"], 6)
         self.assertEqual(
             payload["summary"]["guarded_wins"] + payload["summary"]["off_wins"] + payload["summary"]["ties"],
             6,
         )
         self.assertEqual(payload["run_metadata"]["result_package_generated_at"], "2026-09-11T00:00:00+08:00")
-        self.assertIsNone(payload["run_metadata"]["run_commit"])
+        self.assertEqual(payload["run_metadata"]["run_commit"], "0eb38cc")
+        self.assertEqual(payload["run_metadata"]["model"], "deepseek-v4-flash")
+        self.assertEqual(payload["run_metadata"]["tool_mode"], "TOOL_MODE=auto")
         guarded = payload["results"][0]["guarded"]
         self.assertEqual(guarded["matched_knowledge_ids"], ["WSK-001"])
         self.assertEqual(guarded["evidence_refs"], [])
         self.assertEqual(guarded["evidence_breakdown"]["event_evidence_refs"], ["TC-KNOWLEDGE-001:event_basic_info"])
         self.assertIn("tool:knowledge_query:guarded:TC-KNOWLEDGE-001", guarded["evidence_breakdown"]["tool_result_refs"])
         self.assertEqual(guarded["evidence_breakdown"]["knowledge_refs"], ["knowledge:WSK-001"])
+        self.assertEqual(payload["results"][0]["human_review"]["status"], "pending")
+
+        self.assertEqual(reviewed_response.status_code, 200)
+        reviewed_payload = reviewed_response.json()
+        self.assertEqual(reviewed_payload["summary"]["guarded_wins"], 1)
+        reviewed_case = reviewed_payload["results"][0]
+        self.assertEqual(reviewed_case["comparison"]["winner"], "GUARDED")
+        self.assertEqual(reviewed_case["human_review"]["status"], "passed")
+        self.assertEqual(reviewed_case["human_review"]["reviewer"], "reviewer-a")
 
     def test_eval_comparisons_rejects_incomplete_actual_fixture(self) -> None:
         incomplete_payload = {

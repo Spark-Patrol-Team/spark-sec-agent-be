@@ -29,13 +29,28 @@ from .config import load_config
 from .llm import LLMClient
 from .models import SecurityEventInput
 from .agent import DeepInvestigationAgent
-from .tools.base import ToolRegistry
+from .tools.base import (
+    KnowledgeToolAvailability,
+    ToolRegistry,
+    resolve_knowledge_tool_availability,
+)
 from .tools.mock import build_mock_tools
 from .tools.knowledge import build_knowledge_tools
 from .tools.mcp_client import build_mcp_tools
+from sec_agent.services.gatekeeper import WebShellGatekeeper
 
 
-def build_tools(config) -> ToolRegistry:
+def normalize_event_payload(payload: object) -> dict:
+    """兼容正式case1-6扁平结构与case7-10的input_event包裹结构。"""
+    if not isinstance(payload, dict):
+        raise ValueError("事件输入必须是JSON对象")
+    event_payload = payload.get("input_event", payload)
+    if not isinstance(event_payload, dict):
+        raise ValueError("input_event必须是JSON对象")
+    return event_payload
+
+
+def build_tools(config, *, gate_decision: str | None = None) -> ToolRegistry:
     registry = ToolRegistry()
 
     # Mock 工具兜底（保证闭环可运行）
@@ -43,9 +58,14 @@ def build_tools(config) -> ToolRegistry:
         for t in build_mock_tools():
             registry.register(t)
 
-    # 知识包检索工具（knowledge.query）：本地资源，所有工具模式下都注册
-    for t in build_knowledge_tools():
-        registry.register(t)
+    knowledge_availability = resolve_knowledge_tool_availability(
+        config.tools.knowledge_mode,
+        gate_decision,
+    )
+    registry.record_availability(knowledge_availability)
+    if knowledge_availability.status == KnowledgeToolAvailability.AVAILABLE:
+        for t in build_knowledge_tools(gate_decision=gate_decision):
+            registry.register(t)
 
     # 真实 MCP 工具
     if config.tools.mode in ("mcp", "auto"):
@@ -85,7 +105,20 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     config = load_config()
-    tools = build_tools(config)
+
+    with open(args.event, "r", encoding="utf-8") as f:
+        event = SecurityEventInput.from_dict(normalize_event_payload(json.load(f)))
+
+    gate_decision: str | None = None
+    if config.tools.knowledge_mode == "guarded":
+        try:
+            gate_decision = WebShellGatekeeper().audit(event).gate_decision.value
+        except Exception as exc:  # noqa: BLE001 - 门禁异常时禁用知识，不得 fail-open
+            print(
+                f"[warn] 知识门禁审计失败，已禁用知识工具: {type(exc).__name__}",
+                file=sys.stderr,
+            )
+    tools = build_tools(config, gate_decision=gate_decision)
 
     if args.list_tools:
         print("可用工具（真实名 -> LLM 内部别名）：")
@@ -99,11 +132,8 @@ def main(argv=None) -> int:
         print("错误：LLM 未配置。请设置环境变量 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。", file=sys.stderr)
         return 1
 
-    with open(args.event, "r", encoding="utf-8") as f:
-        event = SecurityEventInput.from_dict(json.load(f))
-
     agent = DeepInvestigationAgent(config, llm, tools)
-    report = agent.investigate(event)
+    report = agent.investigate(event, gate_decision=gate_decision)
     output = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
 
     if args.output:

@@ -2,7 +2,6 @@ import unittest
 from pathlib import Path
 
 from sec_agent.domain.models import (
-    ApprovalDecision,
     ApprovalStatus,
     BusinessStatus,
     StartRunRequest,
@@ -97,7 +96,7 @@ class JsonlPlatformTest(unittest.TestCase):
         self.assertTrue(result.retryable)
         self.assertEqual(result.output_preview["action_status"], "not_found")
 
-    def test_jsonl_webshell_runs_through_approval_flow(self) -> None:
+    def test_jsonl_webshell_alert_name_alone_stops_for_human_review(self) -> None:
         adapter = JsonlSampleAdapter(FIXTURE_DIR)
         orchestrator = Orchestrator(
             platform=adapter,
@@ -107,27 +106,11 @@ class JsonlPlatformTest(unittest.TestCase):
 
         ctx = orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))
 
-        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertIsNotNone(ctx.triage)
         self.assertEqual(ctx.triage.risk_score, 95)
-        self.assertIsNotNone(ctx.response)
-        self.assertEqual(ctx.response.plan.target, "198.51.100.11")
-        self.assertEqual(ctx.response.plan.risk_level, ToolRiskLevel.CRITICAL)
-
-        ctx = orchestrator.approve(
-            ctx.event_id,
-            ApprovalDecision(
-                approved=True,
-                approver="tester",
-                reason="JSONL 主链联调审批",
-                idempotency_key="jsonl-approval-test-001",
-            ),
-        )
-
-        self.assertEqual(ctx.status, BusinessStatus.COMPLETED)
-        self.assertEqual(ctx.response.execution.status, ToolCallStatus.SUCCESS)
-        self.assertIsNotNone(ctx.response.verification)
-        self.assertEqual(ctx.response.verification.evidence_refs, ["jsonl://actions/jsonl-approval-test-001"])
+        self.assertIsNone(ctx.response)
+        self.assertEqual(ctx.triage.response_evidence_scope.value, "weak_signal")
 
 
 if __name__ == "__main__":

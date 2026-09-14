@@ -21,7 +21,8 @@
 
 - 验证 `sec_agent.deep_agent` 真实加载：主链 bridge（`auto`/`deep_agent` 后端）能加载真实子智能体模块，而非错误地走内部回退子链。
 - 验证调查闭环：工具调用留痕、结构化报告生成、证据不足时人工接管（`need_manual_takeover` → 主链 `HUMAN_REQUIRED`）。
-- 验证知识包检索工具 `knowledge_query`：关键词命中条目、返回 `evidence_refs`、覆盖问答样本、注册进 CLI 与 bridge 工具集。
+- 验证知识包检索工具 `knowledge_query`：关键词命中结构化知识卡、返回`source_citations`、覆盖问答样本、按门禁注册进 CLI 与 bridge 工具集，并记录`available / disabled_by_mode / blocked_by_gate`三态。
+- 验证知识引用隔离：正常LLM路径与降级路径均只允许上游事件证据和非知识工具结果进入`key_evidence/evidence_source`，即使LLM主动写入知识URL也会被程序覆盖。
 - 验证 Mock 工具稳定复验：不依赖外部服务的单元/集成测试稳定通过。
 
 ### 1.2 非目标
@@ -35,7 +36,7 @@
 - 数据模型：`SecurityEventInput` / `InvestigationReport` 序列化与往返。
 - Mock 工具：命中 / 未命中 / 未知工具 / 注册数量。
 - 工具名别名层：中文 MCP 工具名 → ASCII 内部别名，解析还原。
-- 知识包检索：条目解析、关键词打分、`evidence_refs`、问答样本覆盖、注册唯一性。
+- 知识包检索：条目解析、关键词打分、`source_citations`、问答样本覆盖、注册唯一性及知识来源与事件证据隔离。
 - Agent 辅助逻辑：JSON 提取（含代码块围栏、噪声）、降级报告。
 - 集成测试：完整 WebShell 调查闭环（需 LLM key，未配置时跳过）；bridge 加载真实模块回归。
 
@@ -81,24 +82,40 @@
 | `test_alias_map_consistency` | `ALIAS_MAP` 值均 ASCII 且对应真实名 |
 | `test_mock_schemas_ascii_unique` | Mock schema 全 ASCII 且不重复 |
 | `test_web_shell_full_run` | 完整 WebShell 调查（需 LLM key，未配置时跳过） |
-| `test_fallback_report_extracts_knowledge_refs` | 降级报告提炼已采证据：knowledge_query 的 `evidence_refs` → evidence_source、成功工具返回 → key_evidence（方案 C） |
+| `test_fallback_report_keeps_knowledge_citations_out_of_event_evidence` | 降级报告保留知识来源审计记录，但不将其写入`key_evidence/evidence_source` |
+| `test_agent_records_source_citations_as_knowledge_citations` | Agent把`source_citations`独立记为`tool_call_records[].knowledge_citations`，不生成`evidence_refs` |
+| `test_normal_report_rebuilds_event_evidence_and_excludes_knowledge_citations` | 模拟LLM把知识URL写入事件证据，验证正常报告路径确定性覆盖并保留真实事件/工具证据 |
 | `test_default_max_tool_calls` 等 4 例 | AgentConfig 步数上限：默认 12 / 步数 5 / `AGENT_MAX_TOOL_CALLS` 覆盖 / 非法值回退（方案 C） |
 
 ### 5.2 知识包检索工具（`tests/test_knowledge_tool.py`，2026-08-26 新增）
 
 | 用例 | 验证点 |
 |------|--------|
-| `test_entries_loaded` | 知识包解析出核心条目（攻击原理 / 特征速查 / 工具流量 / 检查清单 / 处置建议） |
-| `test_attack_principle_content_not_empty` | 条目正文非空 |
-| `test_match_attack_principle` 等 6 例 | 关键词命中：攻击原理 / 处置建议 / 工具流量 / 检查清单 / 人工接管 / 无关词未命中 |
+| `test_all_structured_cards_are_loaded` | 唯一解析器读取15张`KnowledgeCard`，ID唯一且必填内容非空 |
+| `test_match_by_*` 4例 | 按知识ID、主题、受控别名和主题包含匹配正式知识卡 |
+| `test_no_match` / `test_unsupported_attack_group_query_remains_a_gap` | 空白、无关词和未覆盖攻击组织问题保持知识缺口 |
 | `test_schema_ascii_and_name` | schema 名 `knowledge_query` 符合 `^[a-zA-Z0-9_-]+$` |
-| `test_hit_returns_evidence_refs` | 命中返回 `evidence_refs`，summary 同步携带供 LLM 阅读 |
-| `test_attack_principle_evidence_ref` | 攻击原理条目含 T1505.003 引用 |
+| `test_hit_returns_structured_card` | 命中返回知识ID、必要证据、禁止推断和结构化来源 |
+| `test_attack_principle_source_citation` | 攻击原理卡包含MITRE来源URL |
 | `test_miss_returns_failed` | 无关关键词返回 `failed` |
 | `test_registered_in_registry` | 注册进 `ToolRegistry`，schema 名唯一 |
-| `test_sample1..5` | 问答样本覆盖：样本 1/3/4/5 命中对应条目；样本 2（攻击组织）为知识缺口（如实标记） |
 
-### 5.3 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
+### 5.3 知识工具可用性三态与门禁边界
+
+| 测试文件 | 验证点 |
+|---|---|
+| `tests/test_knowledge_mode.py` | CLI在`guarded + in_scope/weak_signal`记录`available`，`off`记录`disabled_by_mode`，非法/缺失/域外门禁记录`blocked_by_gate` |
+| `tests/test_deep_agent_bridge.py` | bridge使用同一状态解析器，并隔离环境变量验证三态及实际注册结果 |
+| `tests/test_gatekeeper_boundary.py::test_w3wp_alone_is_weak_not_confirmed` | 单独出现普通Web宿主进程不能升级为强WebShell证据 |
+
+### 5.4 域外报告输出边界
+
+| 测试文件 | 验证点 |
+|---|---|
+| `tests/test_out_of_scope_report_constraint.py` | 中英文植入/持久化/后门/最终载荷攻击链清洗；WebShell专属处置过滤；全过滤后的中性建议；仅域外追加提示词；正常LLM与fallback共用清洗 |
+| 同文件恶意LLM组合用例 | LLM故意写入越界攻击链、WebShell处置和伪造证据时，域外清洗与PR58的`key_evidence/evidence_source`确定性重建同时生效 |
+
+### 5.5 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
 
 | 用例 | 验证点 |
 |------|--------|
@@ -138,7 +155,7 @@
 | 调查 Agent 正常执行 | ✅ 8 次工具调用（6 Mock + `knowledge_query` + `query_asset` 失败 1 次），产出完整结构化报告 |
 | 工具结果进入调查过程 | ✅ `tool_call_records` 完整留痕：工具名 / 输入 / 输出 / 状态，逐条可审计 |
 | 知识源切换生效 | ✅ `knowledge_query`（关键词「WebShell证据检查清单」）返回正文来自沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`（5 项检查清单 + `[引用来源：NSA/CISA 联合报告；CISA Eliminate Web Shells (CM0106)]`） |
-| 工具返回影响证据来源 | ✅ `evidence_refs`（NSA/CISA、CM0106）结构化进入 `tool_call_records`，并同步进入报告的 `evidence_source` |
+| 知识来源审计边界 | 历史报告曾把知识引用同步进入事件`evidence_source`；最终合同已禁止该做法，知识来源只进入`tool_call_records[].knowledge_citations` |
 | 工具返回影响处置建议 | ✅ `disposal_suggestions` 8 条，由知识包处置模板（CISA CM0106 隔离→保全→删除→改密→根因→恢复→加固）驱动 |
 | 工具返回影响结论与置信度 | ✅ 结论判定「真实 WebShell 攻击」，`confidence=0.88`（随 Mock 资产/告警/漏洞证据上调） |
 | 未内部 fallback | ✅ 工具名全为 deep_agent 工具集（非 `evidence_lookup`/`xdr_log_query`） |
@@ -158,7 +175,7 @@ PYTHONPATH=src python -m unittest tests.test_knowledge_tool -v
 
 # 工具清单（无需 LLM key；MCP 依赖本地配置）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json --list-tools
-#   预期：26 个工具（6 Mock + knowledge_query + 19 MCP）
+#   实际数量取决于事件门禁和MCP tools/list；不得固定宣称26个
 
 # 完整调查（需配置 LLM key；-o 自动加时间戳）
 PYTHONPATH=src python -m sec_agent.deep_agent.main --event tests/fixtures/investigation/sample_event.json -o report.json
@@ -173,7 +190,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 
 - 单元测试（`test_investigation_agent.py`）16 项通过 / 1 项跳过（合计 17，均不依赖 LLM）。
 - bridge 集成测试（`test_investigation_and_dispatcher_integration.py`）5 项通过（含真实模块加载回归）。
-- 知识包检索（`test_knowledge_tool.py`）19 项全部通过；`knowledge_query` 已注册（CLI 与主链 bridge，6 mock + 1 knowledge + 19 mcp = 26）；问答样本 5 题中 4 题命中，样本 2（攻击组织）如实标记为知识缺口。
+- 历史知识检索测试曾验证问答样本5题中4题命中；2026-09-13收口后，`knowledge_query`改为仅在`guarded`且取得合法三档门禁结果时注册，不再使用固定“26个工具”作为验收判据。
 - 完整调查（真实 LLM，独立运行）：7 次 Mock 工具调用、完整结构化报告、未内部 fallback。
 - 主链实测（`auto` 后端，真实 LLM）：8 次工具调用（4 Mock failed + 4 dbproxy MCP 空）→ `need_manual_takeover=true` → 停在 `HUMAN_REQUIRED`，不自动处置；未发生内部 fallback。
 - 主链实测（`tool_mock` 后端，内部子链）：2 次工具调用（`evidence_lookup` + `xdr_log_query`）→ 处置方案 → `APPROVAL_REQUIRED` → 审批 → `EXECUTING` → `VERIFYING` → `COMPLETED`；`GET /events/{id}/timeline` 9 步完整、`GET /metrics` 完成计数 +1。
@@ -253,7 +270,7 @@ WebShell 类事件典型调用序列，按证据缺口推进：
 | 3 查漏洞 | `dbproxy_脆弱性数据查询工具` | `{"filter":{"asset":ip,"data_type":"loophole"},"limit":20}` | `data` 非空 → `success` | `data:[]` → `partial` |
 | 4 查威胁实体 | `dbproxy_威胁实体数据查询工具` | `{"filter":{"operationTarget.nodeInfo.ip":src}}` | `data` 非空 → `success` | `data:[]` → `partial` |
 | 5 研判 | `secgpt_告警事件解读研判` / `secgpt_威胁实体的调查分析` | `{"content":事件描述}` | 研判文本 → `success`（无 code/data 结构） | 文本为空 → 视文本内容 |
-| 6 知识包 | `knowledge_query` | `{"keyword":"WebShell处置建议"}` | 命中条目 + `evidence_refs` → `success` | 无关词 → `failed` |
+| 6 知识包 | `knowledge_query` | `{"keyword":"WebShell处置建议"}` | 命中结构化卡片 + `source_citations` → `success` | 无关词 → `failed/knowledge_not_found`；空关键词 → `failed/empty_knowledge_query` |
 
 > dbproxy 契约要点：`code==0` 且 `data` 为空 → `partial`（查询成功但无数据）；`code!=0` → `failed`（业务错误，`msg` 为错误信息）；`code==0` 且 `data` 非空 → `success`。三种状态经 `ToolResult.to_str()` 分别以「[部分成功] / [失败] / 原文」回填给 LLM，使其按「数据为空」触发停止条件而非静默成功。
 
@@ -266,18 +283,18 @@ WebShell 类事件典型调用序列，按证据缺口推进：
 | 工具名 | 为真实名（如 `dbproxy_告警数据查询工具`），非 ASCII 内部别名 |
 | `status` | 只出现 `success` / `partial` / `failed` 三态；空数据必须是 `partial` 而非 `success` |
 | `output` | 与真实平台返回一致；空数据 output 为 `[部分成功] 查询成功但无数据` |
-| `knowledge_query` 记录 | 命中时含 `evidence_refs` 结构化字段 |
+| `knowledge_query` 记录 | 命中时含`knowledge_citations`结构化字段，且不含事件`evidence_refs` |
 | 调用次数 | 不超过 `AGENT_MAX_TOOL_CALLS`（默认 12） |
 
 ### 11.5 调查报告检查
 
 | 检查项 | 通过标准 |
 |---|---|
-| `evidence_source` | 含知识包引用（如 `CISA Eliminate Web Shells (CM0106)`）与真实工具来源 |
+| `evidence_source` | 只含当前事件观测或真实调查工具来源，不含知识卡URL、等级或规范引用 |
 | `key_evidence` | 有具体数据支撑，无「数据不可得」当作真实证据编造 |
 | `confidence` | 随证据合理调整（0~1），空结果不抬高置信度 |
 | `need_manual_takeover` | 关键工具 `partial`/`failed` 且证据不足时置 `true` |
-| `disposal_suggestions` | 由知识包处置模板驱动（CISA CM0106 流程），不自动执行 |
+| `disposal_suggestions` | 可参考知识包处置模板，但必须标明是建议，不把知识来源当作事件事实，也不自动执行 |
 
 ### 11.6 真实平台失败时的 fallback
 
@@ -302,3 +319,5 @@ WebShell 类事件典型调用序列，按证据缺口推进：
 | 2026-08-26 | 本次（方案 C 提交） | 新增降级报告提炼与 AgentConfig 步数上限用例；执行命令预期更新为 47 passed / 1 skipped |
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一到沈洪旭权威版；新增 `test_mcp_client.py`（11 用例）验证 dbproxy 空结果 `partial` / 结构化错误 `failed` / 有数据 `success` 契约 |
 | 2026-09-04 | PR #31收口 | `test_mcp_client.py`扩至18例：补非dbproxy空文本、MCP `isError`、error JSON、已知错误文本及正常分析含错误词不误判 |
+| 2026-09-14 | PR54+PR55本地集成候选 | 增加正常LLM路径知识引用隔离、知识工具三态代码载体、bridge环境隔离及`w3wp.exe`单信号边界回归；已纳入PR55最新头`647da76`的4条字段面测试和`main@0001bbd`的case3来源修订 | 定向156 passed / 1 skipped；全量350 passed / 1 skipped；1条第三方弃用警告；未推送 |
+| 2026-09-14 | PR53收口候选 | 基于`main@9f9dc1b`重做域外报告措辞约束，增加中英文词表、正常/fallback统一清洗和证据隔离组合回归 | 定向45 passed / 1 skipped；全量358 passed / 1 skipped；1条第三方弃用警告 |

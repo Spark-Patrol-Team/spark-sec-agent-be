@@ -11,8 +11,8 @@
 | 能力性质 | 自研代码；fixed_sample / jsonl_sample / xdr_openapi / Mock / fallback 混合能力 |
 | 关联任务/需求 | 后端主链技术集成、统一工具调度、状态流转、HTTP 接口联调 |
 | 关联正式交付章节 | docs/deliverables/system-development-and-operation-guide.md；第9章模块说明与接入位置 |
-| 对应PR或Commit | `feature/mainline-eval-summary-contract` / 后端基线 `6bc1983`；当前工作区继续补齐 actual 结果包接入 |
-| 适用代码版本 | 当前工作区，包含真实 XDR 告警接入、主链文档补充、Bridge 显式装配、安全边界补齐和评测对比接口 actual 结果包读取 |
+| 对应PR或Commit | PR #49本地集成候选；上游基线`main@24fd76e`，待形成最终提交 |
+| 适用代码版本 | 当前工作区，已将PR #49独有评测接口叠加到最新main门禁、域外报告、响应范围和研判合同 |
 | 最后更新时间 | 2026-09-14 |
 
 ## 1. 当前实现摘要
@@ -37,7 +37,8 @@
 - 评测对比接口已区分 `event_evidence_refs`、`tool_result_refs` 和 `knowledge_refs`，并保留兼容字段 `evidence_refs`；分层字段是权威来源，不再把三类证据反向合并成同一 `evidence_refs`。
 - 正式结果包路径下，接口会校验至少 6 案，并将杨景凡 OFF/GUARDED 20 行 `_summary.json` 自动合并为 10 案对比结果，生成 actual `summary`。
 - 评测知识 ID 已从历史 WebShell 知识 ID 口径切换为正式 `WSK-*` 口径；历史旧 ID 仅在接口内部作为兼容输入映射，不对前端输出。
-- 结果包核对结论：生成时间为 2026-09-11；README 说明使用 `scripts/e2e_ab_gatekeeper.py` 跑真实 LLM 深度调查，模型为 deepseek 系列，知识模式为 `off` / `guarded`，工具模式包含真实 LLM 与 MCP/平台工具调用；结果包未提供运行 Commit 和逐案例耗时，接口中不补造。
+- 结果包核对结论：生成时间为2026-09-11；`运行元数据与脱敏摘要.md`明确记录运行Commit`0eb38cc`、代码基线`7e4aad6`、模型`deepseek-v4-flash`、`TOOL_MODE=auto`及关键上限，接口会读取这些脱敏元数据；结果包未提供逐案例耗时，因此`duration_ms`保持0。
+- actual结果转换只整理可验证事实，不以知识命中、置信度变化或模型文字自动宣布GUARDED优胜。本批可确认GUARDED知识门禁行为10/10符合预期，并在明确适用案例增强知识依据和引用可追溯性；旧结果包的最终报告平均质量仅小幅变化，不宣称通用准确率或显著提升。可通过结果包内`_human_review.json`或`EVAL_COMPARISON_REVIEW_PATH`加载逐案结构化Review，未加载时逐案保持未判定。
 - 本地 `.env` 已补齐真实 MCP/Agent 接入所需配置键：`MCP_API_KEY`、`MCP_VERIFY_SSL`、`AGENT_MAX_STEPS`、`AGENT_MAX_TOOL_CALLS`、FastGPT 占位项和 `EVAL_COMPARISON_FIXTURE_PATH`；真实敏感值仍不进入仓库。
 
 ### 1.2 未实现或未复验
@@ -263,7 +264,9 @@ data_source 由接口置为 actual
 summary 由接口基于 results 自动生成
 evidence_breakdown.event_evidence_refs / tool_result_refs / knowledge_refs 分字段保存
 evidence_refs 仅作为兼容字段，不再反向合并三类证据
-结果包未提供运行 commit 和逐案例耗时，run_metadata.run_commit=null，duration_ms=0
+运行元数据从脱敏摘要读取；本包 run_metadata.run_commit=0eb38cc，model=deepseek-v4-flash
+逐案例耗时未提供，duration_ms=0
+未加载结构化人工Review时，不自动输出优胜结论
 ```
 
 ### 5.3 上下游接入注意事项
@@ -275,7 +278,7 @@ evidence_refs 仅作为兼容字段，不再反向合并三类证据
 - `ApprovalDecision.idempotency_key` 必须由调用方保证稳定，避免重复审批触发重复执行。
 - 对真实 XDR `xdr_event_id` 的筛选只在本地完成，除非上游明确提供可用过滤参数，否则不要把 `uuId` 直接加入请求体。
 - 后续真实 Agent 接入不要改 `Orchestrator` 状态流；应在 Bridge 层将外部 Agent 输入输出适配为主链 `InvestigationReport`。
-- PR50 合并前需先做跨模块 Review。当前 `origin/pr/50` head 为 `38cee87`，该 PR 未提供冻结的 FastGPT / 远程 Agent 直连接口合同，且会删除当前 `/eval/comparisons` 路由和相关 Schema；其 Bridge 差异也会移除当前主链要求保留的 `evidence_sources` / `manual_takeover_reason` 映射，因此不能用 PR50 独立绿色 CI 替代本候选的统一回归。
+- PR #50及后续PR #58/#59/#60已经进入主干。本评测增量必须基于最新main集成，不得再沿用旧分支中“拒绝PR #50”的历史结论，也不得覆盖正式门禁、域外报告清洗、`response_evidence_scope`和人工接管合同。
 
 ### 5.4 Bridge 与主链装配实现
 
@@ -361,5 +364,5 @@ build_container()
 | 2026-09-07 | 当前工作区更新 | 新增 `GET /eval/comparisons`，返回 OFF/GUARDED 评测对比 Mock 数据并进入 OpenAPI | `uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q` |
 | 2026-09-09 | 当前工作区更新 | 完善 `GET /eval/comparisons`：区分事件证据、工具查询结果和知识引用；支持 `EVAL_COMPARISON_FIXTURE_PATH` 读取至少 6 案正式结果包并生成 actual summary | `uv run pytest tests/test_api_http.py tests/test_openapi_generation.py -q` |
 | 2026-09-11 | 当前工作区更新 | 根据 MCP/Agent/处置边界资料补齐主链 Bridge 安全映射：保留 `evidence_source`，缺失或非法 `need_manual_takeover` 时 fail-closed；补齐本地配置键和 OpenAPI | `uv run pytest -q` |
-| 2026-09-14 | 当前工作区更新 | 接入杨景凡 OFF/GUARDED A/B 结果包：支持结果包目录或 `_summary.json` 读取，自动合并 20 行为 10 案 `data_source=actual` 汇总；知识 ID 输出统一为 `WSK-*`；运行 Commit / 耗时未提供时显式置空或 0 | `/opt/homebrew/bin/python3.11 -m pytest tests/test_api_http.py tests/test_knowledge_evaluation_summary_schema.py -q`；真实结果包接口转换实测 |
-| 2026-09-14 | 当前工作区更新 | 补充服务器部署、fixed_sample 回退和 PR50 跨模块 Review 结论：服务器 actual 接口已通过，PR50 与当前评测接口和 Bridge 证据映射存在冲突，不直接整包合并 | `GET /health`；`GET /eval/comparisons`；`python -m sec_agent.scripts.run_flow`；`git diff HEAD..origin/pr/50` |
+| 2026-09-14 | 当前工作区更新 | 接入杨景凡 OFF/GUARDED A/B 结果包：支持结果包目录或 `_summary.json` 读取，自动合并20行为10案`data_source=actual`事实汇总；知识ID统一为`WSK-*`；从脱敏元数据读取运行Commit、模型和关键配置 | 评测接口专项回归及真实结果包转换复验 |
+| 2026-09-14 | 当前工作区更新 | 基于`main@24fd76e`解决PR #49冲突；新增结构化人工Review入口，删除“知识命中即GUARDED胜出”的自动判定；补齐case6域外结论确定性清洗；保留最新门禁、域外报告与响应合同 | 评测专项`76 passed`；case6/响应/Bridge专项`47 passed`；全量`391 passed, 1 skipped` |

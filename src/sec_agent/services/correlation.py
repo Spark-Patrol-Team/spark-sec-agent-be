@@ -68,6 +68,14 @@ class AlertCorrelationService:
                 f"已将 {len(ordered_alerts)} 条 {','.join(alert_types)} 告警压缩为 1 个安全事件；"
                 f"涉及资产 {','.join(asset_names) or '未知'}。"
             ),
+            event_type=alert_types[0],
+            alert_summaries={alert.alert_id: alert.name for alert in ordered_alerts},
+            evidence_summaries={
+                ref.ref_id: ref.summary
+                for alert in ordered_alerts
+                for ref in alert.evidence_refs
+                if ref.summary
+            },
         )
 
     def _validate_minimal_relation(self, alerts: list[AlertRecord]) -> None:

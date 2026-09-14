@@ -87,6 +87,19 @@ class VerificationStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ResponseEvidenceScope(StrEnum):
+    IN_SCOPE = "in_scope"
+    WEAK_SIGNAL = "weak_signal"
+    OUT_OF_SCOPE = "out_of_scope"
+
+
+class VerificationEvidenceLayer(StrEnum):
+    STATEFUL_MOCK = "stateful_mock"
+    PLATFORM_REQUEST = "platform_request"
+    PLATFORM_RECORD = "platform_record"
+    DEVICE_EFFECT = "device_effect"
+
+
 class EvidenceRef(BaseModel):
     ref_id: str
     source: str
@@ -155,6 +168,12 @@ class SecurityEvent(BaseModel):
     alert_count_before: int
     event_count_after: int
     summary: str
+    # 关联服务已校验同一 SecurityEvent 内的告警类型一致；这里显式保留类型，
+    # 避免下游从面向人的 summary 文本反推机器契约字段。
+    event_type: str = ""
+    # ID 用于审计定位，摘要用于门禁和 Agent 的语义判断；两者不能互相替代。
+    alert_summaries: dict[str, str] = Field(default_factory=dict)
+    evidence_summaries: dict[str, str] = Field(default_factory=dict)
 
 
 class TriageResult(BaseModel):
@@ -162,6 +181,7 @@ class TriageResult(BaseModel):
     confidence: float = Field(ge=0, le=1)
     risk_score: int = Field(ge=0, le=100)
     priority: Priority
+    response_evidence_scope: ResponseEvidenceScope | None = None
     supporting_evidence_refs: list[str] = Field(default_factory=list)
     opposing_evidence_refs: list[str] = Field(default_factory=list)
     evidence_gaps: list[str] = Field(default_factory=list)
@@ -251,8 +271,11 @@ class ResponsePlan(BaseModel):
     target: str
     reason: str
     risk_level: ToolRiskLevel
+    evidence_scope: ResponseEvidenceScope
+    max_allowed_risk_level: ToolRiskLevel
     approval_required: bool
     rollback_available: bool
+    decision_basis: list[str] = Field(default_factory=list)
 
 
 class ExecutionResult(BaseModel):
@@ -260,6 +283,7 @@ class ExecutionResult(BaseModel):
     status: ToolCallStatus
     mode: ExecutionMode
     platform_status: str
+    effect_layer: VerificationEvidenceLayer = VerificationEvidenceLayer.PLATFORM_REQUEST
     error: str | None = None
     retry_count: int = 0
     idempotency_key: str
@@ -268,6 +292,7 @@ class ExecutionResult(BaseModel):
 class VerificationResult(BaseModel):
     status: VerificationStatus
     method: str
+    verified_effect_layer: VerificationEvidenceLayer
     evidence_refs: list[str] = Field(default_factory=list)
     adjustment_suggestion: str | None = None
     final_status: BusinessStatus
@@ -401,9 +426,13 @@ class EventResponseView(BaseModel):
     action: str | None = None
     target: str | None = None
     risk_level: ToolRiskLevel | None = None
+    evidence_scope: ResponseEvidenceScope | None = None
+    max_allowed_risk_level: ToolRiskLevel | None = None
     approval_required: bool | None = None
     execution_status: ToolCallStatus | None = None
+    execution_effect_layer: VerificationEvidenceLayer | None = None
     verification_status: VerificationStatus | None = None
+    verification_effect_layer: VerificationEvidenceLayer | None = None
     final_status: BusinessStatus | None = None
 
 

@@ -6,7 +6,6 @@ from datetime import timedelta
 from pathlib import Path
 
 from sec_agent.domain.models import (
-    ApprovalDecision,
     BusinessStatus,
     NormalizedAlertRecord,
     StartRunRequest,
@@ -101,7 +100,7 @@ class RawJsonlIngestAndCorrelationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "事件类型不一致"):
             AlertCorrelationService().correlate([webshell, lateral])
 
-    def test_raw_jsonl_webshell_reaches_approval_gate(self) -> None:
+    def test_raw_jsonl_webshell_alert_name_alone_stops_for_human_review(self) -> None:
         adapter = JsonlSampleAdapter(FIXTURE_DIR, input_mode="raw")
         orchestrator = Orchestrator(
             platform=adapter,
@@ -111,22 +110,14 @@ class RawJsonlIngestAndCorrelationTest(unittest.TestCase):
 
         ctx = orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))
 
-        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertIsNotNone(ctx.event_summary)
         self.assertEqual(ctx.event_summary.alert_count_before, 1)
         self.assertEqual(ctx.event_summary.event_count_after, 1)
         self.assertEqual(ctx.triage.risk_score, 95)
 
-        completed = orchestrator.approve(
-            ctx.event_id,
-            ApprovalDecision(
-                approved=True,
-                approver="chenmin-test",
-                reason="验证原始 JSONL 标准化输入能够进入完整最小主链",
-                idempotency_key="raw-jsonl-webshell-approval-001",
-            ),
-        )
-        self.assertEqual(completed.status, BusinessStatus.COMPLETED)
+        self.assertIsNone(ctx.response)
+        self.assertEqual(ctx.triage.response_evidence_scope.value, "weak_signal")
 
 
 if __name__ == "__main__":

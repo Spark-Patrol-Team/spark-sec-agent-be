@@ -9,8 +9,10 @@
 - 结构守护测试：`tests/test_knowledge_evaluation_summary_schema.py`
 
 该 Schema 用于记录每个评测案例的知识使用情况、适用性、命中知识、工具状态、证据引用、禁止结论、人工接管、执行步数、耗时和人工 Review 栏。
+
+项目组依据本轮20份实际报告形成逐案人工质量评分草案：GUARDED质量优胜3案、OFF优胜1案、同分6案，平均分5.8/8对5.7/8；可确认知识门禁行为10/10符合预期及case9引用增益，但旧结果包不支持通用准确率或显著提升结论。评分草案与接口的结构化逐案`winner`是两个层级，项目负责人确认并转换前不得据此补造接口胜场。
 正式评测汇总尚未生成前，测试入口默认使用最小 fixture；正式汇总形成后，通过 `KNOWLEDGE_EVALUATION_SUMMARY_PATH` 指向正式结果文件即可复用同一套结构守护测试。
-前端 OFF/GUARDED 对比页面可先对接 `GET /eval/comparisons`。未配置正式包时，接口返回 `data_source=mock_fixture` 的后端 Mock 对比数据；配置 `EVAL_COMPARISON_FIXTURE_PATH` 后，接口读取正式结果包，要求至少 6 案，并自动生成 actual `summary`。
+前端 OFF/GUARDED 对比页面可先对接 `GET /eval/comparisons`。未配置正式包时，接口返回 `data_source=mock_fixture` 的后端 Mock 对比数据；配置 `EVAL_COMPARISON_FIXTURE_PATH` 后，接口读取至少6案的正式结果包并生成actual事实汇总。自动转换不以知识命中或置信度变化替代人工业务判定；没有结构化Review时保持`pending/TIE`。
 
 ## 2. 顶层结构
 
@@ -140,7 +142,7 @@ GET /eval/comparisons
 当前响应顶层字段：
 
 ```text
-schema_version, comparison_id, generated_at, data_source, suite, summary, results
+schema_version, comparison_id, generated_at, data_source, suite, run_metadata, summary, results
 ```
 
 逐案例字段：
@@ -171,6 +173,14 @@ EVAL_COMPARISON_FIXTURE_PATH=/path/to/T0905-07-杨景凡-OFF-GUARDED-AB结果包
   uv run uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-正式结果包必须至少包含 6 案。接口支持直接读取结果包目录、`_summary.json` 或已整理 JSON；目录模式下会把杨景凡 20 行 OFF/GUARDED 运行汇总合并为 10 案对比结果，并返回 `data_source=actual`。
+正式结果包必须至少包含6案。接口支持直接读取结果包目录、`_summary.json`或已整理JSON；目录模式下会把杨景凡20行OFF/GUARDED运行汇总合并为10案对比结果，并返回`data_source=actual`。如果目录包含`运行元数据与脱敏摘要.md`，接口会读取运行Commit、精确模型、工具模式、代码基线和关键配置，不读取或外发原始敏感平台结果。
+
+结构化人工Review为可选独立输入：
+
+```text
+EVAL_COMPARISON_REVIEW_PATH=/path/to/_human_review.json
+```
+
+也可将文件命名为`_human_review.json`放在结果包目录。每条Review至少包含`case_id`和`status`，可提供`winner`、`reviewer`、`reviewed_at`、`comments`、`reason`和`action_items`。`status=pending`时禁止预先填写`winner`；没有结构化Review时，接口不会因`in_scope`命中知识而自动判定GUARDED胜出。
 
 `evidence_breakdown` 是权威分层字段：`event_evidence_refs` 表示事件证据，`tool_result_refs` 表示工具查询结果，`knowledge_refs` 表示知识引用。`evidence_refs` 仅作为兼容字段保留，不再作为三类证据的合并来源。知识 ID 统一使用正式 `WSK-*` 口径。
