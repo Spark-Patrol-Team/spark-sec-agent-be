@@ -304,7 +304,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
                 self.llm = llm
                 self.tools = tools
 
-            def investigate(self, event):
+            def investigate(self, event, gate_decision=None):
                 return DeepAgentReport()
 
         config_module.load_config = Config

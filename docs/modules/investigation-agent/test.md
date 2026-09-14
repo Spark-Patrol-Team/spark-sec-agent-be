@@ -108,7 +108,14 @@
 | `tests/test_deep_agent_bridge.py` | bridge使用同一状态解析器，并隔离环境变量验证三态及实际注册结果 |
 | `tests/test_gatekeeper_boundary.py::test_w3wp_alone_is_weak_not_confirmed` | 单独出现普通Web宿主进程不能升级为强WebShell证据 |
 
-### 5.3 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
+### 5.4 域外报告输出边界
+
+| 测试文件 | 验证点 |
+|---|---|
+| `tests/test_out_of_scope_report_constraint.py` | 中英文植入/持久化/后门/最终载荷攻击链清洗；WebShell专属处置过滤；全过滤后的中性建议；仅域外追加提示词；正常LLM与fallback共用清洗 |
+| 同文件恶意LLM组合用例 | LLM故意写入越界攻击链、WebShell处置和伪造证据时，域外清洗与PR58的`key_evidence/evidence_source`确定性重建同时生效 |
+
+### 5.5 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
 
 | 用例 | 验证点 |
 |------|--------|
@@ -313,3 +320,4 @@ WebShell 类事件典型调用序列，按证据缺口推进：
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一到沈洪旭权威版；新增 `test_mcp_client.py`（11 用例）验证 dbproxy 空结果 `partial` / 结构化错误 `failed` / 有数据 `success` 契约 |
 | 2026-09-04 | PR #31收口 | `test_mcp_client.py`扩至18例：补非dbproxy空文本、MCP `isError`、error JSON、已知错误文本及正常分析含错误词不误判 |
 | 2026-09-14 | PR54+PR55本地集成候选 | 增加正常LLM路径知识引用隔离、知识工具三态代码载体、bridge环境隔离及`w3wp.exe`单信号边界回归；已纳入PR55最新头`647da76`的4条字段面测试和`main@0001bbd`的case3来源修订 | 定向156 passed / 1 skipped；全量350 passed / 1 skipped；1条第三方弃用警告；未推送 |
+| 2026-09-14 | PR53收口候选 | 基于`main@9f9dc1b`重做域外报告措辞约束，增加中英文词表、正常/fallback统一清洗和证据隔离组合回归 | 定向45 passed / 1 skipped；全量358 passed / 1 skipped；1条第三方弃用警告 |

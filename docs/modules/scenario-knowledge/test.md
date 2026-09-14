@@ -152,6 +152,7 @@ case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scop
 - [x] 杨嘉琪Review提出的证据ID/摘要错配已改为按ID映射；旧`KnowledgeEntry`解析链已删除；域外工具注册口径已同步。
 - [ ] case1、case2 在最终提交上完成报告复验，知识引用与事件证据分开。
 - [ ] case6 在最终提交上完成负向复验，未调用 WebShell 知识且未新增 WebShell 事实。
+- [x] `out_of_scope`报告代码边界：正常LLM与fallback出口统一清洗当前场景专属攻击链/处置措辞，并与事件证据确定性重建做组合回归；真实case6报告仍按上一条单独复验。
 - [ ] Agent 报告、运行元数据和回执保存到团队指定受控位置，仓库只保留判据和结论索引。
 - [ ] 不把 Mock/synthetic 成功写成真实 MCP/XDR 联调完成。
 
@@ -169,3 +170,4 @@ case1-10 判定与固定样例主链结果均与修复前一致（case9 `in_scop
 | 2026-09-13 | 最终收口候选新增fail-closed、正式样例输入归一化、否定语义、域外优先级和bridge门禁绑定回归；目标测试127项通过，全仓312项通过、1项跳过；CLI实测case9注册知识工具、case10不注册 |
 | 2026-09-13 | 按杨嘉琪Review修复证据ID/摘要错配，新增空摘要错位复现；删除旧`KnowledgeEntry`测试链并迁移至唯一`KnowledgeCard`路径；同步域外事件不注册知识工具的接口口径 |
 | 2026-09-13 | 新增门禁边界回归 `tests/test_gatekeeper_boundary.py`（24条）与合同一致性测试 `tests/test_event_field_signal_contract.py`（14条，合同v1.1）；补13字段输入面/10字段白名单和`summary`不可读的机械校验；PR55原分支边界24 passed、合同14 passed、全量340 passed / 1 skipped，case1-10与固定样例主链判定无回归 |
+| 2026-09-14 | 基于PR58合并后main重做PR53域外报告边界：正常LLM/fallback统一确定性清洗，补“最终载荷”及常见英文变体，并验证不破坏知识引用与事件证据隔离；此项是代码自动化边界，不替代真实case6报告复验 |
