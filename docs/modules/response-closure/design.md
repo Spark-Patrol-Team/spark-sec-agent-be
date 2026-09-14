@@ -1,129 +1,109 @@
 # 处置闭环模块设计
 
-## 1. 设计目标
+## 0. 文档信息
 
-处置闭环模块负责承接调查结论，生成处置方案，完成风险分级、审批门禁、执行协调和独立验证。
+| 项目 | 内容 |
+|---|---|
+| 模块 | response-closure |
+| 本轮任务 | T0913：最终响应闭环完善、语义验收与交付准备 |
+| 文档职责 | 设计目标、责任边界、数据语义、安全规则和闭环判定原则 |
+| 能力性质 | 自研编排与本地 Stateful Mock；真实平台设备生效尚未被当前测试证明 |
 
-当前实现的闭环动作仍是 `stateful_mock_containment`，它只用于本地演示和回归验证，不代表真实平台已经完成封禁、隔离、阻断或其他高风险动作。
+## 1. 设计目标与责任边界
 
-## 2. 分层口径
+处置闭环模块承接调查结果，形成候选 ResponsePlan，经过审批门禁后调用统一工具契约执行，并通过独立验证决定最终处置结果。
 
-为避免把不同层级混写，本文档统一按以下口径表述：
+模块负责：
 
-- `L0`：页面、列表、日志、配置和查询等可见能力，仅证明“能看见”；
-- `Mock`：本地有状态 Mock 和单测回归，仅证明“流程可跑通”；
-- `平台记录`：平台内产生了执行记录、审计记录或动作回执，仅证明“平台留痕”；
-- `设备生效`：真实网络、主机或文件状态已经发生变化，仅能在可验证对象和有效证据下确认；
-- `外部阻塞`：当前缺少真实设备、真实接口、授权对象或独立验证条件，导致真实动作暂不可确认。
+- 消费上游结构化调查结果和 TriageResult；
+- 按确定性规则冻结 response_evidence_scope；
+- 根据冻结范围生成或拒绝 ResponsePlan；
+- 处理风险级别、审批、执行结果和独立验证结果；
+- 将无法安全判断或证明的情况转为人工接管。
 
-后续涉及“已确认”或“未确认”的表述，均应按上述层级区分，不能互相替代。
+模块不负责：
 
-## 3. 输入输出
+- 重新定义调查结论或知识库结论；
+- 将模型建议直接转换为真实平台授权；
+- 实现真实平台的封禁、隔离或设备联动能力；
+- 以平台请求成功、平台记录或 Mock 记录替代设备生效证据。
 
-- 输入：`InvestigationReport`、`TriageResult`、审批结果；
-- 输出：`ResponseResult`，包含处置方案、执行结果和验证结果。
+## 2. response_evidence_scope 单一责任
 
-`ResponseDecisionService` 只有在以下条件同时满足时才生成处置方案：
+response_evidence_scope 的责任边界固定如下：
 
-- 调查没有要求人工接管；
-- 调查报告包含处置建议；
-- 调查报告包含明确的受影响对象。
+| 角色 | 唯一位置 | 责任 |
+|---|---|---|
+| 生产者 | ResponseEvidenceScopeResolver.resolve() | 在调查完成后按确定性规则产出 IN_SCOPE、WEAK_SIGNAL 或 OUT_OF_SCOPE |
+| 主链承载 | Orchestrator.start() | 将 resolver 返回值写入 ctx.triage.response_evidence_scope，并保存上下文 |
+| 业务消费者 | ResponseDecisionService._boundary_decision() | 只消费 triage.response_evidence_scope 决定是否允许生成方案 |
 
-当前方案字段为：
+ResponseDecisionService 不重新计算 scope。其对 evidence_gaps、未决问题和调查工具失败的检查，是对“已冻结 scope 与当前调查状态一致性”的 fail-closed 校验；发现不一致时收紧决策，不产生新的 scope。
 
-- 动作：`stateful_mock_containment`；
-- 目标：调查报告中的第一个 `affected_objects`；
-- 风险等级：根据 `TriageResult.risk_score` 确定；
-- 回滚可用性：当前固定为 `true`，但实际回滚动作尚未实现。
+范围语义：
 
-## 4. 风险与审批
+- IN_SCOPE：当前 WebShell 证据范围满足候选处置边界，仍须经过风险和审批门禁；
+- WEAK_SIGNAL：证据不足、工具失败或存在调查缺口，只允许继续调查或人工接管；
+- OUT_OF_SCOPE：明确不属于当前 WebShell 自动处置范围，不生成 WebShell 处置方案。
 
-当前响应模块内的风险等级阈值为：
+gate_decision 与 response_evidence_scope 是不同字段。前者属于正式 WebShell 信号门禁，后者是主链处置授权边界；两者不等价，但前者构成后者的硬上限：out_of_scope 只能得到 OUT_OF_SCOPE，weak_signal 只能得到 WEAK_SIGNAL，只有 in_scope 才能继续接受调查完整性、原始证据数量和工具结果校验。响应层不再维护第二套 WebShell 关键词表。knowledge refs 只是知识依据，不能替代原始处置证据；知识查询成功也不会自动升级 scope。
 
-- `risk_score >= 90`：`critical`；
-- `70 <= risk_score < 90`：`high`；
-- `40 <= risk_score < 70`：`medium`；
-- `risk_score < 40`：`low`。
+## 3. 闭环数据与安全规则
 
-`medium`、`high`、`critical` 方案需要人工审批；审批通过后才进入执行。审批拒绝后进入 `HUMAN_REQUIRED`，不会调用处置工具。
+主链承载的核心对象为：
 
-上述阈值是当前 MVP 的代码实现，不等同于团队最终风险评分规范；最终规则仍待团队确认。
+- TriageResult.response_evidence_scope：冻结后的处置证据范围；
+- ResponsePlan.evidence_scope：生成方案时复制并留存的范围快照；
+- ToolRequest / ToolResult：统一执行和验证工具调用契约；
+- ExecutionResult：执行调用结果，包含 executed、调用状态、运行模式和执行层级；
+- VerificationResult：独立验证状态、验证证据层、证据引用和最终业务状态。
 
-## 5. 状态流转
+满足正式门禁 IN_SCOPE 且通过调查完整性校验的固定样例，其候选动作是 stateful_mock_containment，目标取调查结果中的第一个 affected_objects。只有 WebShell 告警名称或 event_type、没有确认级证据的 JSONL/XDR 输入停在 WEAK_SIGNAL 和人工复核，不生成候选动作。动作建议不是授权；中、高、严重风险动作需要人工审批。
 
-正常闭环：
+闭环顺序为：
 
-```text
-RECEIVED
--> CORRELATING
--> TRIAGED
--> INVESTIGATING
--> DECISION_READY
--> APPROVAL_REQUIRED
--> EXECUTING
--> VERIFYING
--> COMPLETED
-```
+~~~text
+Investigation
+  -> response_evidence_scope production
+  -> TriageResult
+  -> ResponseDecisionService
+  -> ResponsePlan
+  -> Approval
+  -> Execution
+  -> Verification
+  -> Final Disposition
+~~~
 
-异常结果：
+安全规则：
 
-```text
-审批拒绝或证据不足 -> HUMAN_REQUIRED
-执行工具失败       -> FAILED
-验证结果未知       -> HUMAN_REQUIRED
-验证确认未生效     -> HUMAN_REQUIRED
-```
+1. 调查要求人工接管、没有受影响对象、没有建议动作或 scope 不满足时，不生成自动处置方案。
+2. 高风险方案必须进入 APPROVAL_REQUIRED，审批拒绝进入 HUMAN_REQUIRED。
+3. 执行工具成功只表示执行调用成功，不能直接表示动作生效。
+4. 只有独立验证工具成功、验证状态为有效、动作状态为 effective/executed，且 verified_effect_layer=DEVICE_EFFECT 时，才允许处置链进入 COMPLETED。
+5. Mock、PLATFORM_REQUEST 和 PLATFORM_RECORD 层均不能单独满足完成条件。
 
-业务状态由 `Orchestrator` 调用统一状态机推进，响应服务不直接修改主流程状态。
+## 4. 五层证据语义
 
-## 6. 安全边界
+| 事实层 | 当前代码来源 | 当前可证明内容 | 不能推出 |
+|---|---|---|---|
+| 请求已发送 | 构造 ToolRequest 并调用 platform.run_tool() | 系统尝试发起了工具调用 | 平台已受理、已记录或设备已生效 |
+| 平台已受理 | 当前无独立字段和平台回执契约 | 当前系统不对 platform accepted 做独立证明 | 不能由请求调用返回直接补写 |
+| 平台记录成功 | ToolResult 输出或 Mock ledger 的记录结果 | 平台/本地账本存在一条记录 | 设备实际生效 |
+| 设备实际生效 | verified_effect_layer=DEVICE_EFFECT 的验证结果 | 仅在有有效设备层证据时可作为生效证据 | 不能由 Mock/platform record 推导 |
+| 独立验证成功 | response_verify 成功、有效动作状态和 DEVICE_EFFECT 的组合 | 满足响应闭环完成门槛 | 不能由执行工具自身成功替代 |
 
-- 当前处置调用统一 `ToolRequest` / `ToolResult` 契约；
-- 高风险方案必须经过人工审批；
-- 执行结果成功不能直接等同于处置生效；
-- 执行成功后必须通过 `response_verify` 独立查询；
-- 真实平台处置能力尚未接入，当前执行结果必须标记为 `mode=mock`；
-- 未获得明确授权时，不执行真实环境中的封禁、隔离或其他高风险动作。
+当前系统不对 platform accepted 做独立证明。当前真实平台也没有被本仓库测试证明能够提供独立的 platform recorded 或 device effect 证据；现有 DEVICE_EFFECT 仅由可控测试替身场景用于验证完成门槛。
 
-## 7. Stateful Mock 边界
+## 5. 最终处置语义
 
-`StatefulMockLedger` 是处置专用的进程内状态账本，固定样例和 JSONL 样例适配器各自持有一个账本：
+- COMPLETED：响应处置链已执行，且独立验证证明设备效果层为 DEVICE_EFFECT。TRIAGED -> COMPLETED 的低风险分诊结束是另一种语义，不表示响应处置完成。
+- FAILED：处置链或主流程出现明确失败，流程不能按当前路径继续，例如处置工具返回失败或执行结果为 executed=false。
+- HUMAN_REQUIRED：系统在当前安全边界内无法自动判断或证明，例如 scope 不足、审批拒绝、验证工具失败、验证未知、动作未生效或缺少设备效果证据。
 
-- 使用 `idempotency_key` 标识一次处置请求；
-- 首次写入后不使用同一幂等键覆盖已有记录；
-- 保存 `action_status`、证据引用、结果摘要和输出预览；
-- 执行工具和验证工具读取同一份记录；
-- 记录状态为 `executed` 时，独立验证返回 `effective`；
-- 找不到记录时，工具返回 `partial_success` 和 `action_status=not_found`，编排结果为 `unknown -> HUMAN_REQUIRED`；
-- 状态只保存在当前进程内，服务重启后不会保留。
+本轮不新增未知副作用状态、持久化状态模型、响应状态机或超时/重试/回滚机制。真实平台适配器若在请求发出后异常，当前实现仍可能按通用异常路径记为失败；这属于现有能力边界，不在 T0913 的本轮范围内。
 
-通用 `stateful_mock` 使用独立的会话状态 `SESSION_STATE`：
+## 6. Mock 与真实平台边界
 
-- 使用 `session_id` 隔离会话；
-- 使用 `input_data` 合并会话字段；
-- 使用 `idempotency_key` 避免重复写入；
-- 不负责表达处置动作是否生效，不能替代处置专用账本。
+StatefulMockLedger 用于本地执行和验证回归，执行工具与 response_verify 读取同一份进程内记录。Mock record、action_status=executed 或 PLATFORM_RECORD 只证明本地流程和记录语义，不证明真实设备已经生效。
 
-## 8. 当前实现与未实现
-
-已实现：
-
-- 处置方案生成和明确目标检查；
-- 风险等级和审批门禁；
-- 固定样例、JSONL 样例的有状态 Mock 执行；
-- 处置执行后的独立状态查询；
-- 验证服务对 `effective`、`ineffective`、`unknown` 三类结果的分支处理；
-- 重复审批幂等；
-- 执行失败、验证未知和人工接管状态。
-
-当前内置处置 Mock 的标准路径会产生 `executed` 或 `not_found` 查询结果；`ineffective` 分支已在验证服务中定义，但尚未提供标准 Mock 接口注入 `action_status=failed` 的测试入口。
-
-尚未实现：
-
-- 真实平台处置工具接入；
-- Mock 状态持久化；
-- 实际超时控制和自动重试；
-- 处置回滚；
-- 多动作处置和部分成功组合；
-- 最终统一的风险评分、审批和验证规则。
-
+当前真实高风险处置工具尚未接入。因而本模块可以证明“Mock 执行链按安全门槛运行”，不能宣称真实平台处置、设备生效或生产级独立验证已经完成。
