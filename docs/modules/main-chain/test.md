@@ -157,6 +157,8 @@ human_review.status=pending
 
 这里的`guarded_wins=0/off_wins=0/ties=10`表示“接口尚未载入逐案胜负”，不是人工复核认为两组效果相同。项目组人工质量评分草案为GUARDED优胜3案、OFF优胜1案、同分6案；平均分仅相差0.1/8，因此不宣称通用准确率或显著提升。详见`../scenario-knowledge/OFF-GUARDED人工评分表-2026-09-14.md`。
 
+2026-09-14晚间case6正式环境局部复验：OFF与GUARDED两次命令均正常退出，两份报告均未调用`knowledge_query`。GUARDED得到`out_of_scope`并成功约束`conclusion`、`attack_chain`和`disposal_suggestions`，不再新增WebShell攻击事实或场景专属处置建议；OFF因`gate_decision=None`未触发域外报告清洗，仍包含未经证据验证的WebShell/后门理论攻击链及对应排查建议。项目决定以GUARDED作为正式默认模式并停止继续修改代码；OFF行为登记为已知限制，不把本次结果表述为“两组全部通过”，也不据此把人工评分草案改成`3/0/7`。原始报告含真实平台响应，只在受控目录保存，未进入仓库。
+
 历史服务器Docker启动与actual接口验收（修复前分支，仅证明部署路径，不作为最终接口口径）：
 
 ```text

@@ -82,6 +82,26 @@ case6代码级修复已通过PR #59合入`main`（修复分支提交`6830ce5`，
 
 2026-09-14 本地专项回归：`tests/test_out_of_scope_report_constraint.py`、`tests/test_response_boundaries.py`、`tests/test_deep_agent_bridge.py`共`47 passed`。本机未配置`LLM_BASE_URL`、`LLM_API_KEY`和MCP本地配置，无法把代码回放冒充真实模型/MCP重跑；以上“回放”结论仅证明当前主链会拦截旧报告中已知的case6越界模式。
 
+### 4.1 2026-09-14 晚间正式环境复验结果
+
+杨景凡回传了基于候选提交`60c38db`运行的case6 OFF/GUARDED报告及命令截图。两次命令均正常退出；原始JSON含真实平台响应，只在受控目录保存，不进入公开仓库。JSON本身未携带运行Commit和`gate_decision`字段，因此Commit与门禁结果分别以回传截图和实际输出记录为准。
+
+| 复验项 | OFF | GUARDED | 收口判断 |
+|---|---|---|---|
+| `knowledge_query` | 0次 | 0次 | 通过；两组均未调用WebShell知识工具 |
+| 门禁结果 | `gate_decision=None` | `out_of_scope` | GUARDED门禁通过；OFF按当前设计不执行门禁 |
+| `conclusion` | 明确证据不足、无法确认攻击发生 | 域外中性结论 | 两组均未把攻击写成已确认事实 |
+| `attack_chain` | 仍含未经验证的植入、持久化、WebShell/后门推演 | 不作确定性推断，无WebShell植入/持久化措辞 | GUARDED通过；OFF存在已知报告边界限制 |
+| `disposal_suggestions` | 仍含WebShell/后门文件排查 | 无WebShell场景专属处置建议 | GUARDED通过；OFF存在已知报告边界限制 |
+| 人工接管 | `true` | `true` | 符合高风险且证据不足的保守处理 |
+
+复验文件指纹：
+
+- OFF `report_case6_off_20260914_204426_089029.json`：SHA-256 `018F5A9F4A6754B549481C68D945E60392982AE23899B20A7A060CB5736CE139`；
+- GUARDED `report_case6_guarded_20260914_204524_370772.json`：SHA-256 `4558D8E69E092E57393632497E613040BEC2E3FD18EDF99694D1B1BD62AEF9CE`。
+
+最终收口决定：GUARDED的case6域外报告约束复验通过；OFF不执行场景门禁与域外清洗，作为已知限制保留，本轮不再修改代码。正式运行默认使用GUARDED。由于两组没有同时满足同一报告边界，本表继续保留旧结果包的`3案GUARDED优胜、1案OFF优胜、6案同分`评分，不提前改成`3/0/7`。
+
 ## 5. 项目负责人确认
 
 - 复核人：___钱诺成_____________
