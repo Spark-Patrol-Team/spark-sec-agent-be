@@ -12,9 +12,12 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sec_agent.deep_agent.models import SecurityEventInput
+
+if TYPE_CHECKING:
+    from sec_agent.domain.models import SecurityEvent, TriageResult
 
 
 class SignalStrength(str, Enum):
@@ -198,6 +201,41 @@ NEGATION_MARKERS: tuple[str, ...] = (
     "excluded",
     "ruled out",
 )
+
+
+def build_gatekeeper_input(
+    event: "SecurityEvent",
+    triage: "TriageResult",
+    *,
+    trace_id: str = "",
+    run_id: str = "",
+) -> SecurityEventInput:
+    """把主链领域事件映射到正式门禁输入，供各阶段共享同一份信号语义。"""
+
+    def first_entity(name: str) -> str:
+        values = event.entities.get(name, [])
+        return str(values[0]) if values else ""
+
+    def described_refs(refs: list[str], summaries: dict[str, str]) -> list[str]:
+        return [f"{ref}: {summaries[ref]}" if summaries.get(ref) else ref for ref in refs]
+
+    return SecurityEventInput.from_dict(
+        {
+            "event_id": event.event_id,
+            "event_type": event.event_type,
+            "severity": triage.priority.value.upper(),
+            "timestamp": event.first_seen_at.isoformat(),
+            "source_ip": first_entity("src_ips"),
+            "target_ip": first_entity("dst_ips") or first_entity("assets"),
+            "alerts": described_refs(event.alert_refs, event.alert_summaries),
+            "evidence": described_refs(triage.supporting_evidence_refs, event.evidence_summaries),
+            "initial_verdict": triage.verdict.value,
+            "confidence": triage.confidence,
+            "triage": triage.model_dump(mode="json"),
+            "trace_id": trace_id,
+            "run_id": run_id,
+        }
+    )
 
 
 def _contains_affirmed_keyword(text: str, keywords: tuple[str, ...]) -> bool:
