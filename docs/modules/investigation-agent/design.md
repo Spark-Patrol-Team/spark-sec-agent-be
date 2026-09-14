@@ -119,6 +119,7 @@
 - 输入校验：`SecurityEventInput.from_dict` 过滤未知字段；LLM 返回严格 JSON 解析，失败走 `_fallback_report`，不编造证据。
 - 敏感信息处理：LLM API Key / 真实 MCP URL 只从环境变量或 gitignore 的本地文件（`llm_config.local.json` / `mcp_servers.local.json`）读取，不入代码、不入文档、不入样例。
 - 失败、超时与人工接管：LLM 超时/异常 → bridge 依后端回退内部子链或置不可用报告；证据不足 → 人工接管标记。
+- 域外报告边界：`out_of_scope`时追加提示词约束，并在正常LLM与fallback出口统一调用`sanitize_out_of_scope_report`；攻击链不得写植入/持久化/后门/最终载荷，处置建议不得套用WebShell专属动作。代码清洗是最终保证，提示词不是验收依据。
 - 真实执行与 Mock 边界：见「实现层次区分」与 `development.md` 第 7 节边界表；LLM 调用、MCP 查询均为真实执行（本轮已实测），Mock 仅作为工具数据兜底。
 
 ## 7. 关键设计决策
@@ -164,6 +165,7 @@
 | 2026-08-27 | 本次（打包修复） | 知识包迁入 `sec_agent.deep_agent` 包内并声明 `[tool.setuptools.package-data]`，`knowledge.py` 改用 `importlib.resources` 读取（`pip install` 后仍可用）；`-o` 报告时间戳改微秒级 + 存在检测唯一序号 | 是（打包回归测试新增） |
 | 2026-08-26 | 本次（方案 C 提交） | 步数上限 `max_tool_calls` 8→12（可 `AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限注入收尾提醒；降级报告曾提炼已采证据与知识包引用（历史行为，2026-09-13已废止知识引用进入事件证据） | 是（47 passed / 1 skipped） |
 | 2026-09-14 | PR54+PR55本地集成候选 | `source_citations`独立记录为`tool_call_records[].knowledge_citations`；正常LLM与降级路径均确定性重建事件证据；增加知识工具三态代码载体；项目负责人裁决正式冻结v1.1 | 本地全量350 passed / 1 skipped；未推送；真实平台验收仍待完成 |
+| 2026-09-14 | PR53收口候选 | 基于PR58合并后main增加`out_of_scope`报告确定性清洗；扩展中英文越界词，覆盖正常LLM与fallback，并与证据隔离组合验证 | 定向45 passed / 1 skipped；全量358 passed / 1 skipped；不替代真实平台报告复验 |
 
 ---
 

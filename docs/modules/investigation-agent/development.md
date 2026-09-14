@@ -128,6 +128,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 
 - 输入错误：`SecurityEventInput.from_dict` 过滤未知字段；LLM 返回非 JSON → `_extract_json` 兜底 / `_fallback_report`；LLM即使返回知识URL或摘要作为事件证据，也会被确定性证据派生结果覆盖。
 - 依赖或工具失败：`ToolRegistry.call` 捕获异常 → `failed`；MCP 连接失败 → 跳过该服务并 `[warn]`，不影响 Mock + 知识包。
+- 域外输出：CLI与bridge把同一`gate_decision`传入Agent；`out_of_scope`在正常解析和fallback出口均执行`sanitize_out_of_scope_report`。词表覆盖植入、持久化、后门、木马、最终载荷及常见英文变体；专属建议被过滤后无剩余项时补中性人工转交建议。
 - 重复调用与幂等：`_fallback_report` / 工具记录确定性；主链幂等由 `Orchestrator` 的 `idempotency_key` 管理（本模块不涉及）。
 - 超时、重试与回滚：LLM `timeout`（默认 90s）；工具调用硬上限 `max_tool_calls=12`（可环境变量 `AGENT_MAX_TOOL_CALLS` 覆盖，防死循环；接近上限时 agent 注入收尾提醒促使 LLM 输出报告，超限仍无报告则降级报告提炼已采事件证据；知识引用只留在工具记录中）；MCP `timeout=20s`；无自动重试（如实记录）。
 - 权限、审批与敏感数据：调查只读；处置建议不自动执行；LLM key / MCP 地址不入库、不入文档；`report*.json` 不入库（CLI `-o` 生成在用户目录）。
@@ -170,6 +171,7 @@ $env:INVESTIGATION_BACKEND="auto"; $env:PYTHONPATH="src"; python -m uvicorn sec_
 | 2026-08-26 | 本次 T0826-03 提交 | 新增 `knowledge_query` 知识包检索工具 + 知识包入库 | `tests/test_knowledge_tool.py`（19 用例） |
 | 2026-08-26 | 本次（方案 C 提交） | `max_tool_calls` 8→12（`AGENT_MAX_TOOL_CALLS` 覆盖）；接近上限收尾提醒；`_fallback_report` 曾提炼已采证据与知识包引用（历史行为，2026-09-13已废止知识引用进入事件证据） | `test_investigation_agent.py` 新增 5 用例（合计 47 passed / 1 skipped） |
 | 2026-09-14 | PR54+PR55本地集成候选 | 知识来源仅存`tool_call_records[].knowledge_citations`；正常LLM与降级报告均确定性隔离；CLI/bridge共用知识工具可用性三态解析器 | 定向156 passed / 1 skipped；纳入PR55最新4条字段面测试后全量350 passed / 1 skipped |
+| 2026-09-14 | PR53收口候选 | 从PR58合并后main重做域外报告边界：提示词+统一确定性清洗，补中英文词表、fallback路径和恶意LLM/证据隔离组合测试 | 定向45 passed / 1 skipped；全量358 passed / 1 skipped |
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一：`knowledge_query` 改读沈洪旭权威版 `src/sec_agent/deep_agent/knowledge/webshell-knowledge.md`，删除本地副本 `webshell_min.md`；MCP 空结果识别：dbproxy `{"code":0,"data":[]}` → `partial`（查询成功但无数据） | `test_mcp_client.py` 新增（11 用例）；`test_knowledge_tool.py` 全通过 |
 | 2026-08-27 | 本次（打包修复） | 知识包迁入 `sec_agent.deep_agent` 包内 + `[tool.setuptools.package-data]` 随 wheel/sdist 分发，`knowledge.py` 改用 `importlib.resources` 读取；`-o` 时间戳改微秒级 + 存在检测唯一序号 | `test_packaging.py` 新增（4 用例）；`test_investigation_agent.py` 时间戳用例更新 |
 | 2026-09-04 | PR #31收口 | 非dbproxy空文本改为`partial`；`isError=true`、`{"error":...}`、输入校验/字段排除/HTTP 4xx或5xx前缀改为`failed`，避免错误文本作为成功证据 | `test_mcp_client.py` 18例 |

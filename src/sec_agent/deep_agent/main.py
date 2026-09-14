@@ -133,7 +133,7 @@ def main(argv=None) -> int:
         return 1
 
     agent = DeepInvestigationAgent(config, llm, tools)
-    report = agent.investigate(event)
+    report = agent.investigate(event, gate_decision=gate_decision)
     output = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
 
     if args.output:
