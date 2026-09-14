@@ -88,18 +88,18 @@
 - `source_device_name` 可非 `"XDR"`（`devSourceName[]` 优先，可回退回退至 `"XDR"`）；真实列表可混入 STA 来源告警。
 - 单条真实事件（`evt-9b6df22d-…`）结论为 `malicious / 0.85 / 80 / high / 应调查`，仅为一次研判观察，不构成统计校准或阈值优化。
 
-## 本轮字段与规则核对（2026-09-13）
+## 本轮字段与规则核对（2026-09-14主线复核）
 
-基线：`origin/main@0001bbd`（`triage.py` 自 2026-08-23 未改动，主链调用点 `orchestrator.py` 自 2026-09-05 未改动）。核对方式：直连 `RiskTriageService` + 主链 `Orchestrator` 实跑 `tests/fixtures/fixed_alerts/` 固定样例，`investigation_backend=tool_mock`。
+基线：`origin/main@787e737`（已包含PR #50/#51/#58/#59/#60）。`triage.py`仍为2026-08-23的确定性评分实现，但`orchestrator.py`和处置边界已在PR #60更新，因此必须分别核对“研判输出”和“主链最终状态”。核对方式：直连`RiskTriageService`，并使用`investigation_backend=tool_mock`实跑固定样例与`tests/fixtures/fixed_alerts/`的normalized/raw JSONL样例。
 
-`TriageResult` 九个字段逐项核对（全部正常填充）：
+`TriageResult`关键结构字段逐项核对；`response_evidence_scope`由调查后的处置边界回填，不能从`verdict`、`risk_score`或`priority`直接推导：
 
-| 样例 | verdict | confidence | risk_score | priority | supporting | opposing | gaps | should_investigate |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| fixed_sample `webshell-001`（2 条 high WebShell） | malicious | 0.85 | 85 | high | 2 | 0 | 0 | True |
-| JSONL `FIX-STA-SQLI-001`（high/seed 80） | malicious | 0.85 | 80 | high | 7 | 0 | 0 | True |
-| JSONL `FIX-XDR-WEBSHELL-001`（critical/seed 95） | malicious | 0.85 | 95 | high | 7 | 0 | 0 | True |
-| JSONL `FIX-STA-LATERAL-001`（medium/seed 65） | uncertain | 0.65 | 65 | medium | 7 | 0 | 1 | True |
+| 样例 | verdict | confidence | risk_score | priority | supporting | opposing | gaps | should_investigate | response_evidence_scope |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fixed_sample `webshell-001`（2条high WebShell且有上传/命令执行组合证据） | malicious | 0.85 | 85 | high | 2 | 0 | 0 | True | in_scope |
+| JSONL `FIX-STA-SQLI-001`（high/seed 80，非WebShell类型） | malicious | 0.85 | 80 | high | 7 | 0 | 0 | True | out_of_scope |
+| JSONL `FIX-XDR-WEBSHELL-001`（critical/seed 95，仅名称/类型线索） | malicious | 0.85 | 95 | high | 7 | 0 | 0 | True | weak_signal |
+| JSONL `FIX-STA-LATERAL-001`（medium/seed 65，非WebShell类型） | uncertain | 0.65 | 65 | medium | 7 | 0 | 1 | True | out_of_scope |
 
 `normalized` 与 `raw` 两种 JSONL 输入模式逐字段完全一致；与 2026-08-26 记录的同批样例数值一致（85 / 80 / 95 / 65），未观察到字段漂移。
 
@@ -115,7 +115,7 @@
 
 结论：输出字段语义与本文档一致，无新增、无缺失字段，阈值含等号语义（`>=70` high、`>=40` medium）保持不变；`opposing_evidence_refs` 恒空与 `confidence` 固定档位属「当前固定规则限制」，不是回归。
 
-## 研判到调查的交接契约（2026-09-13 复核）
+## 研判到调查的交接契约（2026-09-14复核）
 
 主链在 `TRIAGED` 之后按 `should_investigate` 分流：
 
@@ -132,5 +132,7 @@
 | `confidence` | `triage.confidence` |
 | `triage` | `TriageResult.model_dump(mode="json")` 全量透传 |
 
-`tool_mock` 调查后端同样消费 `verdict`、`confidence`（+0.12，上限 0.9）、`supporting_evidence_refs`、`evidence_gaps`。因此改 `TriageResult` 字段名或语义前，必须先同步三处消费点：`services/orchestrator.py`、`services/deep_agent_bridge.py`、`services/investigation.py`。
+`tool_mock`调查后端同样消费`verdict`、`confidence`（+0.12，上限0.9）、`supporting_evidence_refs`、`evidence_gaps`。因此改`TriageResult`字段名或语义前，必须先同步三处消费点：`services/orchestrator.py`、`services/deep_agent_bridge.py`、`services/investigation.py`。
+
+进入调查不等于允许处置。调查完成后，`ResponseDecisionService`会根据事件语义、门禁三档和确认级证据回填`response_evidence_scope`：只有`in_scope`且具备确认级证据的案例才可能进入`APPROVAL_REQUIRED`；`weak_signal`和`out_of_scope`均转`HUMAN_REQUIRED`。因此不得把研判阶段的`malicious/high`直接写成WebShell确认结论或自动处置依据。
 

@@ -67,7 +67,7 @@ PYTHONPATH=src python -m pytest tests/test_triage.py -q   # 20 passed
 PYTHONPATH=src python -m pytest -q -rs                    # 162 passed, 1 skipped
 ```
 
-跳过项为 `tests/test_investigation_agent.py:232`（未配置 `LLM_API_KEY` 的深度调查可选用例），与研判无关。说明：陈敏字段映射分支自报 `175 passed, 1 skipped`（含 58 项逐字段核对 + 25 条端到端契约测试），与研判干净分支基线口径不同，不冲突。
+历史跳过项为当时`tests/test_investigation_agent.py:232`的深度调查可选用例（未配置`LLM_API_KEY`），与研判无关；该行号只适用于当时基线。说明：陈敏字段映射分支自报`175 passed, 1 skipped`（含58项逐字段核对和25条端到端契约测试），与研判干净分支基线口径不同，不冲突。当前主线结果见下方“本轮回归结果（2026-09-14）”。
 
 真实观测边界（与字段契约对齐后确认）：
 
@@ -90,32 +90,30 @@ PYTHONPATH=src python -m pytest tests/test_triage.py tests/test_state_flow.py -v
 PYTHONPATH=src python -m sec_agent.scripts.run_flow
 ```
 
-## 本轮回归结果（2026-09-13，main@0001bbd）
+## 本轮回归结果（2026-09-14，main@787e737）
 
-核对分支 `docs/risk-triage-field-rule-mainchain-sync`（从最新 main 干净重建），`investigation_backend=tool_mock`。
+核对分支已合入`origin/main@787e737`，`investigation_backend=tool_mock`。该基线包含PR #50/#51/#58/#59/#60。
 
 命令与计数：
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_triage.py -q                            # 20 passed
-PYTHONPATH=src python -m pytest tests/test_state_flow.py tests/test_run_flow.py -q  # 9 passed
-PYTHONPATH=src python -m pytest -q -rs                                              # 309 passed, 1 skipped
-PYTHONPATH=src python -m sec_agent.scripts.run_flow                                  # 主流程跑到 COMPLETED
+PYTHONPATH=src python -m pytest tests/test_triage.py tests/test_state_flow.py tests/test_run_flow.py tests/test_gatekeeper_boundary.py tests/test_response_boundaries.py -q  # 78 passed
+PYTHONPATH=src python -m pytest -q -rs                                                                                                                   # 383 passed, 1 skipped, 1 warning
 ```
 
-跳过项：`tests/test_investigation_agent.py:232`（未配置 `LLM_API_KEY` 的深度调查可选用例），与研判无关。
+跳过项：`tests/test_investigation_agent.py:403`（未配置`LLM_API_KEY`的深度调查可选用例），与研判无关。1条warning来自Starlette TestClient依赖的弃用提示。
 
 字段核对（直连 `RiskTriageService` + 主链 `Orchestrator` 实跑）：
 
-| 样例 | 输入模式 | verdict | confidence | risk_score | priority | should_investigate | support | oppose | gaps | 主链终点 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `webshell-001` | fixed_sample | malicious | 0.85 | 85 | high | True | 2 | 0 | 0 | APPROVAL_REQUIRED |
-| `FIX-STA-SQLI-001` | normalized | malicious | 0.85 | 80 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
-| `FIX-XDR-WEBSHELL-001` | normalized | malicious | 0.85 | 95 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
-| `FIX-STA-LATERAL-001` | normalized | uncertain | 0.65 | 65 | medium | True | 7 | 0 | 1 | HUMAN_REQUIRED |
-| `FIX-STA-SQLI-001` | raw | malicious | 0.85 | 80 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
-| `FIX-XDR-WEBSHELL-001` | raw | malicious | 0.85 | 95 | high | True | 7 | 0 | 0 | APPROVAL_REQUIRED |
-| `FIX-STA-LATERAL-001` | raw | uncertain | 0.65 | 65 | medium | True | 7 | 0 | 1 | HUMAN_REQUIRED |
+| 样例 | 输入模式 | verdict | confidence | risk_score | priority | should_investigate | support | oppose | gaps | response_evidence_scope | 主链终点 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `webshell-001` | fixed_sample | malicious | 0.85 | 85 | high | True | 2 | 0 | 0 | in_scope | APPROVAL_REQUIRED |
+| `FIX-STA-SQLI-001` | normalized | malicious | 0.85 | 80 | high | True | 7 | 0 | 0 | out_of_scope | HUMAN_REQUIRED |
+| `FIX-XDR-WEBSHELL-001` | normalized | malicious | 0.85 | 95 | high | True | 7 | 0 | 0 | weak_signal | HUMAN_REQUIRED |
+| `FIX-STA-LATERAL-001` | normalized | uncertain | 0.65 | 65 | medium | True | 7 | 0 | 1 | out_of_scope | HUMAN_REQUIRED |
+| `FIX-STA-SQLI-001` | raw | malicious | 0.85 | 80 | high | True | 7 | 0 | 0 | out_of_scope | HUMAN_REQUIRED |
+| `FIX-XDR-WEBSHELL-001` | raw | malicious | 0.85 | 95 | high | True | 7 | 0 | 0 | weak_signal | HUMAN_REQUIRED |
+| `FIX-STA-LATERAL-001` | raw | uncertain | 0.65 | 65 | medium | True | 7 | 0 | 1 | out_of_scope | HUMAN_REQUIRED |
 
 规则边界探针（`RiskTriageService` 直连）：
 
@@ -129,10 +127,10 @@ PYTHONPATH=src python -m sec_agent.scripts.run_flow                             
 
 主链接入回归：
 
-- 高风险与弱信号样例均实际进入调查且 `ctx.investigation` 非空：`RECEIVED → CORRELATING → TRIAGED → INVESTIGATING → DECISION_READY → APPROVAL_REQUIRED`（弱信号样例为 `… → INVESTIGATING → HUMAN_REQUIRED`）。
+- `should_investigate=True`只表示进入调查，不表示已确认WebShell或允许处置。固定WebShell组合证据样例最终为`in_scope → APPROVAL_REQUIRED`；名称/类型线索不足的WebShell样例为`weak_signal → HUMAN_REQUIRED`；SQL注入和横向移动样例为`out_of_scope → HUMAN_REQUIRED`。
 - 低风险路径（`low` + `other`，`risk_score=10`）实测 `RECEIVED → CORRELATING → TRIAGED → COMPLETED`，`ctx.investigation` 为空，未进入调查阶段。
-- `run_flow.py` 演示主流程：`RECEIVED → CORRELATING → TRIAGED → INVESTIGATING → DECISION_READY → APPROVAL_REQUIRED →（审批）→ EXECUTING → VERIFYING → COMPLETED`。
+- 固定样例的主流程仍可形成`RECEIVED → CORRELATING → TRIAGED → INVESTIGATING → DECISION_READY → APPROVAL_REQUIRED`；审批后的执行/验证属于Stateful Mock流程，不代表真实设备效果。
 - 调查侧消费的研判字段映射见 `design.md`「研判到调查的交接契约」；本轮未改动该映射，也未改动 `TriageResult`。
 
-结论：本轮未观察到字段或规则回归；`opposing_evidence_refs` 恒空、`confidence` 为按结论固定档位属已知限制（见 `design.md`「当前固定规则限制」），不作为回归判定依据。
+结论：本轮未观察到研判字段或评分规则回归；PR #58/#59/#60后的门禁和处置边界已正确阻止“高风险但非WebShell”及“仅名称/类型线索”直接进入审批。`opposing_evidence_refs`恒空、`confidence`为按结论固定档位仍属已知限制（见`design.md`“当前固定规则限制”）。
 

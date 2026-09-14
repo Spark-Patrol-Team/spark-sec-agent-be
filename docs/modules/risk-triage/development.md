@@ -42,26 +42,24 @@ ctx = self._move(ctx, BusinessStatus.INVESTIGATING, "进入深度调查")
 - 不直接执行处置，不直接修改业务状态。
 - 修改阈值/权重时同步更新 `design.md` 与 `test.md`，并跑通 `tests/test_triage.py`。
 
-## 本轮核对与回归（2026-09-13）
+## 本轮核对与回归（2026-09-14主线复核）
 
-基线 `origin/main@0001bbd`，核对分支 `docs/risk-triage-field-rule-mainchain-sync`（从最新 main 干净重建）。
+基线`origin/main@787e737`，核对分支已合入该主线；该基线包含PR #50/#51/#58/#59/#60。
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_triage.py -q                            # 20 passed
-PYTHONPATH=src python -m pytest tests/test_state_flow.py tests/test_run_flow.py -q  # 9 passed
-PYTHONPATH=src python -m pytest -q -rs                                              # 309 passed, 1 skipped
-PYTHONPATH=src python -m sec_agent.scripts.run_flow                                  # 主流程跑到 COMPLETED
+PYTHONPATH=src python -m pytest tests/test_triage.py tests/test_state_flow.py tests/test_run_flow.py tests/test_gatekeeper_boundary.py tests/test_response_boundaries.py -q  # 78 passed
+PYTHONPATH=src python -m pytest -q -rs                                                                                                                   # 383 passed, 1 skipped, 1 warning
 ```
 
-- 跳过项为 `tests/test_investigation_agent.py:232`（未配置 `LLM_API_KEY` 的深度调查可选用例），与研判无关。
-- 逐字段值与边界探针结果见 `test.md`「本轮回归结果（2026-09-13）」与 `design.md`「本轮字段与规则核对（2026-09-13）」。
+- 跳过项为`tests/test_investigation_agent.py:403`（未配置`LLM_API_KEY`的深度调查可选用例），与研判无关；1条warning来自Starlette TestClient依赖的弃用提示。
+- 逐字段值、边界探针和最终状态见`test.md`“本轮回归结果（2026-09-14）”与`design.md`“本轮字段与规则核对（2026-09-14主线复核）”。
 
 近期合并影响评估：
 
-- `triage.py` 最后改动为 2026-08-23（`3c4cd6f`），主链调用点 `orchestrator.py` 最后改动为 2026-09-05。
-- 2026-09-06 之后 main 上的合并（调查桥接装配、深度调查后端切换、知识门禁 PR#50 fail-open 修复、case3 输入来源对齐）均未触及研判评分逻辑，也未改动「研判→调查」交接字段；门禁信号在调查主链的透传修复属于调查侧改动。
+- `triage.py`最后改动仍为2026-08-23（`3c4cd6f`），研判评分值本轮未改变。
+- PR #58/#59/#60更新了事件合同、知识门禁、域外报告约束和处置边界；`orchestrator.py`及`response.py`已在PR #60调整。它们没有修改研判分数，但会改变调查后的`response_evidence_scope`和主链终态。
 - 同一批固定样例字段值与本文件 2026-08-26 记录完全一致（85 / 80 / 95 / 65），`normalized` / `raw` 两种输入模式一致，未观察到字段或规则回归。
-- `tool_mock` 后端下横向移动样例终点为 `HUMAN_REQUIRED`（调查侧判定证据不足需人工接管），属下游行为，不是研判回归。
+- `tool_mock`后端实跑结果为：确认级固定WebShell样例进入`APPROVAL_REQUIRED`；仅有名称/类型线索的WebShell样例为`weak_signal → HUMAN_REQUIRED`；SQL注入和横向移动样例为`out_of_scope → HUMAN_REQUIRED`。这些是下游门禁/处置边界，不是研判评分回归。
 
 ## 待补充
 
