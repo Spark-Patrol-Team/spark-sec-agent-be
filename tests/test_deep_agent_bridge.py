@@ -37,7 +37,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertEqual(report.final_confidence, 0.91)
         self.assertEqual(report.recommended_actions, ["隔离目标主机", "保留取证副本"])
         self.assertEqual(report.affected_objects, ["198.51.100.11"])
-        self.assertEqual(report.evidence_sources, ["来源工具: query_asset", "知识包引用: K-WEBSHELL-PRINCIPLE"])
+        self.assertEqual(report.evidence_sources, ["来源工具: query_asset", "知识包引用: WSK-001"])
         self.assertIn("WebShell 上传后命令执行", report.evidence_relations)
         self.assertEqual(report.steps[0].goal, "查询资产和关联告警")
 
@@ -163,7 +163,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
                         }
                     ],
                     "tool_call_records": [{"tool": "query_asset", "status": "success"}],
-                    "evidence_source": ["来源工具: query_asset", "知识包引用: K-WEBSHELL-PRINCIPLE"],
+                    "evidence_source": ["来源工具: query_asset", "知识包引用: WSK-001"],
                     "attack_chain": "WebShell 上传后命令执行",
                     "disposal_suggestions": ["隔离目标主机", "保留取证副本"],
                     "need_manual_takeover": False,

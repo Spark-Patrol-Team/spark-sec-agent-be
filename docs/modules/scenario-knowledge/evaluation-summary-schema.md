@@ -81,12 +81,12 @@
 
 | 知识 ID | 对应条目 |
 |---|---|
-| `K-WEBSHELL-PRINCIPLE` | 攻击原理 |
-| `K-WEBSHELL-FEATURES` | 攻击特征速查表 |
-| `K-WEBSHELL-TOOLS-TRAFFIC` | 主流管理工具与流量特征 |
-| `K-WEBSHELL-EVIDENCE-CHECKLIST` | 证据检查清单 |
-| `K-WEBSHELL-RESPONSE-TEMPLATE` | 处置建议模板 |
-| `K-WEBSHELL-MANUAL-TAKEOVER` | 停止条件与人工接管规则 |
+| `WSK-001` | 攻击原理 |
+| `WSK-001` | 攻击特征速查表 |
+| `WSK-001` | 主流管理工具与流量特征 |
+| `WSK-010` | 证据检查清单 |
+| `WSK-015` | 处置建议模板 |
+| `WSK-015` | 停止条件与人工接管规则 |
 
 ## 6. 最小 fixture 覆盖
 
@@ -167,10 +167,10 @@ knowledge_refs        知识引用
 读取正式 OFF/GUARDED 结果包：
 
 ```text
-EVAL_COMPARISON_FIXTURE_PATH=/path/to/formal_comparison.json \
+EVAL_COMPARISON_FIXTURE_PATH=/path/to/T0905-07-杨景凡-OFF-GUARDED-AB结果包 \
   uv run uvicorn sec_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-正式结果包必须至少包含 6 条 `results`。如果正式包缺少 `evidence_breakdown`，接口会按 `evidence_refs` 前缀自动拆分：`knowledge:` / `K-` 归入知识引用，`tool:` / `tool_result:` / `mcp:` 归入工具查询结果，其余归入事件证据。
+正式结果包必须至少包含 6 案。接口支持直接读取结果包目录、`_summary.json` 或已整理 JSON；目录模式下会把杨景凡 20 行 OFF/GUARDED 运行汇总合并为 10 案对比结果，并返回 `data_source=actual`。
 
-当前接口已具备正式包读取链路，但本地尚未持有杨景凡最终正式 A/B 结果包；收到正式包后可直接用同一路径复验。
+`evidence_breakdown` 是权威分层字段：`event_evidence_refs` 表示事件证据，`tool_result_refs` 表示工具查询结果，`knowledge_refs` 表示知识引用。`evidence_refs` 仅作为兼容字段保留，不再作为三类证据的合并来源。知识 ID 统一使用正式 `WSK-*` 口径。

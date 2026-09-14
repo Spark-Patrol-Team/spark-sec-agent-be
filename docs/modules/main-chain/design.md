@@ -6,14 +6,14 @@
 |---|---|
 | 模块 | 主链 |
 | 负责人 | 李雨妍 |
-| 文档状态 | 已补充真实 XDR 告警接入与 Bridge 装配实现 |
-| 实现状态 | 主链已实现；真实 XDR 告警拉取已完成一次实机验证；Bridge 到主链的显式装配已落地；真实 MCP 调查和真实处置未闭环 |
+| 文档状态 | 已补充真实 XDR 告警接入、Bridge 装配实现和 actual 评测对比接入 |
+| 实现状态 | 主链已实现；真实 XDR 告警拉取已完成一次实机验证；Bridge 到主链的显式装配已落地；`/eval/comparisons` 可读取正式结果包输出 `data_source=actual`；真实高风险处置未闭环 |
 | 能力性质 | 自研代码；平台接入包含 fixed_sample / jsonl_sample / xdr_openapi；处置执行和验证仍包含 Mock 能力 |
 | 关联任务/需求 | 搭建最小主流程空壳、状态流转、模块接入主链、后端主链技术集成 |
 | 关联正式交付章节 | docs/deliverables/system-development-and-operation-guide.md；docs/deliverables/安全智能体系统设计说明书V2.md |
-| 对应PR或Commit | 当前工作区；建议提交名 `fix: align XDR OpenAPI auth and alert ingestion` |
-| 最后更新时间 | 2026-09-06 |
-| 最后复验时间 | 2026-08-30 |
+| 对应PR或Commit | `feature/mainline-eval-summary-contract` / 后端基线 `6bc1983`；当前工作区继续补齐 actual 结果包接入 |
+| 最后更新时间 | 2026-09-14 |
+| 最后复验时间 | 2026-09-14 |
 
 ## 1. 目标与非目标
 
@@ -25,6 +25,7 @@
 - 通过 `ToolRequest` / `ToolResult` 统一工具调用契约，使 fixed/jsonl 平台适配器和 MVP Mock 工具可以被主链调度。
 - 对外提供 HTTP 接口，支持启动主流程、查询事件、查询时间线、提交审批和查看基础指标。
 - 完成 Bridge 与主链真实接入的显式装配，为后续真实 Agent 接入提供稳定边界。
+- 为前端评测对比页面提供 `GET /eval/comparisons`，支持 mock 展示和杨景凡 OFF/GUARDED A/B 结果包 actual 汇总。
 
 ### 1.2 非目标
 
@@ -33,7 +34,7 @@
 - 本阶段不实现真实高风险处置动作，执行阶段当前使用 `stateful_response_mock` 类型能力。
 - 本阶段不实现长流程异步队列、断点续跑和分布式任务调度。
 - 本阶段不保证 deep agent 在未配置 LLM 和真实 MCP 工具服务时真实闭环运行。
-- 本阶段只落地 Bridge 显式装配，不新增 FastGPT / 远程 Agent 的代码实现。
+- 本阶段只落地 Bridge 显式装配，不新增 FastGPT / 远程 Agent 的代码实现；当前仓库和 PR 内未提供冻结的 FastGPT / 远程 Agent 直连接口合同，因此不作为主链必要接入项。
 
 ## 2. 职责与边界
 
@@ -166,6 +167,7 @@ Bridge 设计边界：
 | 下游 | 深度调查 | `src/sec_agent/services/investigation.py`；`src/sec_agent/services/deep_agent_bridge.py` | 已对齐 |
 | 下游 | 处置闭环 | `src/sec_agent/services/response.py` | 已对齐 |
 | 下游 | 事件仓储 | `src/sec_agent/repositories/base.py`；`memory.py`；`mysql.py` | 已对齐 |
+| 下游 | 评测对比 | `src/sec_agent/api/routes/evals.py`；`EvalComparisonResponse` | 已对齐，支持 `mock_fixture` 与 `actual` |
 | 下游 | OpenAPI 文档 | `docs/swagger/openapi.json` | 已对齐 |
 
 ## 6. 安全边界
@@ -188,6 +190,9 @@ Bridge 设计边界：
 | 使用 `ToolRequest` / `ToolResult` 统一工具契约 | 便于 fixed/jsonl、Mock 工具和后续真实平台工具共用调度接口 | 未让不同工具返回任意 dict，避免下游解析混乱 |
 | Bridge 只输出主链 `InvestigationReport` | 让后续真实 Agent 接入不影响状态机、审批和处置决策 | 未让外部 Agent 直接返回任意 JSON 给 `Orchestrator`，避免主链耦合具体实现 |
 | `Orchestrator` 不直接调用真实 Agent | 主链只负责编排，Agent 细节放在 Bridge 层 | 未在主链硬编码 FastGPT、MCP 或某个 LLM Agent，避免后续替换成本过高 |
+| `/eval/comparisons` 使用 actual 结果包转换层 | 杨景凡结果包是 20 行单次运行汇总，前端需要 10 案 OFF/GUARDED 对比对象 | 未把完整 `report_*.json` 提交进仓库或原样透出，避免测试环境平台数据快照泄露 |
+| 知识 ID 输出统一为 `WSK-*` | 正式结果包使用 `WSK-010 / WSK-001 / WSK-015`，前端和评测汇总需要统一口径 | 未继续向前端展示历史 WebShell 知识 ID，旧 ID 仅作为历史输入兼容 |
+| 不直接合并 PR50 的 Bridge 变更 | 当前 PR50 未提供冻结的 FastGPT / 远程 Agent 直连接口合同，并会删除本候选 `/eval/comparisons` 路由；其 Bridge 差异会移除证据来源和人工接管原因映射 | 未用 PR50 独立绿色 CI 替代本候选统一回归，避免跨模块回归缺口 |
 | XDR 告警按列表分页拉取后本地匹配 | 目前只确认 `uuId` 是返回结果唯一标识，未证明上游支持按 `uuId` 请求过滤 | 未把 `uuId` 直接拼到上游请求体，避免依赖未确认接口行为 |
 | XDR 日志查询失败不阻断已命中告警审批 | 日志接口路径和权限尚未完成实机确认，但告警本身已包含足够字段进入主链 | 未将补充日志查询作为强依赖，避免真实告警接入被未确认日志接口阻塞 |
 | 保留 `memory` 和 `mysql` 两类仓储 | 本地开发可快速运行，后续可切 MySQL 持久化 | 未强制所有环境依赖 MySQL，降低本地调试门槛 |
@@ -200,18 +205,21 @@ Bridge 设计边界：
 | 稳定性与可重复性 | fixed_sample 和 jsonl_sample 应可重复产生稳定状态线；真实 XDR 依赖上游数据窗口和联动码有效期；审批幂等键避免重复执行 | `tests/test_state_flow.py`、`tests/test_jsonl_platform.py`、`tests/test_xdr_openapi_platform.py` |
 | 可观测性 | `EventContext.timeline` 记录状态变化；`errors` 记录失败阶段；`trace_id` 串联工具调用；`requested_source/effective_source/fallback_source` 区分请求来源、实际来源和降级来源 | 查询 `/events/{event_id}`、`/events/{event_id}/timeline` |
 | 审计与追踪 | `trace_id`、`run_id`、`event_id`、`idempotency_key`、`ToolRequest.call_id`、`ToolResult.raw_result_ref` 支持基本追踪 | API 响应、仓储记录、测试断言 |
+| 评测证据分层 | `event_evidence_refs`、`tool_result_refs`、`knowledge_refs` 分字段保存；`evidence_refs` 仅兼容旧前端 | 查询 `/eval/comparisons` |
 
 ## 9. 当前限制与后续事项
 
 | 限制或未实现项 | 对主链影响 | 后续条件/负责人 |
 |---|---|---|
 | 真实 XDR 告警列表已接入，但只完成单接口验收 | 可支持真实告警输入主链；仍不等于 XDR 全量 OpenAPI 闭环 | 继续补齐更多查询条件、错误码、字段样本和稳定性测试 |
-| Bridge 显式装配已落地，但后续 Agent 仍需按契约接入 | 不阻塞现有主链；影响后续真实 Agent 扩展效率 | 后续新增 Agent Bridge 时按 `InvestigationReport` 契约接入并补测试 |
+| Bridge 显式装配已落地；FastGPT / 远程 Agent 直连合同未冻结 | 不阻塞现有主链；影响后续新 Agent 扩展效率 | 后续新增 Agent Bridge 时按 `InvestigationReport` 契约接入并补测试 |
 | 真实深信服 MCP 工具未完成主链实机闭环 | 不阻塞真实告警输入；阻塞真实调查工具闭环 | 补齐 MCP 工具地址、鉴权、工具 schema 和集成测试 |
 | 真实高风险处置动作未接入 | 不阻塞主链演示；阻塞生产处置能力 | 接入真实处置 API，并明确审批、回滚和审计 |
 | 主链当前以同步方式执行 | 不阻塞本地和 CI；高并发或长任务场景待优化 | 引入异步任务、队列、状态持久化和重试策略 |
 | MySQL 仓储需要真实数据库环境复验 | 不阻塞 memory 模式；影响持久化上线 | 准备 MySQL 环境并补充迁移、清理和回归测试 |
 | XDR 日志查询接口路径和权限未确认 | 不阻塞告警输入；可能影响调查证据丰富度 | 索要真实日志查询契约并完成只读联调 |
+| 结果包未提供运行 Commit 和逐案例耗时 | 不阻塞 actual 汇总展示；影响评测运行复现粒度 | 由结果包负责人补充运行 Commit 或双方登记同一文件/Commit 版本 |
+| Windows 启动未实机复验 | 不影响当前 Linux/Docker 部署；影响 Windows 环境兼容声明 | 当前执行环境为 macOS，后续需在 Windows 主机或 Windows runner 上补测 |
 
 ## 10. 变更记录
 
@@ -221,3 +229,5 @@ Bridge 设计边界：
 | 2026-08-30 | 当前工作区更新 | 补充真实 XDR 告警列表接入、官方签名、本地 `uuId` 匹配、日志查询非阻断和真实能力边界 | 是 |
 | 2026-09-06 | 当前工作区更新 | 在主链设计文档内补充 Bridge 与主链真实接入装配设计，明确后续 Agent 接入边界 | 否，文档设计冻结 |
 | 2026-09-06 | 当前工作区更新 | 落地 Bridge 显式注入装配：容器创建 Bridge，`Orchestrator` 传入调查服务，测试不再修改私有字段 | 是 |
+| 2026-09-14 | 当前工作区更新 | 补充评测对比 actual 结果包接入设计：结果包目录 / `_summary.json` 转 10 案 OFF/GUARDED 对比，证据分层保存，知识 ID 统一为 `WSK-*` | 是 |
+| 2026-09-14 | 当前工作区更新 | 补充 PR50 跨模块 Review 设计结论：当前不直接合并会删除评测接口或弱化 Bridge 证据映射的变更，FastGPT / 远程 Agent 仍等待冻结合同 | 是 |

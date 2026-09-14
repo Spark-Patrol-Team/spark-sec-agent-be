@@ -593,12 +593,22 @@
             "type": "string",
             "enum": [
               "mock_fixture",
-              "formal_fixture"
+              "actual"
             ],
             "title": "Data Source"
           },
           "suite": {
             "$ref": "#/components/schemas/EvalComparisonSuite"
+          },
+          "run_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalComparisonRunMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "$ref": "#/components/schemas/EvalComparisonSummary"
@@ -622,6 +632,57 @@
           "results"
         ],
         "title": "EvalComparisonResponse"
+      },
+      "EvalComparisonRunMetadata": {
+        "properties": {
+          "result_package_name": {
+            "type": "string",
+            "title": "Result Package Name",
+            "default": ""
+          },
+          "result_package_generated_at": {
+            "type": "string",
+            "title": "Result Package Generated At",
+            "default": ""
+          },
+          "run_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Commit"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "tool_mode": {
+            "type": "string",
+            "title": "Tool Mode",
+            "default": ""
+          },
+          "knowledge_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledge Modes"
+          },
+          "key_config_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Key Config Notes"
+          }
+        },
+        "type": "object",
+        "title": "EvalComparisonRunMetadata"
       },
       "EvalComparisonSuite": {
         "properties": {

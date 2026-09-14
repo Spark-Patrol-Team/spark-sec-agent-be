@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,18 @@ router = APIRouter(tags=["evaluations"])
 FORMAL_COMPARISON_PATH_ENV = "EVAL_COMPARISON_FIXTURE_PATH"
 MOCK_SCHEMA_VERSION = "2026-09-07.eval-comparison.v1"
 MIN_FORMAL_CASE_COUNT = 6
+ACTUAL_COMPARISON_ID = "cmp-20260911-yjf-off-guarded-ab"
+LEGACY_KNOWLEDGE_ID_PREFIX = "K-" + "WEBSHELL-"
+
+LEGACY_KNOWLEDGE_ID_MAP = {
+    f"{LEGACY_KNOWLEDGE_ID_PREFIX}PRINCIPLE": "WSK-001",
+    f"{LEGACY_KNOWLEDGE_ID_PREFIX}FEATURES": "WSK-001",
+    f"{LEGACY_KNOWLEDGE_ID_PREFIX}TOOLS-TRAFFIC": "WSK-001",
+    f"{LEGACY_KNOWLEDGE_ID_PREFIX}EVIDENCE-CHECKLIST": "WSK-010",
+    f"{LEGACY_KNOWLEDGE_ID_PREFIX}RESPONSE-TEMPLATE": "WSK-015",
+    f"{LEGACY_KNOWLEDGE_ID_PREFIX}MANUAL-TAKEOVER": "WSK-015",
+}
+KNOWLEDGE_ID_PATTERN = re.compile(rf"(WSK-\d{{3}}|{LEGACY_KNOWLEDGE_ID_PREFIX}[A-Z-]+)")
 
 
 @router.get(
@@ -35,6 +48,10 @@ def _load_formal_payload() -> dict[str, Any] | None:
     path = Path(configured_path).expanduser()
     if not path.is_absolute():
         path = Path.cwd() / path
+    if path.is_dir():
+        payload = _load_result_package_dir(path)
+        return _normalize_payload(payload, min_case_count=MIN_FORMAL_CASE_COUNT)
+
     try:
         raw_payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -42,18 +59,33 @@ def _load_formal_payload() -> dict[str, Any] | None:
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=500, detail=f"正式评测结果包不是合法 JSON: {path}") from exc
 
-    payload = _wrap_payload(raw_payload)
-    payload["data_source"] = "formal_fixture"
+    payload = _wrap_payload(raw_payload, source_path=path)
+    payload["data_source"] = "actual"
     return _normalize_payload(payload, min_case_count=MIN_FORMAL_CASE_COUNT)
 
 
-def _wrap_payload(raw_payload: Any) -> dict[str, Any]:
+def _load_result_package_dir(path: Path) -> dict[str, Any]:
+    summary_path = path / "_summary.json"
+    try:
+        rows = json.loads(summary_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=f"正式评测结果包缺少 _summary.json: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"正式评测结果包 _summary.json 不是合法 JSON: {summary_path}") from exc
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=500, detail="正式评测结果包 _summary.json 顶层必须是数组")
+    return _build_actual_payload_from_summary_rows(rows, package_dir=path)
+
+
+def _wrap_payload(raw_payload: Any, source_path: Path | None = None) -> dict[str, Any]:
     if isinstance(raw_payload, list):
+        if _looks_like_ab_summary_rows(raw_payload):
+            return _build_actual_payload_from_summary_rows(raw_payload, package_dir=source_path.parent if source_path else None)
         return {
             "schema_version": MOCK_SCHEMA_VERSION,
-            "comparison_id": "cmp-formal-import",
+            "comparison_id": "cmp-actual-import",
             "generated_at": "",
-            "data_source": "formal_fixture",
+            "data_source": "actual",
             "suite": {
                 "name": "scenario-knowledge-ab",
                 "case_count": len(raw_payload),
@@ -70,6 +102,288 @@ def _wrap_payload(raw_payload: Any) -> dict[str, Any]:
     return raw_payload
 
 
+def _looks_like_ab_summary_rows(rows: list[Any]) -> bool:
+    return bool(rows) and all(isinstance(row, dict) and {"case_id", "mode"}.issubset(row) for row in rows)
+
+
+def _build_actual_payload_from_summary_rows(rows: list[dict[str, Any]], package_dir: Path | None) -> dict[str, Any]:
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    case_numbers: dict[str, int] = {}
+    categories: dict[str, str] = {}
+    for row in rows:
+        case_id = str(row.get("case_id") or "").strip()
+        mode = str(row.get("mode") or "").strip().lower()
+        if not case_id or mode not in {"off", "guarded"}:
+            raise HTTPException(status_code=500, detail="正式评测结果包行必须包含 case_id 和 off/guarded mode")
+        grouped.setdefault(case_id, {})[mode] = row
+        case_numbers[case_id] = int(row.get("case_no") or len(case_numbers) + 1)
+        categories[case_id] = str(row.get("category") or "unknown")
+
+    results: list[dict[str, Any]] = []
+    for case_id in sorted(grouped, key=lambda item: case_numbers.get(item, 0)):
+        pair = grouped[case_id]
+        if "off" not in pair or "guarded" not in pair:
+            raise HTTPException(status_code=500, detail=f"正式评测结果包案例缺少 OFF/GUARDED 配对: {case_id}")
+
+        case_no = case_numbers[case_id]
+        off_report = _read_case_report(package_dir, case_no, "off")
+        guarded_report = _read_case_report(package_dir, case_no, "guarded")
+        off = _summary_row_to_run_result(pair["off"], off_report)
+        guarded = _summary_row_to_run_result(pair["guarded"], guarded_report)
+        comparison = _actual_comparison(pair["guarded"], off, guarded)
+        results.append(
+            {
+                "case_id": case_id,
+                "knowledge_mode": _knowledge_mode(pair["guarded"]),
+                "applicability": _applicability(pair["guarded"]),
+                "off": off,
+                "guarded": guarded,
+                "comparison": comparison,
+                "human_review": {
+                    "status": "pending",
+                    "reviewer": None,
+                    "reviewed_at": None,
+                    "comments": "待双方按正式评测 Schema 复核。",
+                    "action_items": _actual_action_items(pair["guarded"], off_report, guarded_report),
+                },
+                "_category": categories[case_id],
+            }
+        )
+
+    return {
+        "schema_version": MOCK_SCHEMA_VERSION,
+        "comparison_id": ACTUAL_COMPARISON_ID,
+        "generated_at": _result_package_generated_at(package_dir),
+        "data_source": "actual",
+        "suite": {
+            "name": "scenario-knowledge-ab",
+            "case_count": len(results),
+            "baseline": "OFF",
+            "candidate": "GUARDED",
+            "knowledge_base": "src/sec_agent/deep_agent/knowledge/webshell-knowledge.md",
+        },
+        "run_metadata": {
+            "result_package_name": package_dir.name if package_dir else "_summary.json",
+            "result_package_generated_at": _result_package_generated_at(package_dir),
+            "run_commit": None,
+            "model": "deepseek 系列，结果包 README 未提供精确模型版本",
+            "tool_mode": "真实 LLM 深度调查 + MCP/平台工具调用；完整工具输出仅内部流转",
+            "knowledge_modes": ["off", "guarded"],
+            "key_config_notes": [
+                "结果包 README 声明由 scripts/e2e_ab_gatekeeper.py 生成，10 个正式知识测试用例 x OFF/GUARDED 共 20 份报告。",
+                "结果包未提供运行 commit，当前只能在接口元信息中标记为空，不能补造。",
+                "结果包未提供逐案例耗时，duration_ms 保持 0。",
+                "完整 report_*.json 包含测试环境平台数据快照，不提交仓库，不在接口中原样暴露工具输出。",
+            ],
+        },
+        "results": results,
+    }
+
+
+def _read_case_report(package_dir: Path | None, case_no: int, mode: str) -> dict[str, Any]:
+    if package_dir is None:
+        return {}
+    path = package_dir / f"report_case{case_no}_{mode}.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"正式评测报告不是合法 JSON: {path.name}") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=500, detail=f"正式评测报告顶层必须是对象: {path.name}")
+    return payload
+
+
+def _summary_row_to_run_result(row: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    case_id = str(row.get("case_id") or "")
+    mode = str(row.get("mode") or "")
+    matched_knowledge_ids = _extract_knowledge_ids(row)
+    tool_names = _unique_strings(row.get("tools_called") or [])
+    tool_call_records = [record for record in report.get("tool_call_records") or [] if isinstance(record, dict)]
+    step_count = len(tool_call_records) if tool_call_records else len(tool_names)
+    evidence_breakdown = {
+        "event_evidence_refs": [f"{case_id}:event_basic_info"],
+        "tool_result_refs": [f"tool:{tool}:{mode}:{case_id}" for tool in tool_names],
+        "knowledge_refs": [f"knowledge:{knowledge_id}" for knowledge_id in matched_knowledge_ids],
+    }
+    return {
+        "verdict": _verdict(row, report),
+        "confidence": float(report.get("confidence") or _risk_default_confidence(row.get("risk_level"))),
+        "matched_knowledge_ids": matched_knowledge_ids,
+        "tool_status": _summary_tool_status(row, tool_call_records),
+        "evidence_refs": [],
+        "evidence_breakdown": evidence_breakdown,
+        "forbidden_conclusion_hit": _forbidden_conclusion_hit(row, matched_knowledge_ids),
+        "manual_takeover": bool(report.get("need_manual_takeover", row.get("need_manual_takeover", False))),
+        "step_count": step_count,
+        "duration_ms": 0,
+    }
+
+
+def _summary_tool_status(row: dict[str, Any], tool_call_records: list[dict[str, Any]]) -> dict[str, str]:
+    knowledge_state = _knowledge_tool_state(row)
+    mcp_state = _mcp_tool_state(row, tool_call_records)
+    notes = (
+        f"knowledge_call_count={int(row.get('knowledge_call_count') or 0)}; "
+        f"tools_called={len(row.get('tools_called') or [])}; "
+        "完整工具输出只保留在内部结果包。"
+    )
+    return {
+        "knowledge_query": knowledge_state,
+        "mcp_tools": mcp_state,
+        "notes": notes,
+    }
+
+
+def _knowledge_tool_state(row: dict[str, Any]) -> str:
+    if not row.get("knowledge_called"):
+        return "not_called"
+    statuses = [str(item.get("status") or "") for item in row.get("knowledge_statuses") or [] if isinstance(item, dict)]
+    if "success" in statuses:
+        return "success"
+    if "partial" in statuses:
+        return "partial"
+    if "failed" in statuses:
+        return "failed"
+    return "skipped"
+
+
+def _mcp_tool_state(row: dict[str, Any], tool_call_records: list[dict[str, Any]]) -> str:
+    records = [record for record in tool_call_records if record.get("tool") != "knowledge_query"]
+    statuses = [str(record.get("status") or "") for record in records]
+    if not statuses:
+        tool_names = [name for name in row.get("tools_called") or [] if name != "knowledge_query"]
+        return "success" if tool_names else "skipped"
+    if all(status == "success" for status in statuses):
+        return "success"
+    if all(status == "failed" for status in statuses):
+        return "failed"
+    return "partial"
+
+
+def _extract_knowledge_ids(row: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for item in row.get("knowledge_statuses") or []:
+        if not isinstance(item, dict) or item.get("status") != "success":
+            continue
+        candidates.extend(KNOWLEDGE_ID_PATTERN.findall(str(item.get("error") or "")))
+    for ref in row.get("knowledge_refs_in_report") or []:
+        candidates.extend(KNOWLEDGE_ID_PATTERN.findall(str(ref)))
+    return _canonical_knowledge_ids(candidates)
+
+
+def _canonical_knowledge_ids(values: list[Any]) -> list[str]:
+    ids: list[str] = []
+    for value in values:
+        text = str(value)
+        canonical = LEGACY_KNOWLEDGE_ID_MAP.get(text, text)
+        if canonical and canonical not in ids:
+            ids.append(canonical)
+    return ids
+
+
+def _knowledge_mode(row: dict[str, Any]) -> str:
+    match str(row.get("gate_decision") or ""):
+        case "in_scope":
+            return "knowledge_required"
+        case "weak_signal":
+            return "knowledge_optional"
+        case "out_of_scope":
+            return "knowledge_forbidden"
+        case _:
+            return "knowledge_not_applicable"
+
+
+def _applicability(row: dict[str, Any]) -> str:
+    match str(row.get("gate_decision") or ""):
+        case "in_scope":
+            return "applicable"
+        case "weak_signal":
+            return "partially_applicable"
+        case "out_of_scope":
+            return "not_applicable"
+        case _:
+            return "unknown"
+
+
+def _actual_comparison(guarded_row: dict[str, Any], off: dict[str, Any], guarded: dict[str, Any]) -> dict[str, Any]:
+    confidence_delta = round(float(guarded["confidence"]) - float(off["confidence"]), 4)
+    step_delta = int(guarded["step_count"]) - int(off["step_count"])
+    duration_delta_ms = int(guarded["duration_ms"]) - int(off["duration_ms"])
+    winner = "TIE"
+    reason = "GUARDED 未输出越界知识引用，OFF/GUARDED 在当前汇总口径下持平。"
+    if guarded["forbidden_conclusion_hit"]:
+        winner = "OFF"
+        reason = "GUARDED 命中禁止结论或越界知识引用，按回归处理。"
+    elif str(guarded_row.get("gate_decision")) == "in_scope" and guarded["matched_knowledge_ids"]:
+        winner = "GUARDED"
+        reason = "GUARDED 在 in_scope 案例中命中 WSK 知识并带出知识引用，OFF 未调用知识工具。"
+    return {
+        "winner": winner,
+        "confidence_delta": confidence_delta,
+        "step_delta": step_delta,
+        "duration_delta_ms": duration_delta_ms,
+        "reason": reason,
+    }
+
+
+def _actual_action_items(guarded_row: dict[str, Any], off_report: dict[str, Any], guarded_report: dict[str, Any]) -> list[str]:
+    items: list[str] = []
+    if not off_report or not guarded_report:
+        items.append("结果包未提供完整 report_caseN_off/guarded.json，当前按 _summary.json 生成汇总。")
+    if str(guarded_row.get("gate_decision")) == "in_scope":
+        items.append("人工复核 in_scope 案例的 WSK 命中与知识引用是否符合正式评测口径。")
+    if guarded_row.get("need_manual_takeover"):
+        items.append("人工复核 manual_takeover=true 是否符合证据不足或高风险处置边界。")
+    return items
+
+
+def _forbidden_conclusion_hit(row: dict[str, Any], matched_knowledge_ids: list[str]) -> bool:
+    gate_decision = str(row.get("gate_decision") or "")
+    if gate_decision in {"weak_signal", "out_of_scope"} and matched_knowledge_ids:
+        return True
+    return False
+
+
+def _verdict(row: dict[str, Any], report: dict[str, Any]) -> str:
+    conclusion = str(report.get("conclusion") or row.get("conclusion") or "")
+    if any(token in conclusion for token in ("证据不足", "无法得出明确")):
+        return "uncertain"
+    if any(token in conclusion for token in ("误报", "合法业务", "良性")):
+        return "benign"
+    if any(token in conclusion for token in ("攻击", "WebShell", "恶意")):
+        return "malicious"
+    return "uncertain"
+
+
+def _risk_default_confidence(risk_level: Any) -> float:
+    match str(risk_level or "").upper():
+        case "CRITICAL":
+            return 0.85
+        case "HIGH":
+            return 0.75
+        case "MEDIUM":
+            return 0.55
+        case "LOW":
+            return 0.35
+        case _:
+            return 0.0
+
+
+def _result_package_generated_at(package_dir: Path | None) -> str:
+    if package_dir is None:
+        return "2026-09-11T00:00:00+08:00"
+    readme = package_dir / "README.md"
+    if not readme.exists():
+        return "2026-09-11T00:00:00+08:00"
+    text = readme.read_text(encoding="utf-8")
+    match = re.search(r"生成时间：(\d{4}-\d{2}-\d{2})", text)
+    if match:
+        return f"{match.group(1)}T00:00:00+08:00"
+    return "2026-09-11T00:00:00+08:00"
+
+
 def _mock_payload() -> dict[str, Any]:
     return _normalize_payload(
         {
@@ -77,6 +391,15 @@ def _mock_payload() -> dict[str, Any]:
             "comparison_id": "cmp-20260907-mock",
             "generated_at": "2026-09-07T00:00:00+08:00",
             "data_source": "mock_fixture",
+            "run_metadata": {
+                "result_package_name": "built-in-mock",
+                "result_package_generated_at": "2026-09-07T00:00:00+08:00",
+                "run_commit": None,
+                "model": "mock",
+                "tool_mode": "mock_fixture",
+                "knowledge_modes": ["off", "guarded"],
+                "key_config_notes": ["内置 Mock 仅用于前端联调，不代表真实评测结果。"],
+            },
             "suite": {
                 "name": "scenario-knowledge-ab",
                 "case_count": 3,
@@ -108,8 +431,8 @@ def _mock_payload() -> dict[str, Any]:
                         "verdict": "malicious",
                         "confidence": 0.91,
                         "matched_knowledge_ids": [
-                            "K-WEBSHELL-PRINCIPLE",
-                            "K-WEBSHELL-EVIDENCE-CHECKLIST",
+                            "WSK-001",
+                            "WSK-010",
                         ],
                         "tool_status": {
                             "knowledge_query": "success",
@@ -119,8 +442,8 @@ def _mock_payload() -> dict[str, Any]:
                         "evidence_refs": [
                             "case1:alert",
                             "tool:knowledge_query:case1",
-                            "knowledge:K-WEBSHELL-PRINCIPLE",
-                            "knowledge:K-WEBSHELL-EVIDENCE-CHECKLIST",
+                            "knowledge:WSK-001",
+                            "knowledge:WSK-010",
                         ],
                         "forbidden_conclusion_hit": False,
                         "manual_takeover": False,
@@ -164,7 +487,7 @@ def _mock_payload() -> dict[str, Any]:
                     "guarded": {
                         "verdict": "uncertain",
                         "confidence": 0.58,
-                        "matched_knowledge_ids": ["K-WEBSHELL-MANUAL-TAKEOVER"],
+                        "matched_knowledge_ids": ["WSK-015"],
                         "tool_status": {
                             "knowledge_query": "success",
                             "mcp_tools": "failed",
@@ -174,7 +497,7 @@ def _mock_payload() -> dict[str, Any]:
                             "case5:simulated-tool-failure",
                             "tool:mcp:case5",
                             "tool:knowledge_query:case5",
-                            "knowledge:K-WEBSHELL-MANUAL-TAKEOVER",
+                            "knowledge:WSK-015",
                         ],
                         "forbidden_conclusion_hit": False,
                         "manual_takeover": True,
@@ -265,17 +588,18 @@ def _normalize_payload(payload: dict[str, Any], min_case_count: int = 0) -> dict
 
     return {
         "schema_version": payload.get("schema_version") or MOCK_SCHEMA_VERSION,
-        "comparison_id": payload.get("comparison_id") or "cmp-formal-import",
+        "comparison_id": payload.get("comparison_id") or "cmp-actual-import",
         "generated_at": payload.get("generated_at") or "",
         "data_source": payload.get("data_source") or "mock_fixture",
         "suite": suite,
+        "run_metadata": payload.get("run_metadata"),
         "summary": _build_summary(normalized_results),
         "results": normalized_results,
     }
 
 
 def _normalize_case_result(result: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(result)
+    normalized = {key: value for key, value in result.items() if not key.startswith("_")}
     normalized["off"] = _normalize_run_result(normalized["off"])
     normalized["guarded"] = _normalize_run_result(normalized["guarded"])
     normalized["comparison"] = _normalize_comparison(normalized)
@@ -284,6 +608,7 @@ def _normalize_case_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_run_result(result: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(result)
+    normalized["matched_knowledge_ids"] = _canonical_knowledge_ids(normalized.get("matched_knowledge_ids") or [])
     breakdown = normalized.get("evidence_breakdown")
     if not isinstance(breakdown, dict):
         breakdown = _build_evidence_breakdown(
@@ -297,14 +622,7 @@ def _normalize_run_result(result: dict[str, Any]) -> dict[str, Any]:
             "knowledge_refs": _unique_strings(breakdown.get("knowledge_refs") or []),
         }
     normalized["evidence_breakdown"] = breakdown
-    normalized["evidence_refs"] = _unique_strings(
-        [
-            *(normalized.get("evidence_refs") or []),
-            *breakdown["event_evidence_refs"],
-            *breakdown["tool_result_refs"],
-            *breakdown["knowledge_refs"],
-        ]
-    )
+    normalized["evidence_refs"] = _unique_strings(normalized.get("evidence_refs") or [])
     return normalized
 
 
@@ -314,7 +632,7 @@ def _build_evidence_breakdown(evidence_refs: list[str], matched_knowledge_ids: l
     knowledge_refs: list[str] = []
     for ref in _unique_strings(evidence_refs):
         if _is_knowledge_ref(ref):
-            knowledge_refs.append(ref)
+            knowledge_refs.append(_canonical_evidence_ref(ref))
         elif _is_tool_ref(ref):
             tool_refs.append(ref)
         else:
@@ -377,7 +695,14 @@ def _winner(confidence_delta: float, guarded: dict[str, Any], off: dict[str, Any
 
 
 def _is_knowledge_ref(ref: str) -> bool:
-    return ref.startswith("knowledge:") or ref.startswith("K-")
+    return ref.startswith("knowledge:") or ref.startswith(("K-", "WSK-"))
+
+
+def _canonical_evidence_ref(ref: str) -> str:
+    if not ref.startswith("knowledge:"):
+        return LEGACY_KNOWLEDGE_ID_MAP.get(ref, ref)
+    _, _, raw_knowledge_id = ref.partition(":")
+    return f"knowledge:{LEGACY_KNOWLEDGE_ID_MAP.get(raw_knowledge_id, raw_knowledge_id)}"
 
 
 def _is_tool_ref(ref: str) -> bool:

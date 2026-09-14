@@ -14,8 +14,8 @@
       "knowledge_mode": "knowledge_required",
       "applicability": "applicable",
       "matched_knowledge_ids": [
-        "K-WEBSHELL-PRINCIPLE",
-        "K-WEBSHELL-EVIDENCE-CHECKLIST"
+        "WSK-001",
+        "WSK-010"
       ],
       "tool_status": {
         "knowledge_query": "success",
@@ -23,8 +23,8 @@
         "notes": "最小 fixture 仅冻结汇总结构，不代表真实 MCP 调用。"
       },
       "evidence_refs": [
-        "knowledge:K-WEBSHELL-PRINCIPLE",
-        "knowledge:K-WEBSHELL-EVIDENCE-CHECKLIST"
+        "knowledge:WSK-001",
+        "knowledge:WSK-010"
       ],
       "forbidden_conclusion_hit": false,
       "manual_takeover": false,
@@ -43,7 +43,7 @@
       "knowledge_mode": "knowledge_optional",
       "applicability": "partially_applicable",
       "matched_knowledge_ids": [
-        "K-WEBSHELL-MANUAL-TAKEOVER"
+        "WSK-015"
       ],
       "tool_status": {
         "knowledge_query": "success",
@@ -51,7 +51,7 @@
         "notes": "模拟工具失败输入应触发人工接管，不能编造工具返回。"
       },
       "evidence_refs": [
-        "knowledge:K-WEBSHELL-MANUAL-TAKEOVER",
+        "knowledge:WSK-015",
         "case5:simulated-tool-failure"
       ],
       "forbidden_conclusion_hit": false,

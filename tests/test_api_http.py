@@ -231,64 +231,119 @@ class ApiHttpTest(unittest.TestCase):
         self.assertIn("guarded", first)
         self.assertIn("comparison", first)
         self.assertEqual(first["comparison"]["winner"], "GUARDED")
-        self.assertIn("K-WEBSHELL-PRINCIPLE", first["guarded"]["matched_knowledge_ids"])
+        self.assertIn("WSK-001", first["guarded"]["matched_knowledge_ids"])
         self.assertEqual(first["guarded"]["evidence_breakdown"]["event_evidence_refs"], ["case1:alert"])
         self.assertEqual(first["guarded"]["evidence_breakdown"]["tool_result_refs"], ["tool:knowledge_query:case1"])
         self.assertEqual(
             first["guarded"]["evidence_breakdown"]["knowledge_refs"],
-            ["knowledge:K-WEBSHELL-PRINCIPLE", "knowledge:K-WEBSHELL-EVIDENCE-CHECKLIST"],
+            ["knowledge:WSK-001", "knowledge:WSK-010"],
         )
 
-    def test_eval_comparisons_reads_formal_fixture_and_builds_actual_summary(self) -> None:
-        mock_payload = self.client.get("/eval/comparisons").json()
-        formal_results = []
-        for index in range(6):
-            item = json.loads(json.dumps(mock_payload["results"][index % len(mock_payload["results"])]))
-            item["case_id"] = f"case{index + 1}"
-            item["off"].pop("evidence_breakdown", None)
-            item["guarded"].pop("evidence_breakdown", None)
-            formal_results.append(item)
-
-        formal_payload = {
-            "schema_version": "2026-09-07.eval-comparison.v1",
-            "comparison_id": "cmp-formal-six-cases",
-            "generated_at": "2026-09-09T00:00:00+08:00",
-            "suite": {
-                "name": "scenario-knowledge-formal-ab",
-                "case_count": 0,
-                "baseline": "OFF",
-                "candidate": "GUARDED",
-                "knowledge_base": "formal-result-package",
-            },
-            "summary": {},
-            "results": formal_results,
-        }
-
+    def test_eval_comparisons_reads_actual_result_package_and_builds_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "formal_comparison.json"
-            path.write_text(json.dumps(formal_payload, ensure_ascii=False), encoding="utf-8")
+            path = Path(tmpdir) / "actual-result-package"
+            path.mkdir()
+            (path / "README.md").write_text("生成时间：2026-09-11\n模型：deepseek 系列\n", encoding="utf-8")
+            rows = []
+            for case_no in range(1, 7):
+                case_id = f"TC-KNOWLEDGE-{case_no:03d}"
+                gate_decision = "in_scope" if case_no == 1 else "weak_signal"
+                guarded_statuses = (
+                    [{"status": "success", "error": "[知识卡·WSK-001] WebShell 正向调查"}]
+                    if case_no == 1
+                    else [{"status": "partial", "error": "[部分成功] 当前仅为弱信号"}]
+                )
+                rows.append(
+                    {
+                        "case_no": case_no,
+                        "case_id": case_id,
+                        "category": "正向变体",
+                        "mode": "guarded",
+                        "gate_decision": gate_decision,
+                        "tools_called": ["query_asset", "knowledge_query", "dbproxy_告警数据查询工具"],
+                        "knowledge_called": True,
+                        "knowledge_call_count": len(guarded_statuses),
+                        "knowledge_statuses": guarded_statuses,
+                        "knowledge_refs_in_report": [],
+                        "need_manual_takeover": True,
+                        "risk_level": "HIGH",
+                        "conclusion": "证据不足，无法得出明确调查结论",
+                    }
+                )
+                rows.append(
+                    {
+                        "case_no": case_no,
+                        "case_id": case_id,
+                        "category": "正向变体",
+                        "mode": "off",
+                        "gate_decision": gate_decision,
+                        "tools_called": ["query_asset", "dbproxy_告警数据查询工具"],
+                        "knowledge_called": False,
+                        "knowledge_call_count": 0,
+                        "knowledge_statuses": [],
+                        "knowledge_refs_in_report": [],
+                        "need_manual_takeover": True,
+                        "risk_level": "HIGH",
+                        "conclusion": "证据不足，无法得出明确调查结论",
+                    }
+                )
+            (path / "_summary.json").write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+            (path / "report_case1_guarded.json").write_text(
+                json.dumps(
+                    {
+                        "confidence": 0.91,
+                        "need_manual_takeover": True,
+                        "tool_call_records": [
+                            {"tool": "query_asset", "status": "failed"},
+                            {"tool": "knowledge_query", "status": "success"},
+                            {"tool": "dbproxy_告警数据查询工具", "status": "partial"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (path / "report_case1_off.json").write_text(
+                json.dumps(
+                    {
+                        "confidence": 0.72,
+                        "need_manual_takeover": True,
+                        "tool_call_records": [
+                            {"tool": "query_asset", "status": "failed"},
+                            {"tool": "dbproxy_告警数据查询工具", "status": "partial"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
             with mock.patch.dict(os.environ, {"EVAL_COMPARISON_FIXTURE_PATH": str(path)}):
                 response = self.client.get("/eval/comparisons")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["data_source"], "formal_fixture")
-        self.assertEqual(payload["comparison_id"], "cmp-formal-six-cases")
+        self.assertEqual(payload["data_source"], "actual")
+        self.assertEqual(payload["comparison_id"], "cmp-20260911-yjf-off-guarded-ab")
         self.assertEqual(payload["suite"]["case_count"], 6)
         self.assertEqual(payload["summary"]["total_cases"], 6)
+        self.assertEqual(payload["summary"]["guarded_wins"], 1)
         self.assertEqual(
             payload["summary"]["guarded_wins"] + payload["summary"]["off_wins"] + payload["summary"]["ties"],
             6,
         )
+        self.assertEqual(payload["run_metadata"]["result_package_generated_at"], "2026-09-11T00:00:00+08:00")
+        self.assertIsNone(payload["run_metadata"]["run_commit"])
         guarded = payload["results"][0]["guarded"]
-        self.assertEqual(guarded["evidence_breakdown"]["event_evidence_refs"], ["case1:alert"])
-        self.assertEqual(guarded["evidence_breakdown"]["tool_result_refs"], ["tool:knowledge_query:case1"])
-        self.assertIn("knowledge:K-WEBSHELL-PRINCIPLE", guarded["evidence_breakdown"]["knowledge_refs"])
+        self.assertEqual(guarded["matched_knowledge_ids"], ["WSK-001"])
+        self.assertEqual(guarded["evidence_refs"], [])
+        self.assertEqual(guarded["evidence_breakdown"]["event_evidence_refs"], ["TC-KNOWLEDGE-001:event_basic_info"])
+        self.assertIn("tool:knowledge_query:guarded:TC-KNOWLEDGE-001", guarded["evidence_breakdown"]["tool_result_refs"])
+        self.assertEqual(guarded["evidence_breakdown"]["knowledge_refs"], ["knowledge:WSK-001"])
 
-    def test_eval_comparisons_rejects_incomplete_formal_fixture(self) -> None:
+    def test_eval_comparisons_rejects_incomplete_actual_fixture(self) -> None:
         incomplete_payload = {
             "schema_version": "2026-09-07.eval-comparison.v1",
-            "comparison_id": "cmp-formal-incomplete",
+            "comparison_id": "cmp-actual-incomplete",
             "generated_at": "2026-09-09T00:00:00+08:00",
             "suite": {
                 "name": "scenario-knowledge-formal-ab",

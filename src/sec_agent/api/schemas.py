@@ -29,6 +29,16 @@ class EvalComparisonSuite(BaseModel):
     knowledge_base: str
 
 
+class EvalComparisonRunMetadata(BaseModel):
+    result_package_name: str = ""
+    result_package_generated_at: str = ""
+    run_commit: str | None = None
+    model: str = ""
+    tool_mode: str = ""
+    knowledge_modes: list[str] = Field(default_factory=list)
+    key_config_notes: list[str] = Field(default_factory=list)
+
+
 class EvalComparisonSummary(BaseModel):
     total_cases: int
     guarded_wins: int
@@ -99,7 +109,8 @@ class EvalComparisonResponse(BaseModel):
     schema_version: str
     comparison_id: str
     generated_at: str
-    data_source: Literal["mock_fixture", "formal_fixture"]
+    data_source: Literal["mock_fixture", "actual"]
     suite: EvalComparisonSuite
+    run_metadata: EvalComparisonRunMetadata | None = None
     summary: EvalComparisonSummary
     results: list[EvalCaseComparison]
