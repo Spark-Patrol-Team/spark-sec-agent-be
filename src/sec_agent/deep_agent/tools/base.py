@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Optional
 
 
@@ -44,6 +45,51 @@ ALIAS_MAP: dict[str, str] = {
 
 # 真实函数名里非法字符（非字母数字下划线中划线）
 _FUNCTION_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]+")
+
+
+class KnowledgeToolAvailability(str, Enum):
+    """知识工具在注册前的可用性；与调用后的 ToolResult 状态严格分离。"""
+
+    AVAILABLE = "available"
+    DISABLED_BY_MODE = "disabled_by_mode"
+    BLOCKED_BY_GATE = "blocked_by_gate"
+
+
+@dataclass(frozen=True)
+class ToolAvailabilityRecord:
+    tool_name: str
+    status: KnowledgeToolAvailability
+    reason: str
+
+
+def resolve_knowledge_tool_availability(
+    knowledge_mode: str,
+    gate_decision: str | None,
+) -> ToolAvailabilityRecord:
+    """按唯一合同确定 knowledge_query 是否应注册；未知输入一律 fail-closed。"""
+
+    mode = str(knowledge_mode or "").strip().lower()
+    gate = str(gate_decision or "").strip().lower()
+    if mode == "off":
+        return ToolAvailabilityRecord(
+            tool_name="knowledge_query",
+            status=KnowledgeToolAvailability.DISABLED_BY_MODE,
+            reason="KNOWLEDGE_MODE=off",
+        )
+    if mode == "guarded" and gate in {"in_scope", "weak_signal"}:
+        return ToolAvailabilityRecord(
+            tool_name="knowledge_query",
+            status=KnowledgeToolAvailability.AVAILABLE,
+            reason=f"KNOWLEDGE_MODE=guarded, gate={gate}",
+        )
+    return ToolAvailabilityRecord(
+        tool_name="knowledge_query",
+        status=KnowledgeToolAvailability.BLOCKED_BY_GATE,
+        reason=(
+            f"KNOWLEDGE_MODE={mode or '<missing>'}, gate={gate or '<missing>'}; "
+            "gate缺失、无效、异常或域外时禁止注册"
+        ),
+    )
 
 
 def _auto_alias(name: str, taken: set[str]) -> str:
@@ -108,6 +154,7 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
         self._aliases: dict[str, str] = {}    # 真实名 -> 内部别名
         self._real_names: dict[str, str] = {}  # 内部别名 -> 真实名
+        self._availability: dict[str, ToolAvailabilityRecord] = {}
 
     def register(self, tool: Tool) -> Tool:
         self._tools[tool.name] = tool
@@ -115,6 +162,16 @@ class ToolRegistry:
         self._aliases[tool.name] = alias
         self._real_names[alias] = tool.name
         return tool
+
+    def record_availability(self, record: ToolAvailabilityRecord) -> None:
+        """记录工具在注册前的判定，即使工具未注册也保留原因。"""
+        self._availability[record.tool_name] = record
+
+    def availability_of(self, name: str) -> Optional[ToolAvailabilityRecord]:
+        return self._availability.get(name)
+
+    def availability_records(self) -> list[ToolAvailabilityRecord]:
+        return list(self._availability.values())
 
     def get(self, name: str) -> Optional[Tool]:
         return self._tools.get(name)

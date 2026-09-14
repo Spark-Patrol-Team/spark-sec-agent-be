@@ -21,7 +21,8 @@
 
 - 验证 `sec_agent.deep_agent` 真实加载：主链 bridge（`auto`/`deep_agent` 后端）能加载真实子智能体模块，而非错误地走内部回退子链。
 - 验证调查闭环：工具调用留痕、结构化报告生成、证据不足时人工接管（`need_manual_takeover` → 主链 `HUMAN_REQUIRED`）。
-- 验证知识包检索工具 `knowledge_query`：关键词命中结构化知识卡、返回`source_citations`、覆盖问答样本、按门禁注册进 CLI 与 bridge 工具集。
+- 验证知识包检索工具 `knowledge_query`：关键词命中结构化知识卡、返回`source_citations`、覆盖问答样本、按门禁注册进 CLI 与 bridge 工具集，并记录`available / disabled_by_mode / blocked_by_gate`三态。
+- 验证知识引用隔离：正常LLM路径与降级路径均只允许上游事件证据和非知识工具结果进入`key_evidence/evidence_source`，即使LLM主动写入知识URL也会被程序覆盖。
 - 验证 Mock 工具稳定复验：不依赖外部服务的单元/集成测试稳定通过。
 
 ### 1.2 非目标
@@ -83,6 +84,7 @@
 | `test_web_shell_full_run` | 完整 WebShell 调查（需 LLM key，未配置时跳过） |
 | `test_fallback_report_keeps_knowledge_citations_out_of_event_evidence` | 降级报告保留知识来源审计记录，但不将其写入`key_evidence/evidence_source` |
 | `test_agent_records_source_citations_as_knowledge_citations` | Agent把`source_citations`独立记为`tool_call_records[].knowledge_citations`，不生成`evidence_refs` |
+| `test_normal_report_rebuilds_event_evidence_and_excludes_knowledge_citations` | 模拟LLM把知识URL写入事件证据，验证正常报告路径确定性覆盖并保留真实事件/工具证据 |
 | `test_default_max_tool_calls` 等 4 例 | AgentConfig 步数上限：默认 12 / 步数 5 / `AGENT_MAX_TOOL_CALLS` 覆盖 / 非法值回退（方案 C） |
 
 ### 5.2 知识包检索工具（`tests/test_knowledge_tool.py`，2026-08-26 新增）
@@ -97,6 +99,14 @@
 | `test_attack_principle_source_citation` | 攻击原理卡包含MITRE来源URL |
 | `test_miss_returns_failed` | 无关关键词返回 `failed` |
 | `test_registered_in_registry` | 注册进 `ToolRegistry`，schema 名唯一 |
+
+### 5.3 知识工具可用性三态与门禁边界
+
+| 测试文件 | 验证点 |
+|---|---|
+| `tests/test_knowledge_mode.py` | CLI在`guarded + in_scope/weak_signal`记录`available`，`off`记录`disabled_by_mode`，非法/缺失/域外门禁记录`blocked_by_gate` |
+| `tests/test_deep_agent_bridge.py` | bridge使用同一状态解析器，并隔离环境变量验证三态及实际注册结果 |
+| `tests/test_gatekeeper_boundary.py::test_w3wp_alone_is_weak_not_confirmed` | 单独出现普通Web宿主进程不能升级为强WebShell证据 |
 
 ### 5.3 MCP 客户端契约（`tests/test_mcp_client.py`，2026-08-27 新增，任务二）
 
@@ -302,3 +312,4 @@ WebShell 类事件典型调用序列，按证据缺口推进：
 | 2026-08-26 | 本次（方案 C 提交） | 新增降级报告提炼与 AgentConfig 步数上限用例；执行命令预期更新为 47 passed / 1 skipped |
 | 2026-08-27 | 本次 T0827-03 提交 | 知识源统一到沈洪旭权威版；新增 `test_mcp_client.py`（11 用例）验证 dbproxy 空结果 `partial` / 结构化错误 `failed` / 有数据 `success` 契约 |
 | 2026-09-04 | PR #31收口 | `test_mcp_client.py`扩至18例：补非dbproxy空文本、MCP `isError`、error JSON、已知错误文本及正常分析含错误词不误判 |
+| 2026-09-14 | PR54+PR55本地集成候选 | 增加正常LLM路径知识引用隔离、知识工具三态代码载体、bridge环境隔离及`w3wp.exe`单信号边界回归；已纳入PR55最新头`647da76`的4条字段面测试和`main@0001bbd`的case3来源修订 | 定向156 passed / 1 skipped；全量350 passed / 1 skipped；1条第三方弃用警告；未推送 |

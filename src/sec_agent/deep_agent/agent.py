@@ -185,17 +185,18 @@ class DeepInvestigationAgent:
 
         # 没有任何真实成功/部分成功工具记录时，
         # 不允许 LLM 生成未经验证的调查步骤或证据。
-        successful_records = [
+        successful_event_records = [
             record
             for record in tool_records
             if record.get("status") in {"success", "partial"}
+            and record.get("tool") != "knowledge_query"
         ]
 
-        if not successful_records:
+        if not successful_event_records:
             return self._fallback_report(
                 event,
                 tool_records,
-                reason="关键调查工具不可用或未成功返回数据，禁止基于未验证信息生成调查结论",
+                reason="没有成功返回事件观测的调查工具；知识结果不能单独支撑事件结论",
             )
         # investigation_steps 只能引用代码侧真实执行过的工具，防止 LLM 虚构工具调用步骤。
         # LLM 使用 ASCII 别名，tool_records 保存 resolve 后的真实工具名，
@@ -214,10 +215,14 @@ class DeepInvestigationAgent:
             and step.get("tool") in executed_tools
         ]
 
-       
-
         # 用代码侧真实采集记录覆盖 LLM 输出，保证可审计。
         data["tool_call_records"] = tool_records
+
+        # key_evidence/evidence_source 只由上游事件证据和非知识工具结果生成。
+        # 不信任 LLM 对知识来源与当前事件证据的自行分类。
+        key_evidence, evidence_source = self._derive_event_evidence(event, tool_records)
+        data["key_evidence"] = key_evidence
+        data["evidence_source"] = evidence_source
 
         data["event_basic_info"] = data.get("event_basic_info") or {
             "event_id": event.event_id,
@@ -230,6 +235,7 @@ class DeepInvestigationAgent:
 
         data["trace_id"] = event.trace_id
         return InvestigationReport.from_dict(data)
+
     # ------------------------------------------------------------------
     @staticmethod
     def _extract_json(text: str) -> dict:
@@ -255,6 +261,35 @@ class DeepInvestigationAgent:
         except json.JSONDecodeError:
             return {}
 
+    @staticmethod
+    def _derive_event_evidence(
+        event: SecurityEventInput,
+        tool_records: list[dict],
+    ) -> tuple[list[str], list[str]]:
+        """从可信运行记录派生事件证据；知识工具只保留在调用审计中。"""
+
+        key_evidence = [str(item) for item in event.evidence if str(item).strip()]
+        evidence_source = ["上游风险研判"]
+        seen_ev = set(key_evidence)
+        seen_src = set(evidence_source)
+
+        for record in tool_records:
+            if record.get("status") not in {"success", "partial"}:
+                continue
+            tool = str(record.get("tool") or "")
+            if tool == "knowledge_query":
+                continue
+            source = f"来源工具: {tool}" if tool else ""
+            if source and source not in seen_src:
+                seen_src.add(source)
+                evidence_source.append(source)
+            output = str(record.get("output") or "").strip()[:200]
+            if output and output not in seen_ev:
+                seen_ev.add(output)
+                key_evidence.append(output)
+
+        return key_evidence, evidence_source
+
     # ------------------------------------------------------------------
     @staticmethod
     def _fallback_report(event: SecurityEventInput, tool_records: list[dict], reason: str = "") -> InvestigationReport:
@@ -265,25 +300,10 @@ class DeepInvestigationAgent:
         - 其他成功工具的调用名 → evidence_source（"来源工具: ..."）；
         - 其他成功工具的返回摘要 → key_evidence（截断 200 字符）。
         """
-        key_evidence = [e for e in event.evidence if e]
-        evidence_source = ["上游风险研判"]
-        seen_ev, seen_src = set(key_evidence), set(evidence_source)
-
-        for rec in tool_records:
-            if rec.get("status") not in {"success", "partial"}:
-                continue
-            tool = rec.get("tool", "")
-            output = (rec.get("output") or "").strip()
-            if tool == "knowledge_query":
-                # 知识卡解释调查方法，但不证明当前事件事实；完整引用仍可从
-                # tool_call_records[].knowledge_citations 审计。
-                continue
-            if tool and f"来源工具: {tool}" not in seen_src:
-                seen_src.add(f"来源工具: {tool}")
-                evidence_source.append(f"来源工具: {tool}")
-            if output and output not in seen_ev:
-                seen_ev.add(output)
-                key_evidence.append(output[:200])
+        key_evidence, evidence_source = DeepInvestigationAgent._derive_event_evidence(
+            event,
+            tool_records,
+        )
 
         return InvestigationReport(
             event_basic_info={

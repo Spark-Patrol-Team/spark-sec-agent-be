@@ -7,7 +7,7 @@
 目的：验证已冻结的门禁在“容易误判”的输入下仍然正确，而不是再开发一套新门禁。
 所有用例都是人工构造的确定性输入，不依赖 case1-10 编号，也不反向补入知识库证据。
 
-覆盖的七类边界（与《事件字段—来源—信号强度合同》v1.0 一一对应）：
+覆盖的七类边界（与统一合同 v1.1 的门禁边界一一对应）：
 
 1. 否定语义（BOUNDARY-NEG-*）：出现关键词但语义被否定时不得升级。
 2. 单一通用进程（BOUNDARY-PROC-*）：cmd.exe / powershell.exe / java.exe 等普通进程不能直接判为 WebShell。
@@ -135,6 +135,14 @@ class TestGenericProcessOnly:
         assert result.gate_decision in {GateDecision.WEAK_SIGNAL, GateDecision.OUT_OF_SCOPE}
         assert _text_signals(result, {SignalStrength.IN_SCOPE_CONFIRMED}) == []
         assert _text_signals(result, {SignalStrength.IN_SCOPE_WEAK}), "通用进程应至少保留弱信号供调查"
+
+    def test_w3wp_alone_is_weak_not_confirmed(self) -> None:
+        """IIS 工作进程本身是正常组件，单独出现不能证明 WebShell。"""
+        result = _audit(_event(evidence=["检测到 w3wp.exe 工作进程运行"]))
+
+        assert result.gate_decision == GateDecision.WEAK_SIGNAL
+        assert SignalStrength.IN_SCOPE_CONFIRMED not in _strengths(result)
+        assert _text_signals(result, {SignalStrength.IN_SCOPE_WEAK})
 
     def test_generic_process_with_webshell_chain_still_confirms(self) -> None:
         """护栏：补上 WebShell 专属证据后仍必须能确认，避免降级过头。"""

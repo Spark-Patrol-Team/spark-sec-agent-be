@@ -80,7 +80,6 @@ class GatekeeperResult:
 
 WEBSHELL_STRONG_CONFIRM_KEYWORDS: tuple[str, ...] = (
     "Process.Start",
-    "w3wp.exe",
     "eval(",
     "assert(",
     "System.Runtime.InteropServices",
@@ -92,6 +91,7 @@ WEBSHELL_STRONG_CONFIRM_KEYWORDS: tuple[str, ...] = (
 # 普通进程/系统工具名单独出现时只作弱信号：它们本身不是 WebShell 证据，
 # 必须配合文件落地、Web 进程派生、反序列化载荷等 WebShell 专属证据才能确认。
 GENERIC_PROCESS_WEAK_KEYWORDS: tuple[str, ...] = (
+    "w3wp.exe",
     "cmd.exe",
     "powershell.exe",
     "pwsh.exe",
@@ -102,6 +102,32 @@ GENERIC_PROCESS_WEAK_KEYWORDS: tuple[str, ...] = (
     "mshta.exe",
     "whoami.exe",
     "net.exe",
+)
+
+WEBSHELL_HOST_PROCESS_KEYWORDS: tuple[str, ...] = (
+    "w3wp.exe",
+    "httpd.exe",
+    "apache.exe",
+    "nginx.exe",
+    "tomcat",
+)
+
+SHELL_PROCESS_KEYWORDS: tuple[str, ...] = (
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "sh.exe",
+    "/bin/sh",
+    "/bin/bash",
+)
+
+PROCESS_CHAIN_KEYWORDS: tuple[str, ...] = (
+    "派生",
+    "拉起",
+    "启动子进程",
+    "spawns",
+    "spawned",
+    "child process",
 )
 
 WEBSHELL_WEAK_KEYWORDS: tuple[str, ...] = (
@@ -190,6 +216,24 @@ def _contains_affirmed_keyword(text: str, keywords: tuple[str, ...]) -> bool:
             if not any(marker in prefix for marker in NEGATION_MARKERS):
                 return True
             start = index + len(needle)
+    return False
+
+
+def _contains_affirmed_webshell_process_chain(text: str) -> bool:
+    """识别同一肯定分句中的 Web 宿主 -> shell 进程链，避免单进程误报。"""
+    clauses = [text]
+    for separator in ("，", ",", "。", ";", "；", "\n"):
+        clauses = [part for clause in clauses for part in clause.split(separator)]
+    for clause in clauses:
+        lowered = clause.lower()
+        if any(marker in lowered for marker in NEGATION_MARKERS):
+            continue
+        if (
+            any(keyword.lower() in lowered for keyword in WEBSHELL_HOST_PROCESS_KEYWORDS)
+            and any(keyword.lower() in lowered for keyword in SHELL_PROCESS_KEYWORDS)
+            and any(keyword.lower() in lowered for keyword in PROCESS_CHAIN_KEYWORDS)
+        ):
+            return True
     return False
 
 
@@ -336,7 +380,9 @@ class WebShellGatekeeper:
                 continue
 
             # 3. 强确认；同一分句中被“未发现/未检测到”等否定的词不计入。
-            if _contains_affirmed_keyword(text, WEBSHELL_STRONG_CONFIRM_KEYWORDS):
+            if _contains_affirmed_keyword(
+                text, WEBSHELL_STRONG_CONFIRM_KEYWORDS
+            ) or _contains_affirmed_webshell_process_chain(text):
                 out.append(
                     GatekeeperSignal(
                         name="input_strong_webshell",

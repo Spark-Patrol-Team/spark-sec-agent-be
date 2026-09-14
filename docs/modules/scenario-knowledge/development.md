@@ -12,7 +12,7 @@
 | 工具单元测试 | `tests/test_knowledge_tool.py` |
 | 案例输入边界测试 | `tests/test_knowledge_case_inputs.py` |
 | 门禁边界回归测试 | `tests/test_gatekeeper_boundary.py`（24 条：否定语义 / 通用进程 / 反序列化 / 内核驱动 / 大小写 / 空字段 / 冲突字段） |
-| 字段来源与判定合同 | `docs/modules/alert-correlation/event-field-signal-contract.md`（v1.1，登记陈敏、冻结杨嘉琪；D1 已按 main 实现关闭） |
+| 唯一接口合同 | `docs/modules/investigation-agent/formal-event-context-and-knowledge-tool-contract-v1.md`（v1.1）；`docs/modules/alert-correlation/event-field-signal-contract.md`仅为字段登记附件 |
 | 评测案例与来源说明 | `docs/modules/scenario-knowledge/knowledge-test-cases/` |
 
 不要在 `docs/` 下再复制一份 WebShell 知识正文。需要更新知识时，只修改唯一运行时文件，并同步补充测试。

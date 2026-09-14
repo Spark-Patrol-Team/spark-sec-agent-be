@@ -280,7 +280,98 @@ class TestAgentHelpers(unittest.TestCase):
             ["https://example.invalid/knowledge-source"],
         )
         self.assertEqual(report.key_evidence, [])
-        self.assertEqual(report.evidence_source, [])
+        self.assertEqual(report.evidence_source, ["上游风险研判"])
+        self.assertTrue(report.need_manual_takeover)
+
+    def test_normal_report_overrides_llm_knowledge_citations_in_event_evidence(self):
+        """即使 LLM 主动把知识 URL 写入证据字段，代码也必须按真实调用记录覆盖。"""
+
+        class _KnowledgeTool(Tool):
+            name = "knowledge_query"
+            description = "test knowledge"
+            parameters = {"type": "object", "properties": {}}
+
+            def call(self, params):
+                return ToolResult(
+                    status="success",
+                    summary="[知识卡] 通用调查方法",
+                    data={
+                        "source_citations": {
+                            "urls": ["https://example.invalid/knowledge-only"],
+                            "levels": ["Level 1"],
+                        }
+                    },
+                )
+
+        class _EventTool(Tool):
+            name = "query_alerts"
+            description = "test event observation"
+            parameters = {"type": "object", "properties": {}}
+
+            def call(self, params):
+                return ToolResult(status="success", summary="事件观测：目标主机出现异常请求")
+
+        class _LLM:
+            available = True
+
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, messages, tools=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "knowledge-call",
+                            "function": {"name": "knowledge_query", "arguments": "{}"},
+                        }],
+                    }
+                if self.calls == 2:
+                    return {
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "event-call",
+                            "function": {"name": "query_alerts", "arguments": "{}"},
+                        }],
+                    }
+                return {
+                    "content": json.dumps({
+                        "conclusion": "疑似攻击",
+                        "risk_level": "HIGH",
+                        "attack_type": "webshell",
+                        "key_evidence": ["https://example.invalid/knowledge-only"],
+                        "evidence_source": ["来源工具: knowledge_query"],
+                        "investigation_steps": [],
+                        "attack_chain": "待复核",
+                        "confidence": 0.7,
+                        "disposal_suggestions": ["继续调查"],
+                        "need_manual_takeover": False,
+                        "unresolved_issues": [],
+                        "affected_objects": ["192.0.2.20"],
+                    }, ensure_ascii=False),
+                    "tool_calls": [],
+                }
+
+        registry = ToolRegistry()
+        registry.register(_KnowledgeTool())
+        registry.register(_EventTool())
+        config = type("Config", (), {
+            "agent": type("Agent", (), {"max_tool_calls": 3})(),
+        })()
+        report = DeepInvestigationAgent(config, _LLM(), registry).investigate(
+            SecurityEventInput(
+                event_id="E-normal",
+                event_type="webshell",
+                evidence=["event-ref-1: 上游事件证据"],
+            )
+        )
+
+        self.assertNotIn("https://example.invalid/knowledge-only", report.key_evidence)
+        self.assertNotIn("来源工具: knowledge_query", report.evidence_source)
+        self.assertIn("event-ref-1: 上游事件证据", report.key_evidence)
+        self.assertIn("事件观测：目标主机出现异常请求", report.key_evidence)
+        self.assertIn("来源工具: query_alerts", report.evidence_source)
 
 
 class TestAgentConfig(unittest.TestCase):

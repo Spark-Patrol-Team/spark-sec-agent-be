@@ -1,8 +1,9 @@
-# 正式事件上下文与知识工具合同（冻结候选 v1.1）
+# 正式事件上下文、门禁与知识工具合同（正式冻结 v1.1）
 
-> 基线：`main@9247624`（PR #50 已合并）
-> 候选分支：`fix/knowledge-citation-contract-v1`
-> 状态：待陈敏确认输入与信号语义、杨嘉琪确认接口实现后，改为“正式冻结 v1”并登记最终Commit。
+> 主干基线：`main@0001bbd`（PR #50 已合并）
+> 整合来源：PR #54 `c9b5c845` + PR #55 `647da763`
+> 候选分支：`codex/pr54-pr55-integration-0913`（仅本地，未推送）
+> 状态：项目负责人于2026-09-14基于交付时限、安全默认和本地组合回归结果裁决正式冻结；不再等待个人补充回执。最终Commit待交付提交时登记，不影响本版语义冻结。
 > 目标：冻结外部调用者必须遵守的事件输入、门禁三档、知识工具可用性和调用结果语义。
 
 ## 1. 职责边界
@@ -12,7 +13,7 @@
 - 杨景凡：按同一合同绑定Agent，不复制门禁或另建模式开关。
 - 李雨妍：按同一合同接入主链、评测和汇总。
 
-本合同的“确认”必须指向同一文件和同一Commit；不得分别维护内容不同的私发版本。
+本文件是唯一规范性合同。三方交接单、RC说明及字段登记附件只作追溯，不得另行定义冲突语义。2026-09-14之后的实现必须遵守本冻结版；最终交付提交完成后补登记Commit。
 
 ## 2. Agent标准输入
 
@@ -22,7 +23,7 @@
 |---|---|---|---|
 | `event_id` | `str` | 稳定事件ID | 是 |
 | `event_type` | `str` | 结构化事件类型 | 是 |
-| `severity` | `str` | 风险等级 | 是 |
+| `severity` | `str` | 兼容字段名；bridge当前填入`triage.priority.upper()`，表示研判优先级标签，不是XDR原始`severity`、`AlertRecord.raw_severity`或数值型`risk_score` | 是 |
 | `timestamp` | `str` | 事件时间；bridge当前取`first_seen_at` | 是 |
 | `source_ip` | `str` | 攻击源；未知时允许空 | 是 |
 | `target_ip` | `str` | 目标地址或资产；未知时允许空 | 是 |
@@ -43,7 +44,7 @@ alerts, evidence, triage, initial_verdict
 
 `confidence`、`trace_id`、`run_id`可以进入Agent上下文，但不得参与知识门禁判断。
 
-当前门禁输入质量要求：`event_id/event_type/timestamp`不得为空，`alerts/evidence`必须为列表且不能同时为空。正式调用方应完整提供13个字段；允许为空的字段仍须遵守上表类型。
+正式调用方应完整提供13个字段；`alerts/evidence`必须为列表。必填语义字段为空、两类信号容器同时为空或字段类型错误时必须记录输入质量问题，并按最弱`weak_signal`或`blocked_by_gate`安全降级，不得异常放行。
 
 ## 3. event_type与引用/摘要绑定
 
@@ -105,6 +106,22 @@ out_of_scope
 - `out_of_scope`：正式CLI/bridge不注册`knowledge_query`。
 - gate缺失、无效或异常：fail-closed，不注册知识工具，不默认按`in_scope`放行。
 
+### 4.1 信号来源与强度
+
+门禁只读取第2节的10个白名单字段，`SecurityEvent.summary`不进入门禁。每条信号必须记录来源：`event_type/alerts/evidence/triage/initial_verdict`。
+
+内部信号强度为：`OUT_OF_SCOPE`、`BENIGN_LIKE`、`INDETERMINATE`、`IN_SCOPE_WEAK`、`IN_SCOPE_CONFIRMED`、`MIXED`。其中：
+
+- 结构化`event_type=webshell`、`triage.verdict=malicious`和普通进程名只形成弱信号；
+- 单独出现`cmd.exe/powershell.exe/java.exe/w3wp.exe`不得确认WebShell；
+- “Web进程派生Shell进程”等WebShell专属组合证据才可形成确认信号；
+- 内核驱动、Rootkit、SSH暴力破解等域外证据优先判为域外；
+- “未发现、未检测到、排除、并非、不属于”等否定仅作用于同一分句，被否定关键词不产生正向信号；
+- 强确认与域外/良性证据并存时为`MIXED → weak_signal`；
+- 全空、未知或无法确定时为`INDETERMINATE → weak_signal`。
+
+真实XDR证据摘要只有字段定位而缺少语义正文时，不人为拼造确认级证据；允许依靠结构化事件类型和告警摘要形成弱信号并继续补证。
+
 ## 5. 工具可用性与调用五态必须分层
 
 ### 5.1 注册前可用性状态
@@ -116,6 +133,8 @@ out_of_scope
 | `available` | `guarded`且gate为`in_scope/weak_signal`，工具已注册 |
 | `disabled_by_mode` | `KNOWLEDGE_MODE=off`，按实验配置主动关闭 |
 | `blocked_by_gate` | `out_of_scope`、gate缺失、无效或异常，按安全边界不注册 |
+
+代码载体为`KnowledgeToolAvailability`、`ToolAvailabilityRecord`和`resolve_knowledge_tool_availability()`。CLI与`DeepAgentBridge`必须调用同一分类函数，并由`ToolRegistry.availability_of("knowledge_query")`保留判定与原因；不得再分别复制条件判断。
 
 ### 5.2 实际调用后的五态
 
@@ -228,18 +247,26 @@ error = empty_knowledge_query
 ```
 
 - fallback报告也不得把知识卡摘要、URL或等级提升为当前事件事实。
+- 正常LLM报告路径不得信任模型自行填写的`key_evidence/evidence_source`；代码必须用上游事件证据与非知识工具的成功/部分成功结果覆盖这两个字段。
+- 只有`knowledge_query`成功而没有事件观测工具成功时，不得据此通过正常报告路径形成事件结论，应降级为证据不足并人工接管。
 
-## 7. 正式冻结确认
+## 7. 正式冻结记录
 
-以下项目全部确认后，才能把标题从“冻结候选 v1.1”改为“正式冻结 v1”：
+项目负责人已于2026-09-14裁决采用以下统一口径，不再把个人补充回执作为阻塞项。此处的完成表示“合同语义与本地实现已核对”，不表示真实XDR/MCP/LLM平台验收已经完成。
 
 ```text
-[ ] 陈敏确认13个输入字段、来源和信号语义
-[ ] 陈敏确认门禁10字段白名单不再扩张
-[ ] 陈敏确认initial_verdict/triage不会把任意malicious事件升级为WebShell
-[ ] 杨嘉琪确认event_type只走结构化字段
-[ ] 杨嘉琪确认alert_refs ↔ alert_summaries按alert_id映射
-[ ] 杨嘉琪确认supporting_evidence_refs ↔ evidence_summaries按ref_id映射
-[ ] 杨嘉琪确认注册前可用性与调用后五态分层
-[ ] 杨景凡、李雨妍登记同一文件与最终Commit
+[x] 13个输入字段、来源和信号语义已由字段面测试锁定
+[x] 门禁10字段白名单已由机械一致性测试锁定，summary不可读
+[x] initial_verdict/triage不得把任意malicious事件升级为WebShell
+[x] event_type只走结构化字段
+[x] alert_refs ↔ alert_summaries按alert_id映射
+[x] supporting_evidence_refs ↔ evidence_summaries按ref_id映射
+[x] 注册前available/disabled_by_mode/blocked_by_gate三态已有代码载体；调用后五态沿用冻结合同
+[x] 正常LLM与fallback两条路径均有确定性知识引用隔离
+[x] D2正式关闭：真实XDR证据摘要不足时保持weak_signal并继续补证，禁止拼造或补强证据
+[x] D3正式关闭：合同测试显式隔离KNOWLEDGE_MODE环境变量
+[x] D4正式关闭：单独w3wp.exe仅为弱信号；同分句Web宿主派生shell复合链才可确认
+[ ] 交付提交完成后登记最终Commit（仅交付记录，不阻塞语义冻结）
 ```
+
+冻结验证：定向回归156 passed / 1 skipped；纳入PR55最新字段面测试与`main@0001bbd`修订后，全量350 passed / 1 skipped。该结果是本地自动化组合回归，不替代真实平台联调。
