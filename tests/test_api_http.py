@@ -33,7 +33,7 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(payload["storage_backend"], "memory")
         self.assertEqual(payload["platform_backend"], "fixed_sample")
 
-    def test_event_http_flow_reaches_completed_after_approval(self) -> None:
+    def test_event_http_flow_requires_human_after_mock_verification(self) -> None:
         start_response = self.client.post(
             "/runs",
             json={"source": "fixed_sample", "sample_id": "webshell-001"},
@@ -77,9 +77,10 @@ class ApiHttpTest(unittest.TestCase):
 
         self.assertEqual(approval_response.status_code, 200)
         approved = approval_response.json()
-        self.assertEqual(approved["status"], "COMPLETED")
+        self.assertEqual(approved["status"], "HUMAN_REQUIRED")
         self.assertEqual(approved["response"]["execution"]["status"], "success")
-        self.assertEqual(approved["response"]["verification"]["final_status"], "COMPLETED")
+        self.assertEqual(approved["response"]["verification"]["final_status"], "HUMAN_REQUIRED")
+        self.assertEqual(approved["response"]["verification"]["status"], "unknown")
 
         list_response = self.client.get("/events")
         self.assertEqual(list_response.status_code, 200)
@@ -90,7 +91,7 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(list_item["effective_source"], "fixed_sample")
         self.assertEqual(list_item["sample_id"], "webshell-001")
         self.assertIsNone(list_item["xdr_event_id"])
-        self.assertEqual(list_item["status_label"], "已完成")
+        self.assertEqual(list_item["status_label"], "需人工处理")
         self.assertEqual(list_item["alert_count"], 2)
         self.assertEqual(list_item["risk_score"], 85)
         self.assertEqual(list_item["priority"], "high")
@@ -102,22 +103,22 @@ class ApiHttpTest(unittest.TestCase):
         self.assertEqual(view_response.status_code, 200)
         view = view_response.json()
         self.assertEqual(view["event_id"], event_id)
-        self.assertEqual(view["status_label"], "已完成")
+        self.assertEqual(view["status_label"], "需人工处理")
         self.assertEqual(view["source"]["sample_id"], "webshell-001")
         self.assertEqual(view["source"]["effective"], "fixed_sample")
-        self.assertEqual(view["overview"]["title"], "WebShell安全事件")
+        self.assertEqual(view["overview"]["title"], "WebShell需人工处理")
         self.assertEqual(view["overview"]["alert_count"], 2)
         self.assertEqual(view["overview"]["risk_score"], 85)
         self.assertEqual(view["overview"]["verdict"], "malicious")
         self.assertEqual(view["overview"]["priority"], "high")
         self.assertGreaterEqual(len(view["overview"]["affected_assets"]), 1)
         self.assertEqual(view["response"]["execution_status"], "success")
-        self.assertEqual(view["response"]["final_status"], "COMPLETED")
+        self.assertEqual(view["response"]["final_status"], "HUMAN_REQUIRED")
         self.assertEqual(view["investigation"]["tool_result_count"], 2)
         self.assertNotIn("tool_results", view["investigation"])
         self.assertEqual(
             [item["status_label"] for item in view["timeline"]],
-            ["已接收", "关联中", "已研判", "调查中", "待决策", "待审批", "执行中", "验证中", "已完成"],
+            ["已接收", "关联中", "已研判", "调查中", "待决策", "待审批", "执行中", "验证中", "需人工处理"],
         )
 
         update_response = self.client.patch(

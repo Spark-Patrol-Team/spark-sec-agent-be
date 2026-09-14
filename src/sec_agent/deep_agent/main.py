@@ -29,7 +29,11 @@ from .config import load_config
 from .llm import LLMClient
 from .models import SecurityEventInput
 from .agent import DeepInvestigationAgent
-from .tools.base import ToolRegistry
+from .tools.base import (
+    KnowledgeToolAvailability,
+    ToolRegistry,
+    resolve_knowledge_tool_availability,
+)
 from .tools.mock import build_mock_tools
 from .tools.knowledge import build_knowledge_tools
 from .tools.mcp_client import build_mcp_tools
@@ -54,14 +58,12 @@ def build_tools(config, *, gate_decision: str | None = None) -> ToolRegistry:
         for t in build_mock_tools():
             registry.register(t)
 
-    # 知识包检索工具（knowledge.query）：本地资源，所有工具模式下都注册
-    # 知识包检索工具：
-    # guarded = 注册知识工具；
-    # off = 完全不注册知识工具。
-    if config.tools.knowledge_mode == "guarded" and gate_decision in {
-        "in_scope",
-        "weak_signal",
-    }:
+    knowledge_availability = resolve_knowledge_tool_availability(
+        config.tools.knowledge_mode,
+        gate_decision,
+    )
+    registry.record_availability(knowledge_availability)
+    if knowledge_availability.status == KnowledgeToolAvailability.AVAILABLE:
         for t in build_knowledge_tools(gate_decision=gate_decision):
             registry.register(t)
 
@@ -131,7 +133,7 @@ def main(argv=None) -> int:
         return 1
 
     agent = DeepInvestigationAgent(config, llm, tools)
-    report = agent.investigate(event)
+    report = agent.investigate(event, gate_decision=gate_decision)
     output = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
 
     if args.output:

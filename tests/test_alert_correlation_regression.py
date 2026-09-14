@@ -100,13 +100,14 @@ class AlertCorrelationRegressionTest(unittest.TestCase):
 
         ctx = orchestrator.start(StartRunRequest(source="jsonl_sample", sample_id="FIX-XDR-WEBSHELL-001"))
 
-        self.assertEqual(ctx.status, BusinessStatus.APPROVAL_REQUIRED)
+        self.assertEqual(ctx.status, BusinessStatus.HUMAN_REQUIRED)
         self.assertIsNotNone(ctx.event_summary)
         self.assertIsNotNone(ctx.triage)
         self.assertEqual(ctx.event_summary.alert_refs, ["FIX-XDR-WEBSHELL-001"])
         self.assertEqual(ctx.event_summary.alert_count_before, 1)
         self.assertEqual(ctx.event_summary.event_count_after, 1)
         self.assertEqual(ctx.triage.risk_score, 95)
+        self.assertIsNone(ctx.response)
         self.assertIn(BusinessStatus.TRIAGED, [entry.status for entry in ctx.timeline])
 
 

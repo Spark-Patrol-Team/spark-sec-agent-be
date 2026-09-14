@@ -1,109 +1,117 @@
 # 处置闭环模块开发说明
 
+## 0. 文档信息
+
+| 项目 | 内容 |
+|---|---|
+| 模块 | response-closure |
+| 本轮任务 | T0913：最终响应闭环完善、语义验收与交付准备 |
+| 文档职责 | 实际代码位置、调用链、运行时实现、执行与验证流程 |
+| 当前能力 | 本地 Stateful Mock 闭环；真实平台设备生效未验证 |
+
 ## 1. 代码位置
 
-- `src/sec_agent/services/response.py`
-- `src/sec_agent/platforms/mock_state.py`
-- `src/sec_agent/platforms/fixed_sample.py`
-- `src/sec_agent/platforms/jsonl_sample.py`
-- `src/sec_agent/services/orchestrator.py`
+| 路径 | 主要对象/入口 | 作用 |
+|---|---|---|
+| src/sec_agent/services/orchestrator.py | Orchestrator.start()、approve()、_execute_and_verify() | 编排调查、范围冻结、决策、审批、执行、验证和最终状态 |
+| src/sec_agent/services/response.py | ResponseEvidenceScopeResolver | 唯一生产 response_evidence_scope |
+| src/sec_agent/services/response.py | ResponseDecisionService | 消费已冻结 scope，生成 ResponsePlan |
+| src/sec_agent/services/response.py | ResponseExecutionService | 构造 ToolRequest 并调用平台工具 |
+| src/sec_agent/services/response.py | ResponseVerificationService | 调用 response_verify 并判定验证结果 |
+| src/sec_agent/services/investigation.py | DeepInvestigationAgent | 调查工具调用和 InvestigationStep.tool_result 记录 |
+| src/sec_agent/services/deep_agent_bridge.py | DeepAgentBridge | 将 deep-agent 工具记录映射为领域调查步骤和结果 |
+| src/sec_agent/domain/models.py | TriageResult、ResponsePlan、ExecutionResult、VerificationResult | 闭环领域数据模型 |
+| src/sec_agent/platforms/base.py | PlatformAdapter | run_tool() 与 query_action_status() 平台抽象 |
+| src/sec_agent/platforms/fixed_sample.py、jsonl_sample.py | 平台适配器 | 注册工具调度器和处置专用 Mock ledger |
+| src/sec_agent/platforms/mock_state.py | StatefulMockLedger | 进程内处置记录、幂等和状态查询 |
 
-## 2. 实现概览
+## 2. 实际主链调用路径
 
-`response.py` 当前实现的是一条明确的处置闭环链路：
+实际运行关系不是由类名推断，而是由 Orchestrator 的调用顺序形成：
 
-1. `ResponseDecisionService` 根据调查报告和上游 `TriageResult` 生成 `ResponsePlan`；
-2. 高风险处置方案进入 `APPROVAL_REQUIRED`；
-3. 审批通过后，`ResponseExecutionService` 通过 `PlatformAdapter.run_tool()` 发起 `stateful_response_mock` 调用；
-4. 执行成功后进入 `VERIFYING`，由 `ResponseVerificationService` 通过 `response_verify` 独立查询处置状态；
-5. 根据执行和查询结果进入 `COMPLETED`、`HUMAN_REQUIRED` 或 `FAILED`。
+~~~text
+Orchestrator.start()
+  -> AlertIngestService / AlertCorrelationService / RiskTriageService
+  -> DeepInvestigationAgent.investigate()
+       -> tool chain / DeepAgentBridge
+       -> InvestigationStep.tool_result
+       -> InvestigationReport
+  -> ResponseEvidenceScopeResolver.resolve()
+       -> ctx.triage.response_evidence_scope
+  -> ResponseDecisionService.build_plan()
+       -> ResponsePlan.evidence_scope
+  -> DECISION_READY / APPROVAL_REQUIRED
+  -> Orchestrator.approve()
+  -> Orchestrator._execute_and_verify()
+  -> ResponseExecutionService.execute()
+       -> ToolRequest(stage=EXECUTING)
+       -> platform.run_tool("stateful_response_mock")
+       -> ToolResult
+       -> ExecutionResult
+  -> ResponseVerificationService.verify()
+       -> ToolRequest(stage=VERIFYING, tool_name="response_verify")
+       -> platform.run_tool("response_verify")
+       -> VerificationResult
+  -> StateMachine.move(..., verification.final_status)
+       -> final disposition
+~~~
 
-业务模块不直接推进业务状态，状态推进由 `Orchestrator` 和状态机统一完成。
+调查工具失败会进入调查报告的工具结果/调查缺口；主链随后由 resolver 和决策层按 fail-closed 规则阻止不安全升级。tool_call_records 在 Bridge 中映射到 InvestigationStep.tool_result，因此调查结果能够进入 scope 生产输入，而不是只停留在模型字段或原始 Agent 输出中。
 
-## 3. 工具调用链
+## 3. Scope 的运行时传递
 
-固定样例和 JSONL 样例适配器都通过 `build_platform_tool_dispatcher()` 注册以下工具：
+1. DeepInvestigationAgent 产出 InvestigationReport，其中包含步骤、工具结果、证据引用和未决问题。
+2. Orchestrator.start() 调用唯一的 ResponseEvidenceScopeResolver.resolve(report, triage, event)。
+3. resolver 返回的枚举值写入同一个 TriageResult.response_evidence_scope，并保存到事件上下文。
+4. ResponseDecisionService.build_plan() 调用 _boundary_decision()，只读取 triage.response_evidence_scope。
+5. 成功生成的 ResponsePlan.evidence_scope 保存该冻结值，供后续审批、执行和审查使用。
 
-```text
-evidence_lookup
-xdr_log_query
-stateful_response_mock
-response_verify
-stateful_mock
-```
+resolver 通过共享的 build_gatekeeper_input() 将主链事件映射到正式门禁输入，并把 gate_decision 作为 scope 的硬上限；响应层不复制 WebShell 关键词或另写分类器。决策层对调查缺口、未决问题和工具失败的检查只用于一致性校验和收紧权限，不重新计算 scope。knowledge refs 和报告建议均不能绕过这条传递路径。
 
-处置闭环只使用其中的：
+## 4. 执行与验证流程
 
-```text
-stateful_response_mock
-  -> StatefulMockLedger.record_action()
-response_verify
-  -> StatefulMockLedger.query_action_status()
-  -> StatefulMockLedger.get()
-```
+### 4.1 方案与审批
 
-## 4. 幂等与状态
+ResponseDecisionService 先检查人工接管标志、建议动作和目标对象，再检查 scope、恶意结论、调查缺口和风险上限。当前动作固定为 stateful_mock_containment；中、高、严重风险需要审批。
 
-- `Orchestrator.approve()` 先通过仓库的 `claim_idempotency_key()` 抢占审批幂等键；
-- 同一审批幂等键重复提交时直接返回当前事件，不重复推进主流程；
-- `StatefulMockLedger.record_action()` 对同一处置幂等键只保留首次记录；
-- 处置账本和通用 `stateful_mock` 的状态空间相互独立；
-- 当前内存仓库和处置账本都不提供跨进程、跨重启恢复。
+Orchestrator.approve() 只接受 APPROVAL_REQUIRED 状态，使用审批幂等键避免重复推进。审批拒绝直接进入 HUMAN_REQUIRED，不调用处置工具。
 
-## 5. 结果处理
+### 4.2 执行
 
-### 5.1 执行成功
+ResponseExecutionService.execute() 构造 ToolRequest，设置已批准状态、幂等键和 stage=EXECUTING，调用 PlatformAdapter.run_tool()。当前适配器将请求交给 stateful_response_mock，并由 StatefulMockLedger 写入进程内记录。
 
-`ResponseExecutionService` 将 `ToolResult.status == success` 映射为：
+ToolResult.status=success 映射为 ExecutionResult.executed=true，但 ExecutionResult.effect_layer 仍为 STATEFUL_MOCK。执行失败映射为 executed=false，编排进入 FAILED，不继续验证。
 
-```text
-ExecutionResult.executed = true
-ExecutionResult.mode = mock
-```
+### 4.3 独立验证
 
-随后必须进入 `VERIFYING`，不能直接结束为 `COMPLETED`。
+执行成功后，编排进入 VERIFYING。ResponseVerificationService 重新构造只读 ToolRequest 调用 response_verify，查询处置账本，而不是复用执行调用的成功状态。
 
-### 5.2 执行失败
+只有以下条件同时满足才返回 VerificationResult.final_status=COMPLETED：
 
-当处置工具返回非 `success`：
+- 验证工具 ToolResult.status=success；
+- 验证动作状态为 effective 或 executed；
+- verified_effect_layer=DEVICE_EFFECT；
+- 验证状态为 effective。
 
-- `ExecutionResult.executed = false`；
-- 主流程进入 `FAILED`；
-- 不调用执行后验证；
-- 当前实现不会自动重试。
+验证工具失败、部分成功、not_found、未知状态、failed/ineffective 或缺少 DEVICE_EFFECT 时，验证结果进入 HUMAN_REQUIRED，不会自动完成。
 
-### 5.3 验证结果
+## 5. 五层状态在运行时的实际来源
 
-验证服务读取独立查询返回的 `action_status`：
+| 层级 | 运行时来源 | 当前口径 |
+|---|---|---|
+| request sent | ToolRequest 创建并传入 platform.run_tool() | 只能证明系统发起调用 |
+| platform accepted | 无独立字段、无独立平台回执契约 | 当前系统不对 platform accepted 做独立证明 |
+| platform recorded | ToolResult.output_preview、Mock ledger 查询结果 | 只能证明存在记录/回执 |
+| device effective | 验证输出中的 effect_layer=DEVICE_EFFECT | 当前由测试替身提供可控输入 |
+| independent verification successful | response_verify 成功 + 有效动作状态 + DEVICE_EFFECT | 是进入响应 COMPLETED 的组合门槛 |
 
-- `executed`：`effective -> COMPLETED`；
-- `failed`：`ineffective -> HUMAN_REQUIRED`；
-- `not_found` 或其他无法确认状态：`unknown -> HUMAN_REQUIRED`。
+当前真实平台没有被现有测试证明能提供后四层中的独立受理、记录或设备效果证据。
 
-## 6. 当前实现边界
+## 6. 运行边界
 
-- `timeout_seconds=30` 和 `max_attempts=1` 会写入 `ToolRequest`，但当前没有真正的超时控制和重试调度；
-- `rollback_available=true` 只是方案字段，实际回滚动作尚未实现；
-- 当前每个方案只执行第一个目标和一个固定 Mock 动作；
-- 固定样例和 JSONL 样例的状态账本均为进程内存；
-- 真实平台、真实副作用、持久化恢复和多动作部分成功尚未接入。
-
-## 7. 当前实现口径
-
-开发文档中只把以下内容视为已实现事实：
-
-- 本地流程可跑通；
-- 审批门禁可生效；
-- Mock 执行和独立验证可分离；
-- 幂等能防止重复推进；
-- 失败、未知和人工接管分支已实现。
-
-以下内容仍应按未完成处理：
-
-- 真实平台处置工具接入；
-- 真实设备联动；
-- 跨进程持久化；
-- 自动重试；
-- 处置回滚；
-- 多动作部分成功。
-
+- timeout_seconds=30 和 max_attempts=1 会写入请求，但本轮不实现实际超时调度或重试。
+- Mock ledger 为进程内状态，不承担跨进程或重启恢复。
+- 当前方案只执行一个固定 Mock 动作和第一个目标。
+- rollback_available 是方案字段，不代表已实现回滚。
+- 真实平台适配器、真实设备联动和生产级独立验证不在当前实现能力内。
+- 本轮不新增未知副作用状态、不改造 PATCH 状态更新接口、不建立新的响应状态机。
