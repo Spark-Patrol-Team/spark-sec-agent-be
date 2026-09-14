@@ -80,17 +80,54 @@ class GatekeeperResult:
 
 WEBSHELL_STRONG_CONFIRM_KEYWORDS: tuple[str, ...] = (
     "Process.Start",
-    "cmd.exe",
-    "w3wp.exe",
     "eval(",
     "assert(",
     "System.Runtime.InteropServices",
     "反序列化攻击",
-    "内核驱动文件",
-    "进程隐藏行为",
     "AES/RSA加密通信特征",
-    "子进程 cmd.exe",
     "Web 进程派生 shell 进程",
+)
+
+# 普通进程/系统工具名单独出现时只作弱信号：它们本身不是 WebShell 证据，
+# 必须配合文件落地、Web 进程派生、反序列化载荷等 WebShell 专属证据才能确认。
+GENERIC_PROCESS_WEAK_KEYWORDS: tuple[str, ...] = (
+    "w3wp.exe",
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "java.exe",
+    "javaw.exe",
+    "wscript.exe",
+    "cscript.exe",
+    "mshta.exe",
+    "whoami.exe",
+    "net.exe",
+)
+
+WEBSHELL_HOST_PROCESS_KEYWORDS: tuple[str, ...] = (
+    "w3wp.exe",
+    "httpd.exe",
+    "apache.exe",
+    "nginx.exe",
+    "tomcat",
+)
+
+SHELL_PROCESS_KEYWORDS: tuple[str, ...] = (
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "sh.exe",
+    "/bin/sh",
+    "/bin/bash",
+)
+
+PROCESS_CHAIN_KEYWORDS: tuple[str, ...] = (
+    "派生",
+    "拉起",
+    "启动子进程",
+    "spawns",
+    "spawned",
+    "child process",
 )
 
 WEBSHELL_WEAK_KEYWORDS: tuple[str, ...] = (
@@ -135,6 +172,11 @@ OUT_OF_SCOPE_KEYWORDS: tuple[str, ...] = (
     "供应商域名",
     "WordPress_Compromise",
     "BdThemes",
+    # 驱动/内核模块/进程隐藏属于其他攻击链（rootkit 等），不得归入 WebShell。
+    "内核驱动",
+    "内核模块",
+    "进程隐藏行为",
+    "Rootkit",
 )
 
 NEGATION_MARKERS: tuple[str, ...] = (
@@ -145,9 +187,16 @@ NEGATION_MARKERS: tuple[str, ...] = (
     "不存在",
     "不包含",
     "无法确认",
+    # “排除”类语义：已排除 / 可排除 / 暂排除 等，出现关键词也不得升级。
+    "排除",
+    "并非",
+    "不属于",
+    "未构成",
     "no evidence",
     "not found",
     "not detected",
+    "excluded",
+    "ruled out",
 )
 
 
@@ -167,6 +216,24 @@ def _contains_affirmed_keyword(text: str, keywords: tuple[str, ...]) -> bool:
             if not any(marker in prefix for marker in NEGATION_MARKERS):
                 return True
             start = index + len(needle)
+    return False
+
+
+def _contains_affirmed_webshell_process_chain(text: str) -> bool:
+    """识别同一肯定分句中的 Web 宿主 -> shell 进程链，避免单进程误报。"""
+    clauses = [text]
+    for separator in ("，", ",", "。", ";", "；", "\n"):
+        clauses = [part for clause in clauses for part in clause.split(separator)]
+    for clause in clauses:
+        lowered = clause.lower()
+        if any(marker in lowered for marker in NEGATION_MARKERS):
+            continue
+        if (
+            any(keyword.lower() in lowered for keyword in WEBSHELL_HOST_PROCESS_KEYWORDS)
+            and any(keyword.lower() in lowered for keyword in SHELL_PROCESS_KEYWORDS)
+            and any(keyword.lower() in lowered for keyword in PROCESS_CHAIN_KEYWORDS)
+        ):
+            return True
     return False
 
 
@@ -285,11 +352,11 @@ class WebShellGatekeeper:
             return
         for t in texts:
             text = str(t)
-            text_lower = text.lower()
 
             # 1. 域外信号优先于通用进程/函数词，避免 SSH 等其他攻击链
-            # 因偶然包含 cmd.exe 等文本被错误归入 WebShell。
-            if any(k.lower() in text_lower for k in OUT_OF_SCOPE_KEYWORDS):
+            # 因偶然包含 cmd.exe 等文本被错误归入 WebShell；
+            # 被“未发现/排除”等否定的域外关键词同样不计入。
+            if _contains_affirmed_keyword(text, OUT_OF_SCOPE_KEYWORDS):
                 out.append(
                     GatekeeperSignal(
                         name="input_out_of_scope",
@@ -301,7 +368,7 @@ class WebShellGatekeeper:
                 continue
 
             # 2. 明确合法/正常语境优先，不能仅凭其中的编码、上传或进程词升级。
-            if any(k.lower() in text_lower for k in BENIGN_LIKE_KEYWORDS):
+            if _contains_affirmed_keyword(text, BENIGN_LIKE_KEYWORDS):
                 out.append(
                     GatekeeperSignal(
                         name="input_benign_like",
@@ -313,7 +380,9 @@ class WebShellGatekeeper:
                 continue
 
             # 3. 强确认；同一分句中被“未发现/未检测到”等否定的词不计入。
-            if _contains_affirmed_keyword(text, WEBSHELL_STRONG_CONFIRM_KEYWORDS):
+            if _contains_affirmed_keyword(
+                text, WEBSHELL_STRONG_CONFIRM_KEYWORDS
+            ) or _contains_affirmed_webshell_process_chain(text):
                 out.append(
                     GatekeeperSignal(
                         name="input_strong_webshell",
@@ -324,7 +393,20 @@ class WebShellGatekeeper:
                 )
                 continue
 
-            # 4. 弱信号
+            # 4. 通用进程（cmd.exe/powershell.exe/java.exe 等）单独出现只作弱信号，
+            #    必须配合 WebShell 专属证据才能升级，见第 3 步。
+            if _contains_affirmed_keyword(text, GENERIC_PROCESS_WEAK_KEYWORDS):
+                out.append(
+                    GatekeeperSignal(
+                        name="input_generic_process",
+                        description=text,
+                        strength=SignalStrength.IN_SCOPE_WEAK,
+                        source=source,
+                    )
+                )
+                continue
+
+            # 5. 弱信号
             if _contains_affirmed_keyword(text, WEBSHELL_WEAK_KEYWORDS):
                 out.append(
                     GatekeeperSignal(

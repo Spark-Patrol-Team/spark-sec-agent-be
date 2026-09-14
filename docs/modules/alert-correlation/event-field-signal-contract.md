@@ -1,0 +1,118 @@
+# 事件字段—来源—信号强度登记附件（v1.1，非独立合同）
+
+> 唯一规范性合同：`docs/modules/investigation-agent/formal-event-context-and-knowledge-tool-contract-v1.md`。
+> 本文件只保留陈敏侧字段来源、测试映射与历史决策记录；如有冲突，以唯一规范性合同和同一最终Commit为准。本文件不得单独签署或冻结。
+
+## 0. 文档信息
+
+| 项目 | 内容 |
+|---|---|
+| 附件名称 | 事件字段—来源—信号强度登记附件 |
+| 版本号 | **v1.1**（登记方与冻结方共用同一个版本号） |
+| 登记（信号语义） | 陈敏，告警关联模块，2026-09-13 |
+| 代码接口复核 | 杨嘉琪既有RC2与PR54实现作为输入；D1已实现，D2/D3/D4由项目负责人于2026-09-14裁决关闭，不再等待补充回执 |
+| 适用代码基线 | `main@0001bbd`（PR #50 已合入 main；本合同自 v1.1 起以 main 为基线） |
+| 门禁实现 | `src/sec_agent/services/gatekeeper.py` |
+| 字段生产 | `src/sec_agent/services/correlation.py`、`src/sec_agent/services/triage.py` |
+| 桥接 | `src/sec_agent/services/deep_agent_bridge.py::_to_deep_agent_input` |
+| 代码一致性测试 | `tests/test_event_field_signal_contract.py` |
+| 门禁边界测试 | `tests/test_gatekeeper_boundary.py` |
+
+本附件不是第二套合同：它只登记“主链字段从哪里产生”以及对应测试。字段与门禁的正式语义统一进入唯一规范性合同。任何一方改动字段来源或判定语义，必须同时更新唯一合同并重跑上述两份测试，不允许只改代码或只改文档。
+
+## 1. 字段来源
+
+链路是**三段**，字段在每一段都可能被裁剪或改名，下面所有结论都以“门禁实际能看到什么”为准：
+
+```text
+SecurityEvent（12 字段，含 summary / alert_refs / alert_summaries / evidence_summaries）
+  → DeepAgentBridge._to_deep_agent_input() 只映射 13 字段
+  → SecurityEventInput（13 字段）
+  → WebShellGatekeeper 只读其中白名单 10 字段
+```
+
+因此`summary`、`alert_refs`、`alert_summaries`、`evidence_summaries`都不是`SecurityEventInput`的字段，门禁读不到它们本身；其中引用类字段由bridge先序列化成字符串，再随`alerts`/`evidence`进入白名单。
+
+| 字段 | 产生位置 | 语义 | 是否进入`SecurityEventInput` | 门禁是否可读 | 为空 / 缺失时 |
+|---|---|---|---|---|---|
+| `event_id` | `AlertCorrelationService.correlate` | 事件标识 | 是（`event_id`） | 可读，仅用于输入质量检查 | 记录“必填字段为空或非法” |
+| `event_type` | `correlate()`取同一事件内已校验一致的`alert_type`（`correlation.py:71`） | 机器事件类型token | 是（`event_type`） | 可读，只作弱信号 | 不产生事件类型信号，按第4节降级 |
+| `summary` | `correlate()` | 面向人的压缩摘要句 | **否（bridge不映射）** | **不可读** | 不参与门禁判定；仅供人阅读 |
+| `alert_refs` | `correlate()`，取`AlertRecord.alert_id` | 审计定位锚点 | 否（bridge序列化进`alerts`） | 经`alerts`文本可读，只作载体 | 与摘要同步缺失 |
+| `alert_summaries` | `correlate()`，`{alert_id: alert.name}`映射 | 以告警ID为键的名称 | 否（bridge序列化进`alerts`） | 经`alerts`文本可读 | 该条只保留ID |
+| `supporting_evidence_refs` | `RiskTriageService.triage` | 证据定位锚点 | 否（bridge序列化进`evidence`） | 经`evidence`文本可读，只作载体 | 无证据时为空列表 |
+| `evidence_summaries` | `correlate()`，`{ref_id: summary}`映射并过滤空摘要 | 以证据ref_id为键的摘要 | 否（bridge序列化进`evidence`） | 经`evidence`文本可读 | 该条只保留ID |
+| `triage.verdict` | 风险研判模块 | 结构化研判结论 | 是（`triage.verdict`） | 可读 | 不产生研判信号 |
+| `initial_verdict` | 上游初步研判文本 | 初步结论文本 | 是（`initial_verdict`） | 可读 | 不产生研判信号 |
+| `confidence` / `trace_id` / `run_id` | 上游 | 置信度与链路标识 | 是 | **禁止读取** | 与判定无关 |
+
+`SecurityEventInput`的13字段与门禁白名单10字段可机械校验：白名单是输入字段的子集，输入减白名单恰为`{confidence, trace_id, run_id}`，`summary`不属于任何一侧。对应测试见`tests/test_event_field_signal_contract.py`。
+
+桥接（`deep_agent_bridge.py::_described_refs`）**按 ID 查映射**后拼成 `<ref_id>: <摘要>` 交给门禁与 Agent；
+映射中查不到（或摘要为空）的引用只保留裸 ID。禁止把“全部 ID 列表”和“仅非空摘要列表”按数组下标拼接。
+`summary`既不进入Agent输入也不进入门禁，因此“不得用`summary`反推`event_type`”是bridge之前的义务，门禁侧不存在读取它的可能性。
+
+## 2. 信号来源与强度
+
+门禁只从白名单 10 个字段读取信号（`gatekeeper.py:43`），每条信号都标注来源：
+`event_type` / `alerts` / `evidence` / `triage` / `initial_verdict`。
+
+强度 6 级（`SignalStrength`）：`OUT_OF_SCOPE`、`BENIGN_LIKE`、`INDETERMINATE`、
+`IN_SCOPE_WEAK`、`IN_SCOPE_CONFIRMED`、`MIXED`。
+
+同一段文本按下列顺序判定，命中即停止（`gatekeeper.py:304`）：
+
+1. 域外关键词（SSH/暴力破解/供应链/XSS/驱动内核等，`gatekeeper.py:137`）→ `OUT_OF_SCOPE`；
+2. 合法语境关键词（已知业务 API、头像上传、部署尝试未成功等，`gatekeeper.py:126`）→ `BENIGN_LIKE`；
+3. WebShell 专属强证据（`Process.Start`、`System.Runtime.InteropServices`、`反序列化攻击`、
+   `AES/RSA加密通信特征`、`Web 进程派生 shell 进程` 等，`gatekeeper.py:81`）→ `IN_SCOPE_CONFIRMED`；
+4. 通用/宿主进程名单独出现（`w3wp.exe`、`cmd.exe`、`powershell.exe`、`java.exe` 等，`gatekeeper.py:94`）→ `IN_SCOPE_WEAK`；
+5. WebShell 弱关键词（`shell.aspx`、`文件上传`、`WebShell文件` 等，`gatekeeper.py:107`）→ `IN_SCOPE_WEAK`。
+
+否定语义（`未发现/未检测到/不存在/排除/并非/不属于/no evidence/not detected/excluded/ruled out` 等，
+`gatekeeper.py:156`）只作用于**同一分句**：同一分句中被否定的关键词不产生任何正向信号，
+其他分句的确认证据不受影响（见边界用例 `BOUNDARY-NEG-*`）。
+
+## 3. 三档判定组合（冻结）
+
+| 信号组合 | 聚合强度 | 判定 | 知识工具行为 |
+|---|---|---|---|
+| 仅 `event_type=webshell` | `IN_SCOPE_WEAK` | `weak_signal` | 注册但只返回受限 `partial`，不返回确认性知识 |
+| 强证据 + 弱证据 | `IN_SCOPE_CONFIRMED` | `in_scope` | 返回确认性知识 |
+| 仅弱证据 / 仅通用进程名 | `IN_SCOPE_WEAK` | `weak_signal` | 同上 |
+| 仅域外证据（域外优先于通用进程词） | `OUT_OF_SCOPE` | `out_of_scope` | 不注册知识工具 |
+| 强证据 与 域外/良性证据并存 | `MIXED` | `weak_signal` | 不得放行为 `in_scope` |
+| 无任何信号 / 全空字段 | `INDETERMINATE` | `weak_signal` | 安全默认拒绝确认性知识 |
+
+聚合与映射实现：`gatekeeper.py:463`（`_aggregate_strength`）、`gatekeeper.py:260`（`_to_gate_decision`）。
+
+## 4. 空、缺失与冲突字段处理（冻结）
+
+| 情形 | 处理 | 结果 |
+|---|---|---|
+| `event_type` 为空/空白/未知 | 不产生事件类型信号，记录输入质量问题 | 最弱退化为 `weak_signal` |
+| `alerts` 与 `evidence` 均为空 | 记录“信号容器为空” | `INDETERMINATE` → `weak_signal` |
+| 单条文本为空串/空白/`None` | 不匹配任何关键词，不产生信号 | 不影响其他条目 |
+| 某字段本身缺失 | 按 `SecurityEventInput` 默认值处理（空值） | 与显式空值一致 |
+| `event_type=WebShell` 但正文明确排除 | 按否定语义不产生正向文本信号；事件类型仍保留弱信号 | `weak_signal`，不升级 |
+| `event_type=WebShell` 但正文指向域外攻击 | 域外信号优先，并记录“事件类型与证据冲突” | `out_of_scope` |
+| 确认级与域外/良性证据并存 | 记录输入质量冲突 | `MIXED` → `weak_signal` |
+| 门禁结果缺失或审计异常 | 桥接与 CLI 均不注册知识工具，工具层再次拒绝 | 禁止 fail-open |
+
+同一输入的判定必须与字段遍历顺序无关：判定是集合聚合，不做“随机取一个字段”。
+
+## 5. 冻结决策记录
+
+| 编号 | 事项 | 现状与复现 | 影响 | 正式冻结决定 |
+|---|---|---|---|---|
+| D1 | `supporting_evidence_refs` 与 `evidence_summaries` 的对应关系 | **已实现（v1.1 关闭）**：`SecurityEvent.alert_summaries / evidence_summaries` 改为以引用 ID 为键的映射，桥接按 ID 查表拼串，无摘要证据保留裸 ID（`38cee87 fix: address PR50 review findings`）。验证：`tests/test_event_field_signal_contract.py::TestEvidencePairingById` 两条用例覆盖“新的在前”入参顺序与空摘要两种错位场景，v1.0 时为 xfail，v1.1 转为通过 | 已消除证据串位风险 | 无（后续若改变映射结构需升版本号） |
+| D2 | 真实XDR路径的`evidence`摘要语义 | 证据摘要可能只有字段定位文字，不能支撑确认级语义 | 企业真实告警链路可能只能到`weak_signal` | **已关闭**：采用安全默认，不拼造或补强证据，保持弱信号并继续补证 |
+| D3 | 桥接与门禁测试的环境隔离 | 直接`load_config()`可能受开发机`KNOWLEDGE_MODE`影响 | 导致非确定性失败 | **已关闭**：Bridge合同测试显式固定`KNOWLEDGE_MODE=guarded` |
+| D4 | `w3wp.exe`单独出现的强度 | IIS工作进程本身不能证明WebShell | 误放行确认性知识 | **已关闭**：单独出现为弱信号；同分句Web宿主派生shell复合链才可确认为强证据 |
+
+## 6. 版本与签署
+
+| 版本 | 日期 | 登记（陈敏） | 冻结（杨嘉琪） | 变更内容 |
+|---|---|---|---|---|
+| v1.0 | 2026-09-13 | 已登记 | 待确认 | 首版：字段来源表、信号来源与强度、三档判定组合、空/缺失/冲突处理、待冻结项 D1—D4 |
+| v1.1 | 2026-09-14 | 已登记 | 项目负责人裁决冻结 | 对齐`main@0001bbd`和PR55最新头`647da763`；修正字段面；正式关闭D2/D3/D4；本文件保持登记附件，规范语义以唯一正式合同为准 |

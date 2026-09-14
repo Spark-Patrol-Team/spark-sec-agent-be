@@ -49,6 +49,12 @@ class DeepAgentBridge:
                     "LLMClient": importlib.import_module(f"{package}.llm").LLMClient,
                     "SecurityEventInput": importlib.import_module(f"{package}.models").SecurityEventInput,
                     "ToolRegistry": importlib.import_module(f"{package}.tools.base").ToolRegistry,
+                    "KnowledgeToolAvailability": importlib.import_module(
+                        f"{package}.tools.base"
+                    ).KnowledgeToolAvailability,
+                    "resolve_knowledge_tool_availability": importlib.import_module(
+                        f"{package}.tools.base"
+                    ).resolve_knowledge_tool_availability,
                     "build_mock_tools": importlib.import_module(f"{package}.tools.mock").build_mock_tools,
                 }
             except (ModuleNotFoundError, AttributeError) as exc:
@@ -80,12 +86,12 @@ class DeepAgentBridge:
             for tool in modules["build_mock_tools"]():
                 registry.register(tool)
 
-        # guarded 模式必须先得到有效三档门禁结果。门禁缺失或审计异常时不注册
-        # knowledge_query，避免无门禁工具残留形成 fail-open。
-        if knowledge_mode == "guarded" and gate_decision in {
-            "in_scope",
-            "weak_signal",
-        }:
+        knowledge_availability = modules["resolve_knowledge_tool_availability"](
+            knowledge_mode,
+            gate_decision,
+        )
+        registry.record_availability(knowledge_availability)
+        if knowledge_availability.status == modules["KnowledgeToolAvailability"].AVAILABLE:
             self._register_knowledge_tools(registry, modules, gate_decision)
 
         if tool_mode in {"mcp", "auto"}:

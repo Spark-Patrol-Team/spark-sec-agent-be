@@ -2,6 +2,7 @@ import os
 import sys
 import types
 import unittest
+from enum import Enum
 from unittest import mock
 
 from sec_agent.domain.models import (
@@ -24,6 +25,12 @@ from sec_agent.services.triage import RiskTriageService
 
 
 class DeepAgentBridgeTest(unittest.TestCase):
+    @staticmethod
+    def _load_isolated_config(modules):
+        """固定知识模式，避免开发机环境变量影响合同测试。"""
+        with mock.patch.dict(os.environ, {"KNOWLEDGE_MODE": "guarded"}, clear=False):
+            return modules["load_config"]()
+
     def test_fixed_sample_real_path_allows_guarded_knowledge(self) -> None:
         adapter = FixedSampleAdapter()
         alerts = adapter.fetch_alerts(sample_id="webshell-001")
@@ -46,7 +53,7 @@ class DeepAgentBridgeTest(unittest.TestCase):
         self.assertEqual(gate.gate_decision, GateDecision.IN_SCOPE)
         self.assertTrue(any("Web 进程派生 shell 进程" in item for item in deep_event.evidence))
 
-        config = modules["load_config"]()
+        config = self._load_isolated_config(modules)
         config.tools.mode = "mock"
         config.tools.knowledge_mode = "guarded"
         registry = bridge._build_tools(modules, config, gate_decision=gate.gate_decision.value)
@@ -116,18 +123,22 @@ class DeepAgentBridgeTest(unittest.TestCase):
     def test_guarded_mode_without_gate_result_does_not_register_knowledge(self) -> None:
         bridge = DeepAgentBridge()
         modules = bridge._load_modules()
-        config = modules["load_config"]()
+        config = self._load_isolated_config(modules)
         config.tools.mode = "mock"
         config.tools.knowledge_mode = "guarded"
 
         registry = bridge._build_tools(modules, config, gate_decision=None)
 
         self.assertNotIn("knowledge_query", registry.names())
+        self.assertEqual(
+            registry.availability_of("knowledge_query").status.value,
+            "blocked_by_gate",
+        )
 
     def test_guarded_mode_registers_gate_bound_knowledge(self) -> None:
         bridge = DeepAgentBridge()
         modules = bridge._load_modules()
-        config = modules["load_config"]()
+        config = self._load_isolated_config(modules)
         config.tools.mode = "mock"
         config.tools.knowledge_mode = "guarded"
 
@@ -136,17 +147,22 @@ class DeepAgentBridgeTest(unittest.TestCase):
 
         self.assertEqual(result.status, "partial")
         self.assertFalse(result.data["knowledge_returned"])
+        self.assertEqual(registry.availability_of("knowledge_query").status.value, "available")
 
     def test_guarded_mode_out_of_scope_does_not_expose_webshell_knowledge(self) -> None:
         bridge = DeepAgentBridge()
         modules = bridge._load_modules()
-        config = modules["load_config"]()
+        config = self._load_isolated_config(modules)
         config.tools.mode = "mock"
         config.tools.knowledge_mode = "guarded"
 
         registry = bridge._build_tools(modules, config, gate_decision="out_of_scope")
 
         self.assertNotIn("knowledge_query", registry.names())
+        self.assertEqual(
+            registry.availability_of("knowledge_query").status.value,
+            "blocked_by_gate",
+        )
 
     def test_deep_agent_backend_maps_external_report_to_domain_report(self) -> None:
         old_modules = dict(sys.modules)
@@ -220,7 +236,20 @@ class DeepAgentBridgeTest(unittest.TestCase):
         class Config:
             def __init__(self) -> None:
                 self.llm = object()
-                self.tools = types.SimpleNamespace(mode="mock")
+                self.tools = types.SimpleNamespace(mode="mock", knowledge_mode="off")
+
+        class KnowledgeToolAvailability(str, Enum):
+            AVAILABLE = "available"
+            DISABLED_BY_MODE = "disabled_by_mode"
+            BLOCKED_BY_GATE = "blocked_by_gate"
+
+        def resolve_knowledge_tool_availability(knowledge_mode, gate_decision):
+            status = (
+                KnowledgeToolAvailability.DISABLED_BY_MODE
+                if knowledge_mode == "off"
+                else KnowledgeToolAvailability.BLOCKED_BY_GATE
+            )
+            return types.SimpleNamespace(tool_name="knowledge_query", status=status, reason="fake")
 
         class LLMClient:
             available = True
@@ -238,9 +267,13 @@ class DeepAgentBridgeTest(unittest.TestCase):
         class ToolRegistry:
             def __init__(self) -> None:
                 self.tools = []
+                self.availability = []
 
             def register(self, tool):
                 self.tools.append(tool)
+
+            def record_availability(self, record):
+                self.availability.append(record)
 
         class DeepAgentReport:
             def to_dict(self):
@@ -278,6 +311,8 @@ class DeepAgentBridgeTest(unittest.TestCase):
         llm_module.LLMClient = LLMClient
         models_module.SecurityEventInput = SecurityEventInput
         tools_base_module.ToolRegistry = ToolRegistry
+        tools_base_module.KnowledgeToolAvailability = KnowledgeToolAvailability
+        tools_base_module.resolve_knowledge_tool_availability = resolve_knowledge_tool_availability
         tools_mock_module.build_mock_tools = lambda: [object()]
         agent_module.DeepInvestigationAgent = DeepAgent
         sys.modules.update(

@@ -11,6 +11,8 @@
 | 包数据声明 | `pyproject.toml` 的 `[tool.setuptools.package-data]` |
 | 工具单元测试 | `tests/test_knowledge_tool.py` |
 | 案例输入边界测试 | `tests/test_knowledge_case_inputs.py` |
+| 门禁边界回归测试 | `tests/test_gatekeeper_boundary.py`（24 条：否定语义 / 通用进程 / 反序列化 / 内核驱动 / 大小写 / 空字段 / 冲突字段） |
+| 唯一接口合同 | `docs/modules/investigation-agent/formal-event-context-and-knowledge-tool-contract-v1.md`（v1.1）；`docs/modules/alert-correlation/event-field-signal-contract.md`仅为字段登记附件 |
 | 评测案例与来源说明 | `docs/modules/scenario-knowledge/knowledge-test-cases/` |
 
 不要在 `docs/` 下再复制一份 WebShell 知识正文。需要更新知识时，只修改唯一运行时文件，并同步补充测试。
@@ -25,6 +27,10 @@
 - `source_urls`、`source_levels`与`related_cases`。
 
 `match_knowledge_card()`按知识ID精确匹配、受控别名、主题精确匹配和主题包含匹配依次查找。无确定命中时返回`None`。禁止恢复旧`KnowledgeEntry/_ENTRY_SPECS/load_knowledge_entries/match_keyword`并行解析链。
+
+门禁侧的文本判定顺序固定为：域外关键词 → 合法语境关键词 → WebShell 专属强证据 → 通用进程名（弱） → WebShell 弱关键词，
+命中即停止；四类关键词都只认同一分句内未被否定的出现。调整任何关键词都必须同时更新
+`tests/test_gatekeeper_boundary.py`，并同步合同文档版本号。
 
 `KnowledgeQueryTool.call()` 的调用示例：
 
@@ -106,3 +112,4 @@ python -m sec_agent.deep_agent.main --event docs/modules/scenario-knowledge/know
 | 2026-09-05 | PR #41 依据当前运行时实现重写开发说明，并明确维护与验收方法 |
 | 2026-09-13 | 最终收口候选实现CLI/bridge先门禁后注册、知识工具缺门禁二次拒绝、通用冲突提示和否定/域外语义测试；`pyproject.toml`加入Windows时区依赖 |
 | 2026-09-13 | 清理旧`KnowledgeEntry`解析实现和旧测试，正式运行与测试统一使用15张`KnowledgeCard`；同步`out_of_scope`正式路径不注册工具的接口说明 |
+| 2026-09-13 | 门禁关键词语义修订：通用进程名降为弱信号、内核/驱动证据转域外、否定语义扩展到`排除/并非/不属于`并覆盖域外与合法语境；新增门禁边界回归与字段来源合同（v1.1）登记 |

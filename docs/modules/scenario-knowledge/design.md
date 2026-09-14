@@ -70,6 +70,9 @@
 6. **汇总 Schema 冻结**：评测输出统一使用 `knowledge_evaluation_summary.schema.json`，避免不同成员用自由表格记录导致字段漂移。
 7. **安全默认拒绝**：`None`、非法值、门禁异常和门禁超时均不得获得确认性知识；注册层和工具调用层实施双重防护。
 8. **语义优先**：输入质量提示不依赖case编号；域外、合法和否定语义优先于通用进程/函数关键词。
+   - 否定语义（`未发现/未检测到/不存在/排除/并非/不属于/no evidence/not detected/excluded/ruled out`）只作用于同一分句，被否定的关键词不产生任何正向信号；域外与合法语境关键词同样做否定过滤。
+   - 通用进程名（`cmd.exe`/`powershell.exe`/`java.exe` 等，`gatekeeper.py::GENERIC_PROCESS_WEAK_KEYWORDS`）单独出现只作弱信号，必须有 WebShell 专属证据（Web 进程派生、文件落地、反序列化载荷等）才升级为确认级。
+   - 驱动、内核模块与进程隐藏行为属于其他攻击链，列入域外关键词，不得判为 WebShell。
 
 ## 7. 上下游关系
 
@@ -94,3 +97,4 @@
 | 2026-09-06 | 冻结评测汇总 Schema 和最小 fixture，补充人工 Review 栏 |
 | 2026-09-13 | 最终收口候选修复门禁`None/异常`fail-open，CLI与bridge改为先审计后注册；修正来源和case10域外边界；补Windows `tzdata`依赖与回归测试 |
 | 2026-09-13 | 删除未被正式工具调用的旧`KnowledgeEntry`解析链，只保留`KnowledgeCard→parse_knowledge_cards→match_knowledge_card→KnowledgeQueryTool`；明确域外事件在正式Agent路径不注册知识工具 |
+| 2026-09-13 | 边界测试驱动的最小修复：通用进程名降为弱信号、内核/驱动证据转域外、“排除/并非”类否定语义纳入否定范围；字段来源登记于`docs/modules/alert-correlation/event-field-signal-contract.md`，正式语义统一由调查模块唯一合同v1.1冻结 |

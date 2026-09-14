@@ -2,6 +2,7 @@ import os
 
 from sec_agent.deep_agent.config import Config
 from sec_agent.deep_agent.main import build_tools, normalize_event_payload
+from sec_agent.deep_agent.tools.base import KnowledgeToolAvailability
 
 
 def test_normalize_event_payload_accepts_flat_case():
@@ -32,6 +33,7 @@ def test_knowledge_mode_off_does_not_register_tool(monkeypatch):
     registry = build_tools(config)
 
     assert "knowledge_query" not in registry.names()
+    assert registry.availability_of("knowledge_query").status == KnowledgeToolAvailability.DISABLED_BY_MODE
 
 
 def test_knowledge_mode_guarded_registers_tool(monkeypatch):
@@ -41,6 +43,7 @@ def test_knowledge_mode_guarded_registers_tool(monkeypatch):
     registry = build_tools(config, gate_decision="in_scope")
 
     assert "knowledge_query" in registry.names()
+    assert registry.availability_of("knowledge_query").status == KnowledgeToolAvailability.AVAILABLE
 
 
 def test_knowledge_mode_guarded_without_gate_does_not_register_tool(monkeypatch):
@@ -50,6 +53,7 @@ def test_knowledge_mode_guarded_without_gate_does_not_register_tool(monkeypatch)
     registry = build_tools(config)
 
     assert "knowledge_query" not in registry.names()
+    assert registry.availability_of("knowledge_query").status == KnowledgeToolAvailability.BLOCKED_BY_GATE
 
 
 def test_knowledge_mode_guarded_out_of_scope_does_not_register_tool(monkeypatch):
@@ -59,6 +63,7 @@ def test_knowledge_mode_guarded_out_of_scope_does_not_register_tool(monkeypatch)
     registry = build_tools(config, gate_decision="out_of_scope")
 
     assert "knowledge_query" not in registry.names()
+    assert registry.availability_of("knowledge_query").status == KnowledgeToolAvailability.BLOCKED_BY_GATE
 
 
 def test_knowledge_mode_invalid_value_fails_explicitly(monkeypatch):
