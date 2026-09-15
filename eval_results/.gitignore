@@ -1,0 +1,6 @@
+*
+!.gitignore
+!README.md
+!spark-eval-actual-package/
+spark-eval-actual-package/*
+!spark-eval-actual-package/_human_review.json

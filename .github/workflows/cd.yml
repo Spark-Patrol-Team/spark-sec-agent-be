@@ -170,8 +170,11 @@ jobs:
         shell: bash
         run: |
           port="${CD_SSH_PORT:-22}"
-          ssh -i ~/.ssh/cd_key -p "$port" "$CD_SSH_USER@$CD_SSH_HOST" "mkdir -p '$CD_DEPLOY_PATH/deploy'"
+          ssh -i ~/.ssh/cd_key -p "$port" "$CD_SSH_USER@$CD_SSH_HOST" \
+            "mkdir -p '$CD_DEPLOY_PATH/deploy' '$CD_DEPLOY_PATH/eval_results/spark-eval-actual-package'"
           scp -i ~/.ssh/cd_key -P "$port" deploy/docker-compose.prod.yml "$CD_SSH_USER@$CD_SSH_HOST:$CD_DEPLOY_PATH/deploy/docker-compose.prod.yml"
+          scp -i ~/.ssh/cd_key -P "$port" eval_results/spark-eval-actual-package/_human_review.json \
+            "$CD_SSH_USER@$CD_SSH_HOST:$CD_DEPLOY_PATH/eval_results/spark-eval-actual-package/_human_review.json"
 
       - name: Pull image and restart service
         shell: bash
