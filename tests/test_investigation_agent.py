@@ -177,6 +177,92 @@ class TestAgentHelpers(unittest.TestCase):
         self.assertTrue(r.need_manual_takeover)
         self.assertIn("证据不足", r.conclusion)
 
+    def test_prompt_mentions_knowledge_only_when_tool_is_registered(self):
+        config = type("Config", (), {
+            "agent": type("Agent", (), {"max_tool_calls": 2})(),
+        })()
+        event = SecurityEventInput(event_id="E-prompt", event_type="webshell")
+
+        without_knowledge = DeepInvestigationAgent(config, object(), ToolRegistry())
+        self.assertNotIn(
+            "knowledge_query",
+            without_knowledge._build_messages(event, gate_decision="in_scope")[0]["content"],
+        )
+
+        registry = ToolRegistry()
+        registry.register(_make_tool("knowledge_query"))
+        with_knowledge = DeepInvestigationAgent(config, object(), registry)
+        self.assertIn(
+            "knowledge_query",
+            with_knowledge._build_messages(event, gate_decision="in_scope")[0]["content"],
+        )
+
+    def test_tool_limit_forces_one_tool_free_wrapup(self):
+        class _LLM:
+            available = True
+
+            def __init__(self):
+                self.calls = []
+                self.wrapup_tool_ids = []
+
+            def chat(self, messages, tools=None):
+                self.calls.append(tools)
+                if len(self.calls) == 1:
+                    return {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "function": {"name": "query_alerts", "arguments": "{}"},
+                            },
+                            {
+                                "id": "call-2",
+                                "function": {"name": "query_alerts", "arguments": "{}"},
+                            },
+                        ],
+                    }
+                self.wrapup_tool_ids = [
+                    message.get("tool_call_id")
+                    for message in messages
+                    if message.get("role") == "tool"
+                ]
+                return {
+                    "content": json.dumps({
+                        "conclusion": "依据告警记录，事件需继续调查",
+                        "risk_level": "HIGH",
+                        "attack_type": "webshell",
+                        "key_evidence": [],
+                        "evidence_source": [],
+                        "investigation_steps": [],
+                        "attack_chain": "待复核",
+                        "confidence": 0.7,
+                        "disposal_suggestions": ["继续调查"],
+                        "need_manual_takeover": True,
+                        "manual_takeover_reason": "需要人工确认",
+                        "unresolved_issues": [],
+                        "affected_objects": [],
+                    }, ensure_ascii=False),
+                    "tool_calls": [],
+                }
+
+        registry = ToolRegistry()
+        registry.register(_make_tool("query_alerts"))
+        llm = _LLM()
+        config = type("Config", (), {
+            "agent": type("Agent", (), {"max_tool_calls": 1})(),
+        })()
+        report = DeepInvestigationAgent(config, llm, registry).investigate(
+            SecurityEventInput(event_id="E-wrapup", event_type="webshell")
+        )
+
+        self.assertEqual(len(llm.calls), 2)
+        self.assertIsNotNone(llm.calls[0])
+        self.assertIsNone(llm.calls[1])
+        self.assertEqual(llm.wrapup_tool_ids, ["call-1", "call-2"])
+        self.assertEqual(len(report.tool_call_records), 1)
+        self.assertEqual(report.conclusion, "依据告警记录，事件需继续调查")
+        self.assertNotIn("达到最大工具调用次数", report.manual_takeover_reason)
+
     def test_fallback_report_keeps_knowledge_citations_out_of_event_evidence(self):
         """知识来源只留在工具记录中，不能污染降级报告的事件证据。"""
         ev = SecurityEventInput(
