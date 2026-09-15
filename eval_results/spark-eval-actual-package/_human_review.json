@@ -1,0 +1,113 @@
+{
+  "schema_version": "2026-09-14.human-review.v1",
+  "source_document": "docs/modules/scenario-knowledge/OFF-GUARDED人工评分表-2026-09-14.md",
+  "review_scope": "cmp-20260911-yjf-off-guarded-ab",
+  "summary": {
+    "total_cases": 10,
+    "guarded_wins": 3,
+    "off_wins": 1,
+    "ties": 6
+  },
+  "reviews": [
+    {
+      "case_id": "TC-KNOWLEDGE-001",
+      "status": "passed",
+      "winner": "TIE",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 6/8，GUARDED 6/8。",
+      "reason": "两组风险、置信度、结论和人工接管一致；GUARDED 的受限知识提示未形成报告级新增引用。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-002",
+      "status": "passed",
+      "winner": "TIE",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 5/8，GUARDED 5/8。",
+      "reason": "两组均回退为证据不足并记录报告解析失败，没有可验证的质量差异。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-003",
+      "status": "passed",
+      "winner": "TIE",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 6/8，GUARDED 6/8。",
+      "reason": "两组最终结论一致；弱信号知识受限，没有形成新增确认性内容。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-004",
+      "status": "passed",
+      "winner": "GUARDED",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 5/8，GUARDED 6/8。",
+      "reason": "两组结论均保守；OFF 报告解析失败，GUARDED 形成可解析的保守报告。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-005",
+      "status": "passed",
+      "winner": "TIE",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 6/8，GUARDED 6/8。",
+      "reason": "两组均如实保留工具失败和证据不足，没有把空结果写成安全结论。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-006",
+      "status": "passed",
+      "winner": "OFF",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "旧结果包评分为 OFF 6/8、GUARDED 3/8；后续 GUARDED 域外门禁复验已通过。",
+      "reason": "保留旧结果包人工评分：当时 GUARDED 最终报告存在域外扩写；后续修复结果不追溯改写该批评分。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-007",
+      "status": "passed",
+      "winner": "TIE",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 6/8，GUARDED 6/8。",
+      "reason": "两组均保留合法业务和证据不足边界，GUARDED 未调用知识，没有明显增益或回归。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-008",
+      "status": "passed",
+      "winner": "TIE",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 6/8，GUARDED 6/8。",
+      "reason": "两组风险、置信度和结论一致，弱信号均未被升级为确认攻击。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-009",
+      "status": "passed",
+      "winner": "GUARDED",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 6/8，GUARDED 8/8。",
+      "reason": "明确适用案例中，GUARDED 命中 WSK-010、WSK-001、WSK-015，并增加可追溯知识引用且未升级结论。",
+      "action_items": []
+    },
+    {
+      "case_id": "TC-KNOWLEDGE-010",
+      "status": "passed",
+      "winner": "GUARDED",
+      "reviewer": "钱诺成",
+      "reviewed_at": "2026-09-14",
+      "comments": "OFF 5/8，GUARDED 6/8。",
+      "reason": "两组均保持域外和证据不足边界；OFF 报告解析失败，GUARDED 输出可解析。",
+      "action_items": []
+    }
+  ]
+}
