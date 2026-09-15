@@ -29,13 +29,20 @@ def ensure_existing_schema(engine: Engine) -> None:
             continue
         existing_columns = {column["name"] for column in inspector.get_columns(table.name)}
         missing_columns = [column for column in table.columns if column.name not in existing_columns]
-        if not missing_columns:
+        if missing_columns:
+            with engine.begin() as connection:
+                for column in missing_columns:
+                    column_type = column.type.compile(dialect=engine.dialect)
+                    nullable = "" if column.nullable else " NOT NULL"
+                    connection.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {column_type}{nullable}"))
+
+        existing_indexes = {index["name"] for index in inspector.get_indexes(table.name)}
+        missing_indexes = [index for index in table.indexes if index.name not in existing_indexes]
+        if not missing_indexes:
             continue
         with engine.begin() as connection:
-            for column in missing_columns:
-                column_type = column.type.compile(dialect=engine.dialect)
-                nullable = "" if column.nullable else " NOT NULL"
-                connection.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {column_type}{nullable}"))
+            for index in missing_indexes:
+                index.create(bind=connection)
 
 
 def session_factory(engine: Engine) -> sessionmaker[Session]:
